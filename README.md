@@ -136,6 +136,23 @@ python train.py -s <path_to_dataset> -m <output_dir> --eval
 python geometry_metric.py -m <output_dir>
 ```
 
+### Per-view depth point clouds
+
+After training a scene, the following command renders all training views and
+exports both the mean (`expected_depth`) and median depth for every view:
+
+```bash
+python render_depth_pointcloud.py -m <output_dir>
+```
+
+The default output directory is
+`<output_dir>/depth_pointcloud/iteration_<loaded_iteration>/`. It contains
+lossless raw depth maps (`depth_maps/<mean|median>/*.npy`), colorized preview
+images (`depth_visualization/<mean|median>/*.png`), and one colored PLY point
+cloud per view (`point_clouds/<mean|median>/*.ply`). The PLY coordinates are
+in the corresponding camera coordinate system, not the world coordinate
+system. Camera intrinsics and file mappings are recorded in `metadata.json`.
+
 ---
 
 # 4. Viewer
