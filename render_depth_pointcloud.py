@@ -1,4 +1,4 @@
-"""Render train-view depths and export per-view camera-space point clouds.
+"""Render train-view depths and export per-view world-space point clouds.
 
 This follows the scene loading path used by ``mesh_extract.py``.  The only
 difference is that the rendered depths are saved directly instead of being
@@ -11,7 +11,9 @@ camera coordinate system.  Therefore a pixel ``(u, v)`` is back-projected as
     y = (v - Cy) / Fy * depth
     z = depth
 
-No world-space transformation is applied to the exported points.
+The resulting points are transformed to the world coordinate system with the
+inverse of ``viewpoint_cam.world_view_transform.T``, matching the extrinsic
+matrix used by ``mesh_extract.py``.
 """
 
 import json
@@ -103,8 +105,25 @@ def _depth_to_camera_points(depth, viewpoint_cam):
     ).reshape(-1, 3)
 
 
+def _camera_to_world_points(points, viewpoint_cam):
+    """Transform row-wise camera points to world coordinates.
+
+    ``mesh_extract.py`` passes ``viewpoint_cam.world_view_transform.T`` to
+    Open3D as the world-to-camera extrinsic. Inverting that same matrix here
+    keeps the point-cloud convention aligned with mesh extraction.
+    """
+    world_to_camera = viewpoint_cam.world_view_transform.T.detach().cpu().numpy()
+    camera_to_world = np.linalg.inv(world_to_camera)
+    points_h = np.concatenate(
+        [points, np.ones((points.shape[0], 1), dtype=points.dtype)],
+        axis=1,
+    )
+    points_world_h = points_h @ camera_to_world.T
+    return points_world_h[:, :3] / np.maximum(points_world_h[:, 3:], 1e-8)
+
+
 def _save_point_cloud(points, colors, valid_mask, point_cloud_path):
-    """Save valid camera-space points as a colored PLY file."""
+    """Save valid world-space points as a colored PLY file."""
     point_cloud = o3d.geometry.PointCloud()
     point_cloud.points = o3d.utility.Vector3dVector(points[valid_mask].astype(np.float64, copy=False))
     if colors is not None:
@@ -160,7 +179,8 @@ def render_depths_and_pointclouds(dataset, pipe, iteration, output_dir=None):
             depth = depth_tensor[0].detach().cpu().numpy().astype(np.float32, copy=False)
 
             valid_mask = np.isfinite(depth) & (depth > 0.0)
-            points = _depth_to_camera_points(depth, viewpoint_cam)
+            camera_points = _depth_to_camera_points(depth, viewpoint_cam)
+            world_points = _camera_to_world_points(camera_points, viewpoint_cam)
             colors = np.clip(rendered_color.reshape(-1, 3), 0.0, 1.0)
             stem = _safe_view_stem(view_index, viewpoint_cam.image_name)
             file_tag = f"{depth_type}_depth"
@@ -169,7 +189,9 @@ def render_depths_and_pointclouds(dataset, pipe, iteration, output_dir=None):
             visualization_path = visualization_root / depth_type / f"{stem}_{file_tag}_visualization.png"
             point_cloud_path = point_cloud_root / depth_type / f"{stem}_{file_tag}_point_cloud.ply"
             _save_depth(depth, raw_path, visualization_path)
-            point_count = _save_point_cloud(points, colors, valid_mask.reshape(-1), point_cloud_path)
+            point_count = _save_point_cloud(
+                world_points, colors, valid_mask.reshape(-1), point_cloud_path
+            )
 
             if depth_type == "mean":
                 view_metadata.append(
@@ -193,7 +215,9 @@ def render_depths_and_pointclouds(dataset, pipe, iteration, output_dir=None):
     metadata = {
         "iteration": scene.loaded_iter,
         "num_train_views": len(viewpoint_cam_list),
-        "coordinate_system": "camera",
+        "coordinate_system": "world",
+        "depth_coordinate_system": "camera",
+        "point_cloud_coordinate_system": "world",
         "depth_definition": "z-depth; x=(u-cx)/fx*z, y=(v-cy)/fy*z, z=depth",
         "depth_types": {
             "mean": "expected_depth",
@@ -209,7 +233,7 @@ def render_depths_and_pointclouds(dataset, pipe, iteration, output_dir=None):
 
 
 if __name__ == "__main__":
-    parser = ArgumentParser(description="Render train-view depths and export camera-space point clouds")
+    parser = ArgumentParser(description="Render train-view depths and export world-space point clouds")
     model = ModelParams(parser, sentinel=True)
     pipeline = PipelineParams(parser)
     parser.add_argument("--iteration", default=-1, type=int)

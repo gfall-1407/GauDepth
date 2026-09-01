@@ -151,10 +151,11 @@ lossless raw depth maps (`depth_maps/<mean|median>/*_<mean|median>_depth.npy`),
 colorized preview images
 (`depth_visualization/<mean|median>/*_<mean|median>_depth_visualization.png`),
 and one colored PLY point cloud per view
-(`point_clouds/<mean|median>/*_<mean|median>_depth_point_cloud.ply`). The PLY
-coordinates are in the corresponding camera coordinate system, not the world
-coordinate system. Camera intrinsics and file mappings are recorded in
-`metadata.json`.
+(`point_clouds/<mean|median>/*_<mean|median>_depth_point_cloud.ply`). The raw
+depth maps are z-depths in the camera coordinate system, while the PLY point
+cloud coordinates are transformed to the world coordinate system using the
+same extrinsics as `mesh_extract.py`. Camera intrinsics and file mappings are
+recorded in `metadata.json`.
 
 ---
 
