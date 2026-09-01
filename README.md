@@ -147,11 +147,14 @@ python render_depth_pointcloud.py -m <output_dir>
 
 The default output directory is
 `<output_dir>/depth_pointcloud/iteration_<loaded_iteration>/`. It contains
-lossless raw depth maps (`depth_maps/<mean|median>/*.npy`), colorized preview
-images (`depth_visualization/<mean|median>/*.png`), and one colored PLY point
-cloud per view (`point_clouds/<mean|median>/*.ply`). The PLY coordinates are
-in the corresponding camera coordinate system, not the world coordinate
-system. Camera intrinsics and file mappings are recorded in `metadata.json`.
+lossless raw depth maps (`depth_maps/<mean|median>/*_<mean|median>_depth.npy`),
+colorized preview images
+(`depth_visualization/<mean|median>/*_<mean|median>_depth_visualization.png`),
+and one colored PLY point cloud per view
+(`point_clouds/<mean|median>/*_<mean|median>_depth_point_cloud.ply`). The PLY
+coordinates are in the corresponding camera coordinate system, not the world
+coordinate system. Camera intrinsics and file mappings are recorded in
+`metadata.json`.
 
 ---
 

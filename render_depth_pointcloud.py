@@ -163,10 +163,11 @@ def render_depths_and_pointclouds(dataset, pipe, iteration, output_dir=None):
             points = _depth_to_camera_points(depth, viewpoint_cam)
             colors = np.clip(rendered_color.reshape(-1, 3), 0.0, 1.0)
             stem = _safe_view_stem(view_index, viewpoint_cam.image_name)
+            file_tag = f"{depth_type}_depth"
 
-            raw_path = depth_root / depth_type / f"{stem}.npy"
-            visualization_path = visualization_root / depth_type / f"{stem}.png"
-            point_cloud_path = point_cloud_root / depth_type / f"{stem}.ply"
+            raw_path = depth_root / depth_type / f"{stem}_{file_tag}.npy"
+            visualization_path = visualization_root / depth_type / f"{stem}_{file_tag}_visualization.png"
+            point_cloud_path = point_cloud_root / depth_type / f"{stem}_{file_tag}_point_cloud.ply"
             _save_depth(depth, raw_path, visualization_path)
             point_count = _save_point_cloud(points, colors, valid_mask.reshape(-1), point_cloud_path)
 
