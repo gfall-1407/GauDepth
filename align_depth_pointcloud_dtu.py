@@ -223,7 +223,10 @@ def align_depth_pointclouds(dataset, iteration, dtu_path, input_dir=None, output
 
         for source_path in files:
             relative_path = source_path.relative_to(source_dir)
-            destination_path = output_root / depth_type / relative_path
+            # Keep the source name recognizable while making the coordinate
+            # conversion explicit in the output filename.
+            destination_name = f"{relative_path.stem}_dtu{relative_path.suffix}"
+            destination_path = output_root / depth_type / relative_path.with_name(destination_name)
             count = align_point_cloud(
                 source_path,
                 destination_path,
