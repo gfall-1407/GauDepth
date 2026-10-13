@@ -1,6 +1,8 @@
 *.pyc
 .vscode
 output*/
+outtest/
+*outest*/
 build
 __pycache__
 tensorboard_3d
