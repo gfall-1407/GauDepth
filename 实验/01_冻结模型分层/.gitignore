@@ -1,0 +1,8 @@
+构建/
+缓存绘图/
+dependencies/
+__pycache__/
+结果/
+*.log
+*.png
+*.zip

@@ -1,0 +1,17 @@
+{
+  "selected": "contribution_valley",
+  "selection_scan": 24,
+  "criterion": "Scan24 overall plus completeness and mesh detail review; exploratory selection; no per-scan tuning",
+  "candidates": {
+    "gap_adaptive": {
+      "mean_d2s": 0.3566562797764114,
+      "mean_s2d": 0.41315214590563226,
+      "overall": 0.38490421284102183
+    },
+    "contribution_valley": {
+      "mean_d2s": 0.3327327984383041,
+      "mean_s2d": 0.39513802771068235,
+      "overall": 0.36393541307449323
+    }
+  }
+}

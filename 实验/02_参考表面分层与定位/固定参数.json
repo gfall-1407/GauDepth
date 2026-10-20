@@ -1,0 +1,35 @@
+{
+  "lambda": 0.01,
+  "exploration_scans": [
+    24,
+    65,
+    105,
+    110
+  ],
+  "heldout_scans": [
+    37,
+    40,
+    55,
+    63,
+    69,
+    83,
+    97,
+    106,
+    114,
+    118,
+    122
+  ],
+  "candidates": {
+    "l001": {
+      "mean_d2s": 0.4790080936601594,
+      "mean_s2d": 0.496416307585525,
+      "overall": 0.4877122006228422
+    },
+    "l003": {
+      "mean_d2s": 0.48320505650864065,
+      "mean_s2d": 0.49615262166547697,
+      "overall": 0.4896788390870588
+    }
+  },
+  "criterion": "One global lambda after reviewing four exploration averages and directional tradeoffs; no per-scan tuning"
+}
