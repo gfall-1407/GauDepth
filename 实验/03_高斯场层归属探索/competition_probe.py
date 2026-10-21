@@ -184,7 +184,7 @@ def clone_control(out, objective):
             E=energy[:,[a,b]]
             cost=np.minimum(E[:,0],E[:,1]) if objective=='hard_min' else np.log(2.)-np.logaddexp(-E[:,0],-E[:,1])
             vals.append(float(cost@multiplicity/multiplicity.sum()))
-            pred=np.argmin(E,axis=1);pred[np.isclose(E[:,0],E[:,1],atol=1e-12,rtol=0)]=-1
+            pred=np.argmin(E,axis=1);pred[np.isclose(E[:,0],E[:,1],atol=1e-10,rtol=0)]=-1
             partitions.append(relation(pred))
         np.testing.assert_allclose(result['objective'],min(vals),atol=1e-12,rtol=0)
         old_partition_optimal=any(np.array_equal(p,baseline_relation) for value,p in zip(vals,partitions) if value<=min(vals)+1e-10)
@@ -301,6 +301,7 @@ if __name__=='__main__':
     p.add_argument('--objective',choices=('soft_uniform','hard_min'),default='soft_uniform')
     p.add_argument('--single-force-two',action='store_true',help='Wrong-K stress on the 12 single-source conditions only')
     args=p.parse_args();out=Path(args.output)
+    if args.ray_clone_input and args.objective!='hard_min':p.error('--ray-clone-input requires --objective hard_min')
     if sum(map(bool,(args.mechanism,args.imbalance,args.input,args.clone_control,args.ray_clone_input)))!=1:p.error('Choose one probe mode')
     if out.exists() and any(out.iterdir()):raise FileExistsError(out)
     out.mkdir(parents=True,exist_ok=True)
@@ -309,7 +310,6 @@ if __name__=='__main__':
               if args.mechanism else imbalance(out,args.objective) if args.imbalance else
               clone_control(out,args.objective) if args.clone_control else
               ray_clone_scene(args.ray_clone_input,out) if args.ray_clone_input else scenes(args.input,out,args.objective))
-    if args.ray_clone_input and args.objective!='hard_min':p.error('--ray-clone-input requires --objective hard_min')
     metadata['objective']=args.objective
     metadata['responsibility_note']='Softmax energy assignments; for hard_min they are post-fit descriptions, not the optimized objective.'
     root=Path(__file__).parent
