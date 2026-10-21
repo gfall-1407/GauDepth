@@ -5,6 +5,7 @@ import hashlib
 import itertools
 import json
 from pathlib import Path
+import subprocess
 import time
 
 import numpy as np
@@ -211,25 +212,108 @@ def clone_control(out, objective):
         'Exact-feature deduplication would remove this constructed multiplicity effect but is not validated for near-duplicate real Gaussians.')
 
 
+def ray_clone_scene(inputs, out):
+    """Preserve accepted-ray algebra, compare original-member relations only."""
+    rows=[];manifests=[];details=[]
+    for folder in map(Path,inputs):
+        meta=json.loads((folder/'metadata.json').read_text(encoding='utf-8'))
+        for item in meta['views']:
+            path=folder/item['file'];assert sha(path)==item['npz_sha256']
+            manifests.append(dict(path=str(path),sha256=sha(path),metadata_sha256=sha(folder/'metadata.json')))
+            with np.load(path,allow_pickle=False) as z:
+                selected=np.flatnonzero(~z['qualitative'])[:8]
+                for ray in selected:
+                    a,b=map(int,z['offsets'][ray:ray+2]);sl=slice(a,b)
+                    d,n,v,w,alpha=[z[k][sl] for k in ('depth','normal','normal_valid','weight','alpha')]
+                    alpha=alpha.astype(float);w=w.astype(float);d=d.astype(float);n=n.astype(float)
+                    copies=4;eligible=np.flatnonzero(alpha>=-np.expm1(copies*np.log1p(-1/255)))
+                    if not len(eligible):
+                        raise ValueError(f'No splittable member: {path} ray {ray}')
+                    targets={'max_original_w':int(eligible[np.argmax(w[eligible])]),
+                             'min_original_w_eligible':int(eligible[np.argmin(w[eligible])])}
+                    def replay(ids,aa):
+                        T=np.r_[1.,np.cumprod(1-aa)[:-1]];ww=T*aa
+                        assert np.all(aa>=1/255-1e-12) and np.all(T*(1-aa)>=1e-4-1e-10)
+                        return np.r_[ww.sum(),ww@d[ids],ww@n[ids]],np.bincount(ids,ww,minlength=len(d))
+                    original_ids=np.arange(len(d));reference,mass_reference=replay(original_ids,alpha)
+                    i,j=np.triu_indices(len(d),1);pair_mass=w[i]*w[j]
+                    for lam in (0.,1.):
+                        base=fit(d,n,v,2,normal_weight=lam,objective='hard_min');base_labels=np.asarray(base['labels'])
+                        base_known=(base_labels[i]>=0)&(base_labels[j]>=0)
+                        base_same=base_known&(base_labels[i]==base_labels[j])
+                        for strategy,target in targets.items():
+                            mult=np.ones(len(d),int);mult[target]=copies;ids=np.repeat(original_ids,mult)
+                            aa=alpha[ids].copy();aa[ids==target]=-np.expm1(np.log1p(-alpha[target])/copies)
+                            rendered,mass=replay(ids,aa)
+                            np.testing.assert_allclose(rendered,reference,atol=2e-12,rtol=0)
+                            np.testing.assert_allclose(mass,mass_reference,atol=2e-12,rtol=0)
+                            result=fit(d[ids],n[ids],v[ids],2,normal_weight=lam,objective='hard_min')
+                            pos=np.r_[0,np.cumsum(mult)[:-1]];labels=np.asarray(result['labels'])[pos]
+                            known=base_known&(labels[i]>=0)&(labels[j]>=0)
+                            same=(labels[i]==labels[j])&(labels[i]>=0)&(labels[j]>=0)
+                            changed=known&(same!=base_same)
+                            row=dict(input_dir=folder.name,view=path.stem,ray=int(ray),normal_weight=lam,
+                                strategy=strategy,original_members=len(d),copies=copies,target_member=target,
+                                target_gaussian_id=int(z['gaussian_id'][a+target]),target_original_w=float(w[target]),
+                                target_original_mass_fraction=float(w[target]/w.sum()),
+                                known_original_pairs=int(known.sum()),changed_original_pairs=int(changed.sum()),
+                                changed_pair_fraction=float(changed.sum()/known.sum()) if known.any() else None,
+                                changed_original_pair_mass_fraction=float(pair_mass[changed].sum()/pair_mass[known].sum()) if pair_mass[known].sum()>0 else None,
+                                original_unknown_before=int((base_labels<0).sum()),original_unknown_after=int((labels<0).sum()),
+                                unique_optimum_before=base['near_optimal_count']==1,unique_optimum_after=result['near_optimal_count']==1,
+                                collapsed_before=base['collapsed'],collapsed_after=result['collapsed'],
+                                replay_max_error=float(np.abs(rendered-reference).max()),
+                                original_mass_max_error=float(np.abs(mass-mass_reference).max()))
+                            rows.append(row)
+                            if changed.any() and len(details)<12:
+                                details.append(dict(**row,base_labels=base_labels.tolist(),cloned_original_labels=labels.tolist(),
+                                    original_gaussian_ids=z['gaussian_id'][sl].tolist(),source_sha256=sha(path)))
+            write_csv(out/'rays.csv',rows)
+            print('real-ray clone',folder.name,path.stem,'finished',flush=True)
+    summary=[]
+    for strategy,lam in itertools.product(('max_original_w','min_original_w_eligible'),(0.,1.)):
+        part=[r for r in rows if r['strategy']==strategy and r['normal_weight']==lam]
+        unique=[r for r in part if r['unique_optimum_before'] and r['unique_optimum_after']]
+        summary.append(dict(strategy=strategy,normal_weight=lam,cases=len(part),
+            changed_cases=sum(r['changed_original_pairs']>0 for r in part),
+            joint_unique_optimum_cases=len(unique),unique_changed_cases=sum(r['changed_original_pairs']>0 for r in unique),
+            **{key:float(np.mean([r[key] for r in part if r[key] is not None])) for key in
+                ('changed_pair_fraction','changed_original_pair_mass_fraction','target_original_mass_fraction','original_unknown_before','original_unknown_after')},
+            max_replay_error=max(r['replay_max_error'] for r in part),max_original_mass_error=max(r['original_mass_max_error'] for r in part)))
+    write_csv(out/'summary.csv',summary)
+    (out/'witnesses.json').write_text(json.dumps(details),encoding='utf-8')
+    return dict(inputs=manifests,per_view_rays=8,normal_weights=[0.,1.],conditional_K=2,
+        evidence='First eight of the existing randomly sampled rays per view, not a new independent scene sample. '
+        'Single accepted-ray alpha algebra only; no host renderer or globally equivalent Gaussian-scene claim. '
+        'One eligible member cloned four times adjacently; max/min original w choose targets, not fitting weights. '
+        'All original-member contribution masses and alpha-derived opacity/depth/normal moments preserved in float64. '
+        'Changed pairs require known labels both before and after; unknown/collapse separately reported. '
+        'Fixed conditional K2 sensitivity, not physical accuracy. Pair-mass change is descriptive original rendering weight, not support truth.')
+
+
 if __name__=='__main__':
     p=argparse.ArgumentParser(description=__doc__)
     p.add_argument('--mechanism',action='store_true');p.add_argument('--imbalance',action='store_true')
     p.add_argument('--clone-control',action='store_true')
+    p.add_argument('--ray-clone-input',action='append')
     p.add_argument('--input',action='append')
     p.add_argument('--output',required=True);p.add_argument('--repeats',type=int,default=20)
     p.add_argument('--objective',choices=('soft_uniform','hard_min'),default='soft_uniform')
     p.add_argument('--single-force-two',action='store_true',help='Wrong-K stress on the 12 single-source conditions only')
     args=p.parse_args();out=Path(args.output)
-    if sum(map(bool,(args.mechanism,args.imbalance,args.input,args.clone_control)))!=1:p.error('Choose one probe mode')
+    if sum(map(bool,(args.mechanism,args.imbalance,args.input,args.clone_control,args.ray_clone_input)))!=1:p.error('Choose one probe mode')
     if out.exists() and any(out.iterdir()):raise FileExistsError(out)
     out.mkdir(parents=True,exist_ok=True)
     if args.single_force_two and not args.mechanism:p.error('--single-force-two requires --mechanism')
     metadata=(mechanism(out,args.repeats,objective=args.objective,single_force_two=args.single_force_two)
               if args.mechanism else imbalance(out,args.objective) if args.imbalance else
-              clone_control(out,args.objective) if args.clone_control else scenes(args.input,out,args.objective))
+              clone_control(out,args.objective) if args.clone_control else
+              ray_clone_scene(args.ray_clone_input,out) if args.ray_clone_input else scenes(args.input,out,args.objective))
+    if args.ray_clone_input and args.objective!='hard_min':p.error('--ray-clone-input requires --objective hard_min')
     metadata['objective']=args.objective
     metadata['responsibility_note']='Softmax energy assignments; for hard_min they are post-fit descriptions, not the optimized objective.'
     root=Path(__file__).parent
     metadata.update(source_sha256={n:sha(root/n) for n in
         ('competition_probe.py','latent_competition.py','mechanism_sweep.py','analyze.py')})
+    metadata['git_commit']=subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip()
     (out/'metadata.json').write_text(json.dumps(metadata,indent=2,ensure_ascii=False),encoding='utf-8')
