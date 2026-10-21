@@ -8,7 +8,8 @@ from pathlib import Path
 import numpy as np
 
 
-def group_ray(depth, normal, valid, eta=.01, angle=15., geometry=True):
+def group_ray(depth, normal, valid, eta=.01, angle=15., geometry=True,
+              insertion_order=None):
     """Greedy complete-link reference, NOT globally optimal/hierarchical clustering.
 
     Stable increasing representative depth (ties: original acceptance index).
@@ -38,7 +39,11 @@ def group_ray(depth, normal, valid, eta=.01, angle=15., geometry=True):
     compatible = (distance <= 1 + 1e-12) & good[:, None] & good[None, :]
     labels = np.full(n, -1, dtype=np.int32)
     groups, ambiguous_insertions = [], 0
-    for i in np.argsort(depth, kind='stable'):
+    order = (np.argsort(depth, kind='stable') if insertion_order is None
+             else np.asarray(insertion_order, dtype=int))
+    if (order.ndim != 1 or len(order) != n or not np.array_equal(np.sort(order), np.arange(n))):
+        raise ValueError('insertion_order must be a permutation of member indices')
+    for i in order:
         if not good[i]:
             continue
         candidates = [(float(distance[i, members].max()), k)
