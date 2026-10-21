@@ -1,0 +1,13 @@
+﻿case,method,tp,fp,fn,precision,recall,f1,ambiguous_insertions,compatible_cross_group_pairs,undetermined,groups,overlapping_group_pairs,interleaved_group_pairs,members,contribution_mass,undetermined_contribution_mass
+single_surface,depth,6,0,0,1.0,1.0,1.0,0,0,0,1,0,0,4,0.4,0.0
+single_surface,depth_normal,6,0,0,1.0,1.0,1.0,0,0,0,1,0,0,4,0.4,0.0
+separated_surfaces,depth,2,0,0,1.0,1.0,1.0,0,0,0,2,0,0,4,0.4,0.0
+separated_surfaces,depth_normal,2,0,0,1.0,1.0,1.0,0,0,0,2,0,0,4,0.4,0.0
+depth_overlap_direction_separable,depth,2,4,0,0.3333333333333333,1.0,0.5,0,0,0,1,0,0,4,0.4,0.0
+depth_overlap_direction_separable,depth_normal,2,0,0,1.0,1.0,1.0,0,0,0,2,1,1,4,0.4,0.0
+depth_direction_indistinguishable,depth,2,4,0,0.3333333333333333,1.0,0.5,0,0,0,1,0,0,4,0.4,0.0
+depth_direction_indistinguishable,depth_normal,2,4,0,0.3333333333333333,1.0,0.5,0,0,0,1,0,0,4,0.4,0.0
+weak_true_member,depth,4,0,0,1.0,1.0,1.0,0,0,0,2,0,0,5,0.40000009999999997,0.0
+weak_true_member,depth_normal,4,0,0,1.0,1.0,1.0,0,0,0,2,0,0,5,0.40000009999999997,0.0
+bridge,depth,1,0,0,1.0,1.0,1.0,0,1,0,2,0,0,3,0.30000000000000004,0.0
+bridge,depth_normal,1,0,0,1.0,1.0,1.0,0,1,0,2,0,0,3,0.30000000000000004,0.0
