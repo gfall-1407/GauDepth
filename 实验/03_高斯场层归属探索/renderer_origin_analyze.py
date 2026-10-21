@@ -4,6 +4,7 @@ import csv
 import hashlib
 import json
 from pathlib import Path
+import subprocess
 
 import numpy as np
 from analyze import group_ray, pair_metrics
@@ -29,7 +30,7 @@ def weighted_pair_score(truth, labels, weights):
     return 2*tp/(2*tp+fp+fn) if 2*tp+fp+fn>0 else None
 
 
-def run(inputs,out):
+def run(inputs,out,measures=('uniform',),objective='soft_uniform'):
     if out.exists() and any(out.iterdir()):raise FileExistsError(out)
     rows=[];manifests=[];seen=set()
     for folder in map(Path,inputs):
@@ -49,12 +50,19 @@ def run(inputs,out):
                     for geom in (False,True):
                         labels,_=group_ray(d,n,v,.01,15.,geom)
                         labels_by_method['hard_normal' if geom else 'depth']=(labels,None,None)
-                    for lam in (0.,1.):
-                        result=fit(d,n,v,K,normal_weight=lam) if K else None
-                        labels_by_method['conditional_normal' if lam else 'conditional_depth']=(
-                            np.asarray(result['labels']) if result else np.full(len(d),-1),
-                            result['mean_entropy'] if result else None,
-                            result['collapsed'] if result else None)
+                    # Both base and weighted ablations use the same conditional K and energy.
+                    alpha=z['alpha'][a:b].astype(float)
+                    T=np.r_[1.,np.cumprod(1-alpha)[:-1]]
+                    for measure in measures:
+                        mass={'uniform':None,'tau':-np.log1p(-alpha),'w':T*alpha}[measure]
+                        for lam in (0.,1.):
+                            result=fit(d,n,v,K,normal_weight=lam,objective=objective,member_mass=mass) if K else None
+                            name=('conditional_normal' if lam else 'conditional_depth')
+                            if measures!=('uniform',):name+='_'+measure
+                            labels_by_method[name]=(
+                                np.asarray(result['labels']) if result else np.full(len(d),-1),
+                                result['mean_entropy'] if result else None,
+                                result['collapsed'] if result else None)
                     total=float(w.astype(float).sum())
                     origin_mass=[float(w[truth==k].astype(float).sum()) for k in range(len(config['theta_deg']))]
                     for method,(labels,entropy,collapsed) in labels_by_method.items():
@@ -78,13 +86,13 @@ def run(inputs,out):
             manifests.append(dict(file=str(path),sha256=sha(path),metadata_sha256=sha(meta_path),
                                   runtime_codeHEAD=meta['codeHEAD']))
             print('origin scores case',case,flush=True)
-    out.mkdir(parents=True,exist_ok=True);write_csv(out/'rays.csv',rows)
+            out.mkdir(parents=True,exist_ok=True);write_csv(out/'rays.csv',rows)
     summaries=[]
     metrics=('pair_f1','original_pair_mass_f1','false_merge_pairs','false_split_pairs','groups',
              'unknown_members','both_origins_accepted','min_original_origin_mass_fraction',
              'source0_pair_recall','source1_pair_recall','mean_entropy','collapsed')
     for case in sorted(seen):
-        for method in ('depth','hard_normal','conditional_depth','conditional_normal'):
+        for method in sorted(set(r['method'] for r in rows)):
             part=[r for r in rows if r['case_index']==case and r['method']==method]
             config={k:part[0][k] for k in ('case_index','kind','gap','center_noise','normal_noise_deg')}
             summaries.append(dict(**config,method=method,rays=len(part),
@@ -92,15 +100,22 @@ def run(inputs,out):
                     if any(r[key] is not None for r in part) else None for key in metrics}))
     write_csv(out/'summary.csv',summaries)
     root=Path(__file__).parent
-    (out/'metadata.json').write_text(json.dumps(dict(inputs=manifests,
+    (out/'metadata.json').write_text(json.dumps(dict(inputs=manifests,objective=objective,member_measures=measures,
+        status='complete',git_commit=subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(),
         source_sha256={n:sha(root/n) for n in ('renderer_origin_analyze.py','latent_competition.py','analyze.py')},
         interpretation='Construction origins of accepted members only. Hidden/pruned members are not assigned background. '
         'Conditional methods receive the oracle number of accepted origins, other methods do not; not an equal-information comparison. '
         'Single-origin conditional K=1 success is tautological. Perturbed origins are not physical truth in trained scenes. '
-        'Original pair-mass F1 is supplementary; unweighted and per-origin recall are retained.'),indent=2),encoding='utf-8')
+        'Original pair-mass F1 is supplementary; unweighted and per-origin recall are retained. '
+        'Fitting tau/w is an explicit positive-measure ablation, not physical support strength; w derived consistently from float64 alpha. '
+        'Single-source K1 success is imposed. All 30 adjacent-pixel cases are correlated, not independent scene samples.'),indent=2),encoding='utf-8')
 
 
 if __name__=='__main__':
     p=argparse.ArgumentParser(description=__doc__)
     p.add_argument('--input',action='append',required=True);p.add_argument('--output',required=True)
-    args=p.parse_args();run(args.input,Path(args.output))
+    p.add_argument('--member-measures',default='uniform',help='comma-separated uniform,tau,w')
+    p.add_argument('--objective',choices=('soft_uniform','hard_min'),default='soft_uniform')
+    args=p.parse_args();measures=tuple(args.member_measures.split(','))
+    if not measures or len(set(measures))!=len(measures) or any(m not in ('uniform','tau','w') for m in measures):p.error('Invalid measures')
+    run(args.input,Path(args.output),measures,args.objective)
