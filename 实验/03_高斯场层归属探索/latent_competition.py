@@ -10,7 +10,7 @@ import numpy as np
 
 
 def fit(depth, normal, valid, K, normal_weight=1., scale=np.log1p(.005),
-        nu=4., angle=30., chunk_size=256, objective='soft_uniform'):
+        nu=4., angle=30., chunk_size=256, objective='soft_uniform', member_mass=None):
     """Exhaustive global minimum over distinct member features (repeats allowed).
 
     Exact objective ties use the first lexicographic candidate tuple. Near-optimal
@@ -31,6 +31,10 @@ def fit(depth, normal, valid, K, normal_weight=1., scale=np.log1p(.005),
     valid = np.asarray(valid, bool)
     if depth.ndim != 1 or normal.shape != (len(depth), 3) or valid.shape != depth.shape:
         raise ValueError('Expected depth/valid (N,) and normal (N,3)')
+    if member_mass is not None:
+        member_mass=np.asarray(member_mass,np.float64)
+        if member_mass.shape!=depth.shape or not np.isfinite(member_mass).all() or np.any(member_mass<=0):
+            raise ValueError('member_mass must be finite strictly positive (N,); no member exclusion')
     # Scaled norm avoids overflow while retaining analyze's length > 1e-8 rule.
     largest = np.max(np.abs(normal), axis=1)
     safe = np.isfinite(normal).all(axis=1) & (largest > 0)
@@ -45,6 +49,7 @@ def fit(depth, normal, valid, K, normal_weight=1., scale=np.log1p(.005),
                     nu=float(nu), angle=float(angle), chunk_size=int(chunk_size),
                     tie_tolerance=1e-10, prior='equal', candidate='joint_member_medoid')
     settings['objective']=objective
+    settings['member_measure']='uniform_members' if member_mass is None else 'provided_positive_member_mass'
     result = dict(labels=labels.tolist(), responsibilities=responsibility.tolist(),
                   hypothesis_member_indices=[], objective=None, hypothesis_pair_count=0,
                   near_optimal_count=0, next_objective_gap=None, collapsed=False,
@@ -52,6 +57,10 @@ def fit(depth, normal, valid, K, normal_weight=1., scale=np.log1p(.005),
                   fit_settings=settings)
     if not len(ids):
         return result
+    mass=None if member_mass is None else member_mass[good]/member_mass[good].max()
+    if mass is not None:mass=mass/mass.sum()
+    def reduce_energy(e):
+        return e.mean(axis=0) if mass is None else mass@e
     unit = unit[good] / length[good, None]
     logz = np.log(depth[good])
     logz -= logz.mean()
@@ -80,15 +89,15 @@ def fit(depth, normal, valid, K, normal_weight=1., scale=np.log1p(.005),
         if K == 1:
             for start in range(0, count, chunk_size):
                 js = np.arange(start, min(start + chunk_size, count))
-                yield [(int(j),) for j in js], energy(js).mean(axis=0)
+                yield [(int(j),) for j in js], reduce_energy(energy(js))
         else:
             for i in range(count):
                 ei = energy([i])
                 for start in range(i, count, chunk_size):
                     js = np.arange(start, min(start + chunk_size, count))
                     ej=energy(js)
-                    value = ((np.log(2.)-np.logaddexp(-ei,-ej)) if objective=='soft_uniform'
-                             else np.minimum(ei,ej)).mean(axis=0)
+                    value = reduce_energy((np.log(2.)-np.logaddexp(-ei,-ej)) if objective=='soft_uniform'
+                             else np.minimum(ei,ej))
                     yield [(i, int(j)) for j in js], value
 
     best, chosen = float('inf'), None
@@ -184,6 +193,21 @@ def self_check():
     assert len(set(hard['labels']))==2
     independent_hard=min(np.minimum(e[:,i],e[:,j]).mean() for i in range(4) for j in range(i,4))
     assert np.isclose(fit(ds,ns,v[:4],2,1.,objective='hard_min')['objective'],independent_hard,atol=1e-12)
+    # Positive fitting mass is an explicit ablation, distinct from surface support.
+    mass=np.array([.2,.16,.128,.1024])
+    ix=np.repeat(np.arange(4),[4,1,1,1]);split_mass=mass[ix].copy();split_mass[:4]/=4
+    for objective in ('hard_min','soft_uniform'):
+        vals=[float((np.minimum(e[:,i],e[:,j]) if objective=='hard_min' else
+              np.log(2.)-np.logaddexp(-e[:,i],-e[:,j]))@mass/mass.sum()) for i in range(4) for j in range(i,4)]
+        base=fit(ds,ns,v[:4],2,1.,objective=objective,member_mass=mass)
+        assert np.isclose(base['objective'],min(vals),atol=1e-12,rtol=0)
+        duplicate=fit(ds[ix],ns[ix],np.ones(len(ix),bool),2,1.,objective=objective,member_mass=split_mass)
+        scaled=fit(ds,ns,v[:4],2,1.,objective=objective,member_mass=mass*1e100)
+        assert np.isclose(duplicate['objective'],base['objective'],atol=1e-12,rtol=0)
+        assert np.isclose(scaled['objective'],base['objective'],atol=1e-12,rtol=0)
+    try:fit(ds,ns,v[:4],2,member_mass=[0,1,1,1])
+    except ValueError:pass
+    else:raise AssertionError('Zero member mass must not silently exclude a member')
     print('self-check passed: global enumeration, degeneracy, invariances, stability, invalid/empty')
 
 

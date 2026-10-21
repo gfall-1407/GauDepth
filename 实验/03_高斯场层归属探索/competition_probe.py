@@ -212,7 +212,7 @@ def clone_control(out, objective):
         'Exact-feature deduplication would remove this constructed multiplicity effect but is not validated for near-duplicate real Gaussians.')
 
 
-def ray_clone_scene(inputs, out):
+def ray_clone_scene(inputs, out, mass_mode='uniform'):
     """Preserve accepted-ray algebra, compare original-member relations only."""
     rows=[];manifests=[];details=[]
     for folder in map(Path,inputs):
@@ -236,9 +236,15 @@ def ray_clone_scene(inputs, out):
                         assert np.all(aa>=1/255-1e-12) and np.all(T*(1-aa)>=1e-4-1e-10)
                         return np.r_[ww.sum(),ww@d[ids],ww@n[ids]],np.bincount(ids,ww,minlength=len(d))
                     original_ids=np.arange(len(d));reference,mass_reference=replay(original_ids,alpha)
+                    def fitting_mass(aa):
+                        if mass_mode=='uniform':return None
+                        if mass_mode=='alpha':return aa
+                        if mass_mode=='tau':return -np.log1p(-aa)
+                        return np.r_[1.,np.cumprod(1-aa)[:-1]]*aa
+                    base_mass=fitting_mass(alpha)
                     i,j=np.triu_indices(len(d),1);pair_mass=w[i]*w[j]
                     for lam in (0.,1.):
-                        base=fit(d,n,v,2,normal_weight=lam,objective='hard_min');base_labels=np.asarray(base['labels'])
+                        base=fit(d,n,v,2,normal_weight=lam,objective='hard_min',member_mass=base_mass);base_labels=np.asarray(base['labels'])
                         base_known=(base_labels[i]>=0)&(base_labels[j]>=0)
                         base_same=base_known&(base_labels[i]==base_labels[j])
                         for strategy,target in targets.items():
@@ -247,14 +253,20 @@ def ray_clone_scene(inputs, out):
                             rendered,mass=replay(ids,aa)
                             np.testing.assert_allclose(rendered,reference,atol=2e-12,rtol=0)
                             np.testing.assert_allclose(mass,mass_reference,atol=2e-12,rtol=0)
-                            result=fit(d[ids],n[ids],v[ids],2,normal_weight=lam,objective='hard_min')
+                            split_mass=fitting_mass(aa)
+                            if mass_mode in ('tau','w'):
+                                np.testing.assert_allclose(np.bincount(ids,split_mass,minlength=len(d)),base_mass,atol=2e-12,rtol=0)
+                            result=fit(d[ids],n[ids],v[ids],2,normal_weight=lam,objective='hard_min',member_mass=split_mass)
+                            objective_change=abs(base['objective']-result['objective'])
+                            if mass_mode in ('tau','w'):assert objective_change<=2e-10
                             pos=np.r_[0,np.cumsum(mult)[:-1]];labels=np.asarray(result['labels'])[pos]
                             known=base_known&(labels[i]>=0)&(labels[j]>=0)
                             same=(labels[i]==labels[j])&(labels[i]>=0)&(labels[j]>=0)
                             changed=known&(same!=base_same)
-                            row=dict(input_dir=folder.name,view=path.stem,ray=int(ray),normal_weight=lam,
+                            row=dict(input_dir=folder.name,view=path.stem,ray=int(ray),normal_weight=lam,member_measure=mass_mode,
                                 strategy=strategy,original_members=len(d),copies=copies,target_member=target,
                                 target_gaussian_id=int(z['gaussian_id'][a+target]),target_original_w=float(w[target]),
+                                target_alpha=float(alpha[target]),eligible_members=len(eligible),
                                 target_original_mass_fraction=float(w[target]/w.sum()),
                                 known_original_pairs=int(known.sum()),changed_original_pairs=int(changed.sum()),
                                 changed_pair_fraction=float(changed.sum()/known.sum()) if known.any() else None,
@@ -262,6 +274,7 @@ def ray_clone_scene(inputs, out):
                                 original_unknown_before=int((base_labels<0).sum()),original_unknown_after=int((labels<0).sum()),
                                 unique_optimum_before=base['near_optimal_count']==1,unique_optimum_after=result['near_optimal_count']==1,
                                 collapsed_before=base['collapsed'],collapsed_after=result['collapsed'],
+                                absolute_objective_change=objective_change,
                                 replay_max_error=float(np.abs(rendered-reference).max()),
                                 original_mass_max_error=float(np.abs(mass-mass_reference).max()))
                             rows.append(row)
@@ -274,20 +287,24 @@ def ray_clone_scene(inputs, out):
     for strategy,lam in itertools.product(('max_original_w','min_original_w_eligible'),(0.,1.)):
         part=[r for r in rows if r['strategy']==strategy and r['normal_weight']==lam]
         unique=[r for r in part if r['unique_optimum_before'] and r['unique_optimum_after']]
-        summary.append(dict(strategy=strategy,normal_weight=lam,cases=len(part),
+        summary.append(dict(strategy=strategy,normal_weight=lam,member_measure=mass_mode,cases=len(part),
             changed_cases=sum(r['changed_original_pairs']>0 for r in part),
             joint_unique_optimum_cases=len(unique),unique_changed_cases=sum(r['changed_original_pairs']>0 for r in unique),
             **{key:float(np.mean([r[key] for r in part if r[key] is not None])) for key in
                 ('changed_pair_fraction','changed_original_pair_mass_fraction','target_original_mass_fraction','original_unknown_before','original_unknown_after')},
-            max_replay_error=max(r['replay_max_error'] for r in part),max_original_mass_error=max(r['original_mass_max_error'] for r in part)))
+            max_replay_error=max(r['replay_max_error'] for r in part),max_original_mass_error=max(r['original_mass_max_error'] for r in part),
+            max_objective_change=max(r['absolute_objective_change'] for r in part)))
     write_csv(out/'summary.csv',summary)
     (out/'witnesses.json').write_text(json.dumps(details),encoding='utf-8')
-    return dict(inputs=manifests,per_view_rays=8,normal_weights=[0.,1.],conditional_K=2,
+    return dict(inputs=manifests,per_view_rays=8,normal_weights=[0.,1.],conditional_K=2,member_measure=mass_mode,
         evidence='First eight of the existing randomly sampled rays per view, not a new independent scene sample. '
         'Single accepted-ray alpha algebra only; no host renderer or globally equivalent Gaussian-scene claim. '
-        'One eligible member cloned four times adjacently; max/min original w choose targets, not fitting weights. '
+        'One eligible member cloned four times adjacently; both max/min original w targets restricted to eligible members. '
         'All original-member contribution masses and alpha-derived opacity/depth/normal moments preserved in float64. '
         'Changed pairs require known labels both before and after; unknown/collapse separately reported. '
+        'Positive fitting mass is an explicit ablation, not physical support: uniform, alpha, tau=-log(1-alpha), or alpha-derived float64 w=Talpha. '
+        'For tau/w both sides use matching float64 mass; source float32 w only selects targets and describes pair changes. '
+        'Additive mass makes this constructed split invariant by design, not evidence of accurate membership. '
         'Fixed conditional K2 sensitivity, not physical accuracy. Pair-mass change is descriptive original rendering weight, not support truth.')
 
 
@@ -296,12 +313,14 @@ if __name__=='__main__':
     p.add_argument('--mechanism',action='store_true');p.add_argument('--imbalance',action='store_true')
     p.add_argument('--clone-control',action='store_true')
     p.add_argument('--ray-clone-input',action='append')
+    p.add_argument('--member-mass',choices=('uniform','alpha','tau','w'),default='uniform')
     p.add_argument('--input',action='append')
     p.add_argument('--output',required=True);p.add_argument('--repeats',type=int,default=20)
     p.add_argument('--objective',choices=('soft_uniform','hard_min'),default='soft_uniform')
     p.add_argument('--single-force-two',action='store_true',help='Wrong-K stress on the 12 single-source conditions only')
     args=p.parse_args();out=Path(args.output)
     if args.ray_clone_input and args.objective!='hard_min':p.error('--ray-clone-input requires --objective hard_min')
+    if args.member_mass!='uniform' and not args.ray_clone_input:p.error('--member-mass only applies to --ray-clone-input')
     if sum(map(bool,(args.mechanism,args.imbalance,args.input,args.clone_control,args.ray_clone_input)))!=1:p.error('Choose one probe mode')
     if out.exists() and any(out.iterdir()):raise FileExistsError(out)
     out.mkdir(parents=True,exist_ok=True)
@@ -309,7 +328,7 @@ if __name__=='__main__':
     metadata=(mechanism(out,args.repeats,objective=args.objective,single_force_two=args.single_force_two)
               if args.mechanism else imbalance(out,args.objective) if args.imbalance else
               clone_control(out,args.objective) if args.clone_control else
-              ray_clone_scene(args.ray_clone_input,out) if args.ray_clone_input else scenes(args.input,out,args.objective))
+              ray_clone_scene(args.ray_clone_input,out,args.member_mass) if args.ray_clone_input else scenes(args.input,out,args.objective))
     metadata['objective']=args.objective
     metadata['responsibility_note']='Softmax energy assignments; for hard_min they are post-fit descriptions, not the optimized objective.'
     root=Path(__file__).parent
