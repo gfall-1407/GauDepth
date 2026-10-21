@@ -1,0 +1,5 @@
+﻿batch,scan,views,random_rays,method,eta,angle,mean_groups,mean_members,mean_interleaved_group_pairs,run_commit,evidence
+1,scan24,1,256,depth,0.01,15.0,4.57421875,96.2578125,0.0,6fd787f1350c6f4eff0c2689d89829007bf590bc,exploratory_no_independent_layer_labels
+1,scan24,1,256,depth_normal,0.01,15.0,23.31640625,96.2578125,67.63671875,6fd787f1350c6f4eff0c2689d89829007bf590bc,exploratory_no_independent_layer_labels
+1,scan105,1,256,depth,0.01,15.0,5.453125,73.328125,0.0,6fd787f1350c6f4eff0c2689d89829007bf590bc,exploratory_no_independent_layer_labels
+1,scan105,1,256,depth_normal,0.01,15.0,24.16015625,73.328125,48.59765625,6fd787f1350c6f4eff0c2689d89829007bf590bc,exploratory_no_independent_layer_labels
