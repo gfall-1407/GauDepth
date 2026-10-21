@@ -115,15 +115,47 @@ def scenes(inputs,out):
                 'Energy and entropy are model diagnostics, not calibrated confidence or geometric accuracy.')
 
 
+def imbalance(out):
+    """Fixed two prototypes; change only how often each is represented."""
+    rows=[];details=[]
+    for na,nb in ((12,12),(4,20),(2,22)):
+        truth=np.r_[np.zeros(na,int),np.ones(nb,int)]
+        d=1.+.005*truth
+        theta=np.deg2rad(30.*truth)
+        n=np.c_[np.sin(theta),np.zeros(len(truth)),-np.cos(theta)]
+        for lam in (0.,1.):
+            result=fit(d,n,np.ones(len(d),bool),2,normal_weight=lam)
+            D=2.5*np.log1p(1./4)+lam
+            mixed=np.log(2.)-np.logaddexp(0.,-D)
+            repeated_majority=na/(na+nb)*D
+            repeated_minority=nb/(na+nb)*D
+            assert np.isclose(result['objective'],min(mixed,repeated_majority,repeated_minority),atol=1e-10,rtol=0)
+            rows.append(dict(origin_A_members=na,origin_B_members=nb,normal_weight=lam,
+                             prototype_energy_gap=D,analytic_mixed_loss=mixed,
+                             analytic_repeated_majority_loss=repeated_majority,
+                             minority_collapse_threshold=mixed/D,
+                             prototype_A_label=result['labels'][0],prototype_B_label=result['labels'][na],
+                             **stats(result)))
+            details.append(dict(origin_A_members=na,origin_B_members=nb,**result))
+    write_csv(out/'summary.csv',rows)
+    (out/'assignments.json').write_text(json.dumps(details),encoding='utf-8')
+    return dict(K=2,depth_prototypes=[1.,1.005],direction_gap_degrees=30.,noise=0.,
+                evidence='Same unique geometric proposals, different Gaussian multiplicities. '
+                'Equal-prior soft-mixture objective may duplicate the majority hypothesis despite known K. '
+                'Collapse is abstention, not confident false membership. Exact analytic three-solution check.')
+
+
 if __name__=='__main__':
     p=argparse.ArgumentParser(description=__doc__)
-    p.add_argument('--mechanism',action='store_true');p.add_argument('--input',action='append')
+    p.add_argument('--mechanism',action='store_true');p.add_argument('--imbalance',action='store_true')
+    p.add_argument('--input',action='append')
     p.add_argument('--output',required=True);p.add_argument('--repeats',type=int,default=20)
     args=p.parse_args();out=Path(args.output)
-    if bool(args.mechanism)==bool(args.input):p.error('Choose --mechanism or --input')
+    if sum(map(bool,(args.mechanism,args.imbalance,args.input)))!=1:p.error('Choose --mechanism, --imbalance, or --input')
     if out.exists() and any(out.iterdir()):raise FileExistsError(out)
     out.mkdir(parents=True,exist_ok=True)
-    metadata=mechanism(out,args.repeats) if args.mechanism else scenes(args.input,out)
+    metadata=(mechanism(out,args.repeats) if args.mechanism else
+              imbalance(out) if args.imbalance else scenes(args.input,out))
     root=Path(__file__).parent
     metadata.update(source_sha256={n:sha(root/n) for n in
         ('competition_probe.py','latent_competition.py','mechanism_sweep.py','analyze.py')})
