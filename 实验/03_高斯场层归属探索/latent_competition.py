@@ -1,4 +1,4 @@
-"""Finite joint-member hypothesis search; CPU only, no weights or depth readout.
+"""Finite joint-member hypothesis search; CPU only, optional fitting mass, no depth readout.
 
 Responsibilities are relative assignments in this fixed-energy model, not calibrated
 probabilities. Hypothesis members are internal hypotheses, not physical surfaces.
