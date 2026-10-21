@@ -238,8 +238,13 @@ def sample(args):
             # Slightly looser than scalar replay: CPU separate mul/add versus CUDA FMA,
             # followed by normalization, can amplify cancellation near zero normals.
             torch.testing.assert_close(torch.from_numpy(normal_replay), torch.from_numpy(normal_target),
-                                       rtol=2e-4, atol=2e-5, equal_nan=False)
+                                       rtol=2e-4, atol=2e-5, equal_nan=True)
             normal_error = np.abs(normal_replay - normal_target)
+            # Preserve invalid source normals and matching host nonfinite outputs explicitly.
+            # The assert still rejects finite/nonfinite mismatches and unequal infinities.
+            normal_error_max = [float(col[np.isfinite(col)].max()) if np.isfinite(col).any() else None
+                                for col in normal_error.T]
+            finite_lengths = normal_length[np.isfinite(normal_length)]
             name = f'view_{vi:03d}.npz'
             # Each view is committed to disk before proceeding to the next one.
             temporary = output / (name + '.tmp')
@@ -263,8 +268,9 @@ def sample(args):
                       camera_center=camera.camera_center.cpu().tolist(), capacity=K,
                       overflow_retries=retries, total_members=len(gids), invalid_normal=int((~valid).sum()),
                       replay_max_abs=errors.max(axis=0).tolist(),
-                      normal_replay_max_abs=normal_error.max(axis=0).tolist(),
-                      normal_min_accumulated_length=float(normal_length.min()),
+                      normal_replay_max_abs=normal_error_max,
+                      normal_nonfinite_host_rays=int((~np.isfinite(normal_target).all(axis=1)).sum()),
+                      normal_min_accumulated_length=float(finite_lengths.min()) if len(finite_lengths) else None,
                       npz_sha256=sha256(output / name))
             metadata['views'].append(vm)
             atomic_json(output / 'metadata.json', metadata)
