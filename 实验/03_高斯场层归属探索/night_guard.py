@@ -159,6 +159,8 @@ def command_run(args):
     state_dir = Path(args.state_dir)
     deadline_path = state_dir / "deadline.json"
     state_path = state_dir / "status.json"
+    if deadline_path.exists() or state_path.exists():
+        raise ValueError("状态目录已有 deadline.json 或 status.json，拒绝覆盖")
     if args.simulate_hostname and not args.dry_run:
         raise ValueError("--simulate-hostname 只允许 dry-run")
     observed = args.simulate_hostname or None
