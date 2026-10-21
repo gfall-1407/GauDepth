@@ -30,6 +30,15 @@ def weighted_pair_score(truth, labels, weights):
     return 2*tp/(2*tp+fp+fn) if 2*tp+fp+fn>0 else None
 
 
+def origin_pair_precision(truth, labels, origin):
+    """Penalize cross-origin merging even when within-origin recall is perfect."""
+    i,j=np.triu_indices(len(truth),1)
+    pred=(labels[i]==labels[j])&(labels[i]>=0)&(labels[j]>=0)
+    tp=int((pred&(truth[i]==origin)&(truth[j]==origin)).sum())
+    fp=int((pred&(truth[i]!=truth[j])&((truth[i]==origin)|(truth[j]==origin))).sum())
+    return tp/(tp+fp) if tp+fp else None
+
+
 def run(inputs,out,measures=('uniform',),objective='soft_uniform'):
     if out.exists() and any(out.iterdir()):raise FileExistsError(out)
     rows=[];manifests=[];seen=set()
@@ -40,6 +49,7 @@ def run(inputs,out,measures=('uniform',),objective='soft_uniform'):
             config=item['config'];case=int(config['case_index'])
             assert case not in seen,f'Duplicate case {case}'
             seen.add(case);path=folder/item['file'];assert sha(path)==item['npz_sha256']
+            label_records=[]
             with np.load(path,allow_pickle=False) as z:
                 for ray in range(len(z['offsets'])-1):
                     if z['qualitative'][ray]:continue
@@ -65,6 +75,8 @@ def run(inputs,out,measures=('uniform',),objective='soft_uniform'):
                                 result['collapsed'] if result else None)
                     total=float(w.astype(float).sum())
                     origin_mass=[float(w[truth==k].astype(float).sum()) for k in range(len(config['theta_deg']))]
+                    label_records.append(dict(ray=ray,gaussian_id=z['gaussian_id'][a:b].tolist(),
+                        truth_origin=truth.tolist(),labels={name:value[0].tolist() for name,value in labels_by_method.items()}))
                     for method,(labels,entropy,collapsed) in labels_by_method.items():
                         score=pair_metrics(truth,labels)
                         source_recalls=[]
@@ -81,16 +93,20 @@ def run(inputs,out,measures=('uniform',),objective='soft_uniform'):
                             original_pair_mass_f1=weighted_pair_score(truth,labels,w),
                             source0_pair_recall=source_recalls[0],
                             source1_pair_recall=source_recalls[1] if len(source_recalls)>1 else None,
+                            source0_pair_precision=origin_pair_precision(truth,labels,0),
+                            source1_pair_precision=origin_pair_precision(truth,labels,1) if len(source_recalls)>1 else None,
                             groups=len(set(labels.tolist())-{-1}),unknown_members=int((labels<0).sum()),
                             mean_entropy=entropy,collapsed=collapsed))
             manifests.append(dict(file=str(path),sha256=sha(path),metadata_sha256=sha(meta_path),
                                   runtime_codeHEAD=meta['codeHEAD']))
             print('origin scores case',case,flush=True)
             out.mkdir(parents=True,exist_ok=True);write_csv(out/'rays.csv',rows)
+            (out/f'labels_{case:03d}.json').write_text(json.dumps(dict(config=config,source_file=str(path),
+                source_sha256=sha(path),rays=label_records)),encoding='utf-8')
     summaries=[]
     metrics=('pair_f1','original_pair_mass_f1','false_merge_pairs','false_split_pairs','groups',
              'unknown_members','both_origins_accepted','min_original_origin_mass_fraction',
-             'source0_pair_recall','source1_pair_recall','mean_entropy','collapsed')
+             'source0_pair_recall','source1_pair_recall','source0_pair_precision','source1_pair_precision','mean_entropy','collapsed')
     for case in sorted(seen):
         for method in sorted(set(r['method'] for r in rows)):
             part=[r for r in rows if r['case_index']==case and r['method']==method]
