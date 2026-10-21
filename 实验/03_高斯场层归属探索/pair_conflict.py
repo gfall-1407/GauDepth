@@ -33,6 +33,9 @@ def valid_members(d, w, n, nv):
 
 
 def pair_row(d, w, n, nv, scope, refz, band_z, angle):
+    # Match analyze.group_ray's float64 pair calculations, including tight tolerances.
+    d, w, n = (np.asarray(x, dtype=np.float64) for x in (d, w, n))
+    nv = np.asarray(nv, dtype=bool)
     ok, depth, pos, normal, nl = valid_members(d, w, n, nv)
     depth_normal = depth & normal
     if scope == 'all':
