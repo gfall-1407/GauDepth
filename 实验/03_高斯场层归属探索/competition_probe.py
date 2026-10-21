@@ -10,6 +10,7 @@ import time
 import numpy as np
 
 from analyze import pair_metrics
+from analyze import group_ray
 from latent_competition import fit
 from mechanism_sweep import proposals
 
@@ -149,20 +150,83 @@ def imbalance(out,objective='soft_uniform'):
                 'Collapse is abstention, not confident false membership. Exact analytic three-solution check.')
 
 
+def clone_control(out, objective):
+    """Exploratory single-ray representation counterexample, NOT scene densification."""
+    x=np.array([0.,.7,1.9,3.2]);depth=np.exp(x*np.log1p(.005))
+    normal=np.tile([0.,0.,-1.],(4,1));color=np.array([[1.,0.,0.],[0.,1.,0.],[0.,0.,1.],[.25,.5,.75]])
+    energy=2.5*np.log1p(((np.log(depth)[:,None]-np.log(depth))/np.log1p(.005))**2/4.)
+    candidates=list(itertools.combinations_with_replacement(range(4),2))
+    def replay(ids,alpha):
+        T=np.r_[1.,np.cumprod(1.-alpha)[:-1]];w=T*alpha
+        assert np.all(alpha>=1/255) and np.all(T*(1-alpha)>=1e-4)
+        return np.r_[w.sum(),w@depth[ids],w@color[ids],w@normal[ids]],np.bincount(ids,w,minlength=4)
+    reference,reference_mass=replay(np.arange(4),np.full(4,.2))
+    baseline=fit(depth,normal,np.ones(4,bool),2,normal_weight=0.,objective=objective)
+    base=np.asarray(baseline['labels'])
+    def relation(labels):
+        i,j=np.triu_indices(4,1)
+        return (labels[i]==labels[j])&(labels[i]>=0)&(labels[j]>=0)
+    baseline_relation=relation(base);rows=[];details=[]
+    for duplicate,copies in itertools.product(range(4),(1,2,4,8,16)):
+        multiplicity=np.ones(4,int);multiplicity[duplicate]=copies
+        ids=np.repeat(np.arange(4),multiplicity)
+        alpha=np.full(len(ids),.2)
+        alpha[ids==duplicate]=-np.expm1(np.log1p(-.2)/copies)
+        rendered,mass=replay(ids,alpha)
+        np.testing.assert_allclose(rendered,reference,atol=2e-14,rtol=0)
+        np.testing.assert_allclose(mass,reference_mass,atol=2e-14,rtol=0)
+        result=fit(depth[ids],normal[ids],np.ones(len(ids),bool),2,normal_weight=0.,objective=objective)
+        positions=np.r_[0,np.cumsum(multiplicity)[:-1]]
+        labels=np.asarray(result['labels'])[positions]
+        vals=[];partitions=[]
+        for a,b in candidates:
+            E=energy[:,[a,b]]
+            cost=np.minimum(E[:,0],E[:,1]) if objective=='hard_min' else np.log(2.)-np.logaddexp(-E[:,0],-E[:,1])
+            vals.append(float(cost@multiplicity/multiplicity.sum()))
+            pred=np.argmin(E,axis=1);pred[np.isclose(E[:,0],E[:,1],atol=1e-12,rtol=0)]=-1
+            partitions.append(relation(pred))
+        np.testing.assert_allclose(result['objective'],min(vals),atol=1e-12,rtol=0)
+        old_partition_optimal=any(np.array_equal(p,baseline_relation) for value,p in zip(vals,partitions) if value<=min(vals)+1e-10)
+        greedy=group_ray(depth[ids],normal[ids],np.ones(len(ids),bool),geometry=False)[0][positions]
+        greedy_base=group_ray(depth,normal,np.ones(4,bool),geometry=False)[0]
+        assert np.array_equal(relation(greedy),relation(greedy_base))
+        rows.append(dict(duplicated_prototype=duplicate,copies=copies,members=len(ids),
+            prototype_labels=json.dumps(labels.tolist()),baseline_labels=json.dumps(base.tolist()),
+            changed_original_pairs=int((relation(labels)!=baseline_relation).sum()),
+            baseline_partition_still_optimal=old_partition_optimal,
+            replay_max_error=float(np.abs(rendered-reference).max()),
+            prototype_mass_max_error=float(np.abs(mass-reference_mass).max()),
+            original_prototype_unknown=int((labels<0).sum()),**stats(result)))
+        details.append(dict(duplicated_prototype=duplicate,copies=copies,original_ids=ids.tolist(),
+            alpha=alpha.tolist(),rendered_moments=rendered.tolist(),**result))
+    write_csv(out/'summary.csv',rows)
+    (out/'assignments.json').write_text(json.dumps(details),encoding='utf-8')
+    return dict(K=2,log_depth_units=x.tolist(),base_alpha=.2,base_depth=depth.tolist(),
+        evidence='Constructed single-ray counterexample chosen during exploration. Adjacent clones use '
+        'alpha_c=1-(1-alpha)^(1/copies), preserving front-to-back opacity, depth/RGB/normal moments '
+        'and summed original-prototype contribution. All clones remain accepted. '
+        'This alpha identity is pixel-specific, not a globally equivalent Gaussian scene or host replay. '
+        'Finite objectives independently enumerated on the four prototypes with multiplicities. '
+        'baseline_partition_still_optimal checks all optima within 1e-10, separating tie-breaking from a changed objective. '
+        'Exact-feature deduplication would remove this constructed multiplicity effect but is not validated for near-duplicate real Gaussians.')
+
+
 if __name__=='__main__':
     p=argparse.ArgumentParser(description=__doc__)
     p.add_argument('--mechanism',action='store_true');p.add_argument('--imbalance',action='store_true')
+    p.add_argument('--clone-control',action='store_true')
     p.add_argument('--input',action='append')
     p.add_argument('--output',required=True);p.add_argument('--repeats',type=int,default=20)
     p.add_argument('--objective',choices=('soft_uniform','hard_min'),default='soft_uniform')
     p.add_argument('--single-force-two',action='store_true',help='Wrong-K stress on the 12 single-source conditions only')
     args=p.parse_args();out=Path(args.output)
-    if sum(map(bool,(args.mechanism,args.imbalance,args.input)))!=1:p.error('Choose --mechanism, --imbalance, or --input')
+    if sum(map(bool,(args.mechanism,args.imbalance,args.input,args.clone_control)))!=1:p.error('Choose one probe mode')
     if out.exists() and any(out.iterdir()):raise FileExistsError(out)
     out.mkdir(parents=True,exist_ok=True)
     if args.single_force_two and not args.mechanism:p.error('--single-force-two requires --mechanism')
     metadata=(mechanism(out,args.repeats,objective=args.objective,single_force_two=args.single_force_two)
-              if args.mechanism else imbalance(out,args.objective) if args.imbalance else scenes(args.input,out,args.objective))
+              if args.mechanism else imbalance(out,args.objective) if args.imbalance else
+              clone_control(out,args.objective) if args.clone_control else scenes(args.input,out,args.objective))
     metadata['objective']=args.objective
     metadata['responsibility_note']='Softmax energy assignments; for hard_min they are post-fit descriptions, not the optimized objective.'
     root=Path(__file__).parent
