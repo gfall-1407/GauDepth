@@ -43,7 +43,8 @@ def mechanism(out, repeats=20, seed=20261022,objective='soft_uniform',single_for
         directions = (0.,) if sources == 1 else (0.,10.,30.,60.)
         for gap, angle, dz, dn in itertools.product(gaps,directions,(0.,.002,.008),(0.,5.,15.,30.)):
             config = dict(sources=sources, depth_gap=gap, direction_gap_deg=angle,
-                          depth_noise=dz, normal_noise_deg=dn, oracle_K=2 if single_force_two else sources)
+                          depth_noise=dz, normal_noise_deg=dn, oracle_K=sources,
+                          given_K=2 if single_force_two else sources)
             for rep in range(repeats):
                 rng=np.random.default_rng(seed+conditions*repeats+rep)
                 d,n,truth=proposals(rng,sources,gap,angle,dz,dn,12)
@@ -62,9 +63,9 @@ def mechanism(out, repeats=20, seed=20261022,objective='soft_uniform',single_for
     keys=('pair_f1','false_merge_pairs','false_split_pairs','objective','mean_entropy',
           'collapsed','unknown_count','hard_groups','near_optimal_count')
     configs=sorted(set(tuple(r[k] for k in
-        ('sources','depth_gap','direction_gap_deg','depth_noise','normal_noise_deg','oracle_K','normal_weight')) for r in rows))
+        ('sources','depth_gap','direction_gap_deg','depth_noise','normal_noise_deg','oracle_K','given_K','normal_weight')) for r in rows))
     for values in configs:
-        fields=('sources','depth_gap','direction_gap_deg','depth_noise','normal_noise_deg','oracle_K','normal_weight')
+        fields=('sources','depth_gap','direction_gap_deg','depth_noise','normal_noise_deg','oracle_K','given_K','normal_weight')
         config=dict(zip(fields,values));part=[r for r in rows if all(r[k]==v for k,v in config.items())]
         summary.append(dict(**config,repeats=len(part),**{f'mean_{k}':float(np.mean([r[k] for r in part])) for k in keys}))
     write_csv(out/'summary.csv',summary)
@@ -143,8 +144,8 @@ def imbalance(out,objective='soft_uniform'):
     write_csv(out/'summary.csv',rows)
     (out/'assignments.json').write_text(json.dumps(details),encoding='utf-8')
     return dict(K=2,depth_prototypes=[1.,1.005],direction_gap_degrees=30.,noise=0.,
-                evidence='Same unique geometric proposals, different Gaussian multiplicities. '
-                'Equal-prior soft-mixture objective may duplicate the majority hypothesis despite known K. '
+                evidence='Same unique geometric proposals, different Gaussian multiplicities; objective identifies the ablation. '
+                'Uniform-soft may duplicate the majority hypothesis; hard-min is a matched objective control. '
                 'Collapse is abstention, not confident false membership. Exact analytic three-solution check.')
 
 
