@@ -68,6 +68,11 @@ def run(folder,out):
                 a,b=map(int,z['offsets'][ri:ri+2]);ids=z['gaussian_id'][a:b]
                 xy=z['pixel_xy'][ri];ray=np.r_[(xy-31.5)/focal,1.]
                 sigma=ray_sigma(z,ray)[ids];depth=z['depth'][a:b];truth=z['truth_origin'][a:b]
+                # Oracle diagnostic only; labels do NOT set the response-band multiplier.
+                pair_scale=np.abs(depth[:,None]-depth[None,:])/(sigma[:,None]+sigma[None,:])
+                same=truth[:,None]==truth[None,:]
+                within=float(pair_scale[same].max()) if len(depth) else 0.
+                union=float(pair_scale.max()) if len(depth) else 0.
                 for c in (1.,2.,3.):
                     lab,unique,anchors,support=organize(depth,sigma,c)
                     for name,labels in [('minimum_band_partition',lab),('unique_band_support',unique)]:
@@ -75,6 +80,7 @@ def run(folder,out):
                         rows.append(dict(case_index=cfg['case_index'],kind=cfg['kind'],gap=cfg['gap'],
                             center_noise=cfg['center_noise'],normal_noise_deg=cfg['normal_noise_deg'],
                             ray=ri,c=c,method=name,anchors=len(anchors),members=len(depth),
+                            critical_c_within_origin=within,critical_c_all_members=union,
                             pair_f1=score['f1'],false_merge_pairs=score['fp'],false_split_pairs=score['fn'],
                             unknown_members=int((labels<0).sum()),multiple_support_members=int((support.sum(axis=1)>1).sum())))
                     witnesses.append(dict(case_index=cfg['case_index'],ray=ri,c=c,anchors=anchors,
@@ -86,7 +92,8 @@ def run(folder,out):
         part=[r for r in rows if (r['case_index'],r['c'],r['method'])==key]
         config={k:part[0][k] for k in ('case_index','kind','gap','center_noise','normal_noise_deg','c','method')}
         summaries.append(dict(**config,rays=len(part),**{f'mean_{k}':float(np.mean([r[k] for r in part]))
-            for k in ('anchors','pair_f1','false_merge_pairs','false_split_pairs','unknown_members','multiple_support_members')}))
+            for k in ('anchors','pair_f1','false_merge_pairs','false_split_pairs','unknown_members',
+                      'multiple_support_members','critical_c_within_origin','critical_c_all_members')}))
     write_csv(out/'summary.csv',summaries)
     (out/'witnesses.json').write_text(json.dumps(witnesses),encoding='utf-8')
     (out/'metadata.json').write_text(json.dumps(dict(input_metadata_sha256=sha(folder/'metadata.json'),
