@@ -57,12 +57,14 @@ def summarize(counts, oracle=False, cross=None):
     if cross is None:
         eligible = known >= 2
         comparisons = known*(known-1)//2
+        raw_comparisons = raw*(raw-1)//2
         disagreements = same*(known-same)
     else:
         # cross columns: sum known_view^2, sum same_view*diff_view, known/raw views.
         repeat_raw = cross[:, 3] >= 2
         eligible = cross[:, 2] >= 2
         comparisons = (known*known-cross[:, 0])//2
+        raw_comparisons = (raw*raw-cross[:, 4])//2
         disagreements = same*(known-same)-cross[:, 1]
     eligible &= comparisons > 0
     flips = eligible & (same > 0) & (same < known)
@@ -80,6 +82,7 @@ def summarize(counts, oracle=False, cross=None):
                always_incompatible_pairs=int((eligible & (comp == 0)).sum()),
                compatibility_changing_pairs=int((eligible & (comp > 0) & (comp < known)).sum()),
                compared_occurrence_pairs=int(comparisons[eligible].sum()),
+               raw_compared_occurrence_pairs=int(raw_comparisons.sum()),
                disagreeing_occurrence_pairs=int(disagreements[eligible].sum()),
                sum_pair_disagreement_rate=float((disagreements[eligible]/comparisons[eligible]).sum()))
     if oracle:
@@ -94,6 +97,8 @@ def summarize(counts, oracle=False, cross=None):
 def ratios(row):
     for output, a, b in (
         ('known_observation_coverage', 'known_pair_observations', 'raw_pair_observations'),
+        ('known_comparison_coverage', 'compared_occurrence_pairs', 'raw_compared_occurrence_pairs'),
+        ('repeated_pair_coverage', 'repeated_known_pairs', 'repeated_raw_pairs'),
         ('same_observation_fraction', 'same_pair_observations', 'known_pair_observations'),
         ('flip_pair_fraction', 'flip_pairs', 'repeated_known_pairs'),
         ('equal_pair_disagreement_fraction', 'sum_pair_disagreement_rate', 'repeated_known_pairs'),
@@ -106,11 +111,11 @@ def ratios(row):
 def across_views(views):
     # Caller must verify identical model SHA; keys are local to one model/case.
     keys, counts = reduce_pairs(views)
-    extra = np.zeros((len(keys), 4), np.int64)
+    extra = np.zeros((len(keys), 5), np.int64)
     for vk, vc in views:
         at = np.searchsorted(keys, vk)
         nk, ns = vc[:, 1], vc[:, 3]
-        extra[at] += np.column_stack((nk*nk, ns*(nk-ns), nk > 0, vc[:, 0] > 0))
+        extra[at] += np.column_stack((nk*nk, ns*(nk-ns), nk > 0, vc[:, 0] > 0, vc[:, 0]**2))
     return counts, extra
 
 
@@ -142,6 +147,8 @@ def self_check():
                         comparisons += 1; disagreements += sa != sb
     assert rr['compared_occurrence_pairs'] == comparisons
     assert rr['disagreeing_occurrence_pairs'] == disagreements
+    assert rr['raw_compared_occurrence_pairs'] == 11
+    assert rr['known_comparison_coverage'] == 7/11
     # Group label renaming changes no pair statistic.
     renamed = np.where(b >= 0, 17+5*b, -1)
     qq = pair_arrays(np.array([4, 9, 2]), d, normal, valid, renamed, False)
@@ -203,7 +210,7 @@ def main():
                 sources.append(dict(path=str(path), sha256=expected))
                 data = np.load(path, allow_pickle=False)
                 for method in view_results:
-                    geometry = method == 'depth_normal'; parts = []
+                    geometry = method == 'depth_normal'; parts = []; ray_records = []
                     for ray in range(len(data['offsets'])-1):
                         if data['qualitative'][ray]: continue
                         a, b = map(int, data['offsets'][ray:ray+2]); sl = slice(a, b)
@@ -217,6 +224,7 @@ def main():
                             np.testing.assert_array_equal(ids, saved['gaussian_id'])
                             labels = np.asarray(saved['labels'])
                         parts.append(pair_arrays(ids, d, n, v, labels, geometry, truth))
+                        ray_records.append((ray, ids, labels))
                     keys, counts = reduce_pairs(parts)
                     view_results[method].append((keys, counts))
                     row = dict(dataset='analytic_cpu' if is_analytic else 'real_host', model=scene,
@@ -226,8 +234,22 @@ def main():
                     # A few deterministic, auditable pair IDs; full inputs retained, no huge pair table.
                     target = (counts[:, 1] >= 2) & (counts[:, 2] == counts[:, 1]) & (counts[:, 3] > 0) & (counts[:, 3] < counts[:, 1])
                     for at in np.flatnonzero(target)[:3]:
+                        pair = [int(keys[at] >> np.uint64(32)), int(keys[at] & np.uint64(0xffffffff))]
+                        examples = {}
+                        for (ray, ids, labels), (rk, rc) in zip(ray_records, parts):
+                            where = np.flatnonzero(rk == keys[at])
+                            if not len(where): continue
+                            relation = 'same' if rc[where[0], 3] else 'different'
+                            if relation in examples: continue
+                            ix = [int(np.flatnonzero(ids == gid)[0]) for gid in pair]
+                            offset = int(data['offsets'][ray])
+                            examples[relation] = dict(ray=ray, pixel=data['pixel_xy'][ray].tolist(),
+                                pair_depth=data['depth'][offset+np.asarray(ix)].tolist(),
+                                pair_labels=labels[ix].tolist(), accepted_members=len(ids),
+                                groups_for_pair=[ids[labels == labels[i]].tolist() for i in ix])
+                            if len(examples) == 2: break
                         witnesses.append(dict(model=scene, view=path.stem, method=method,
-                            gaussian_ids=[int(keys[at] >> np.uint64(32)), int(keys[at] & np.uint64(0xffffffff))],
+                            gaussian_ids=pair, examples=examples,
                             raw=int(counts[at, 0]), known=int(counts[at, 1]), compatible=int(counts[at, 2]), same=int(counts[at, 3])))
                 data.close()
         if not is_analytic:
@@ -239,7 +261,7 @@ def main():
         print(scene, 'finished', flush=True)
     summary = []
     integer_keys = [k for k in rows[0] if k not in ('dataset', 'model', 'scope', 'view', 'method')
-                    and not k.endswith('_fraction') and k != 'known_observation_coverage']
+                    and not k.endswith(('_fraction', '_coverage'))]
     for dataset, scope, method in sorted(set((r['dataset'], r['scope'], r['method']) for r in rows)):
         part = [r for r in rows if (r['dataset'], r['scope'], r['method']) == (dataset, scope, method)]
         pooled = {k: sum(r[k] for r in part) if all(r[k] is not None for r in part) else None for k in integer_keys}
@@ -254,6 +276,8 @@ def main():
         'All-merge and all-singleton rules can be perfectly stable. Each model/case has its own IDs. '
         'Cross-view observations compared only within identical model SHA; camera normals never directly compared across views. '
         'Cross-ray membership may legitimately vary with local intersections. No independent sample claims. '
+        'Within-view pooled equal-pair statistics weight pair-by-view units; cross-view units are model-local unique pairs. '
+        'Known observation coverage uses all observations; known comparison coverage measures usable repeated-event comparisons. '
         'Analytic labels are construction origins; analytic CPU is not the host renderer.')
     (out/'metadata.json').write_text(json.dumps(metadata, ensure_ascii=False, indent=2), encoding='utf-8')
 
