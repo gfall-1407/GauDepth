@@ -4,6 +4,7 @@
 import argparse
 import datetime as dt
 import json
+import math
 import os
 import signal
 import socket
@@ -17,7 +18,6 @@ from zoneinfo import ZoneInfo
 
 EXPECTED_HOSTNAME = "autodl-container-d6a7459179-693ab6ee"
 EXPECTED_INSTANCE_ID = "d6a7459179-693ab6ee"
-HARD_STOP = dt.datetime(2026, 10, 22, 8, 0, tzinfo=ZoneInfo("Asia/Shanghai")).timestamp()
 POLL_SECONDS = 2
 CHILD_EXIT_LINGER = 120
 SHUTDOWN_RESERVE = 15
@@ -62,18 +62,18 @@ def validate_identity(expected_hostname, instance_id, dry_run=False, observed=No
         raise ValueError(f"hostname 不匹配：实际 {actual!r}，要求 {expected_hostname!r}")
 
 
-def parse_deadline(value, require_future=True):
+def parse_deadline(value, hard_stop, require_future=True):
     try:
         deadline = float(value)
     except (TypeError, ValueError):
         raise ValueError("deadline 必须是 Unix 时间戳")
-    if not (deadline <= HARD_STOP and (deadline > time.time() or not require_future)):
-        raise ValueError("deadline 必须晚于当前时间且不得越过 2026-10-22 08:00 北京时间")
+    if not (math.isfinite(deadline) and math.isfinite(hard_stop) and deadline <= hard_stop and (deadline > time.time() or not require_future)):
+        raise ValueError("deadline 必须有限、晚于当前时间且不得越过本批硬截止")
     return deadline
 
 
-def latest_safe_deadline(grace):
-    return HARD_STOP - grace - SHUTDOWN_RESERVE
+def latest_safe_deadline(grace,hard_stop):
+    return hard_stop - grace - SHUTDOWN_RESERVE
 
 
 def guard_is_alive(state):
@@ -169,16 +169,18 @@ def command_run(args):
         raise ValueError("run 后必须提供受控子进程命令")
     if args.grace < 0 or args.grace > 3600:
         raise ValueError("保存宽限须在 0 到 3600 秒之间")
-    deadline = parse_deadline(args.deadline_at if args.deadline_at is not None else time.time() + args.minutes * 60)
-    if args.minutes <= 0 or args.minutes > 1440:
-        raise ValueError("初始期限须为 1 到 1440 分钟")
-    deadline = min(deadline, latest_safe_deadline(args.grace))
+    if not (0 < args.minutes <= args.max_minutes <= 1440):
+        raise ValueError("须满足 0 < 初始分钟数 <= 本批最长分钟数 <= 1440")
+    started=time.time()
+    hard_stop=started+args.max_minutes*60+args.grace+SHUTDOWN_RESERVE
+    deadline = parse_deadline(args.deadline_at if args.deadline_at is not None else started + args.minutes * 60,hard_stop)
+    deadline = min(deadline, latest_safe_deadline(args.grace,hard_stop))
     if deadline <= time.time():
         raise ValueError("已无足够时间留出保存宽限与停机操作")
     if args.shutdown_command:
         raise ValueError("不调用平台 shutdown 脚本；仅允许核验后停止唯一 supervisord")
 
-    atomic_json(deadline_path, {"deadline": deadline, "hard_stop": HARD_STOP})
+    atomic_json(deadline_path, {"deadline": deadline, "hard_stop": hard_stop})
     atomic_json(state_path, {
         "mode": "dry-run" if args.dry_run else "real",
         "guard_pid": os.getpid(),
@@ -189,7 +191,8 @@ def command_run(args):
         "shutdown_method": "verified-supervisord-sigterm",
         "grace_seconds": args.grace,
         "deadline": deadline,
-        "hard_stop": HARD_STOP,
+        "hard_stop": hard_stop,
+        "max_minutes":args.max_minutes,
         "last_event": "armed",
         "updated_at": dt.datetime.now(ZoneInfo("Asia/Shanghai")).isoformat(),
     })
@@ -213,7 +216,7 @@ def command_run(args):
     while True:
         try:
             current = read_json(deadline_path)
-            observed_deadline = parse_deadline(current.get("deadline"), require_future=False)
+            observed_deadline = parse_deadline(current.get("deadline"), hard_stop, require_future=False)
             last_valid_deadline = observed_deadline
             invalid_deadline_logged = False
         except (OSError, ValueError, json.JSONDecodeError) as exc:
@@ -225,7 +228,7 @@ def command_run(args):
             child_exit_at = now
             log_event(state_path, "child_exited", child_returncode=child.returncode,
                       child_exit_linger_seconds=CHILD_EXIT_LINGER)
-        stop_at = min(last_valid_deadline, latest_safe_deadline(args.grace))
+        stop_at = min(last_valid_deadline, latest_safe_deadline(args.grace,hard_stop))
         if child_exit_at is not None:
             stop_at = min(stop_at, child_exit_at + CHILD_EXIT_LINGER)
         if now >= stop_at:
@@ -234,7 +237,7 @@ def command_run(args):
 
     log_event(state_path, "deadline_reached")
     if child is not None and (child.poll() is None or process_group_exists(child.pid)):
-        remaining = max(0, HARD_STOP - time.time() - SHUTDOWN_RESERVE)
+        remaining = max(0, hard_stop - time.time() - SHUTDOWN_RESERVE)
         stop_managed_child(child, min(args.grace, remaining), state_path)
     elif args.dry_run:
         log_event(state_path, "dry_run_would_stop_child")
@@ -276,14 +279,16 @@ def command_renew(args):
         raise ValueError("续期须为 1 到 1440 分钟")
     state_path = Path(args.state_dir) / "status.json"
     state = read_json(state_path)
+    hard_stop=float(state['hard_stop'])
+    if not math.isfinite(hard_stop):raise ValueError('本批硬截止无效')
     if not guard_is_alive(state):
         raise ValueError("没有匹配的活动 guard 进程，拒绝续期")
     requested_deadline = time.time() + args.minutes * 60
-    deadline = min(requested_deadline, latest_safe_deadline(state.get("grace_seconds", 120)))
+    deadline = min(requested_deadline, latest_safe_deadline(state.get("grace_seconds", 120),hard_stop))
     if deadline <= time.time():
         raise ValueError("已无足够时间留出保存宽限与停机操作，拒绝续期")
-    parse_deadline(deadline)
-    atomic_json(Path(args.state_dir) / "deadline.json", {"deadline": deadline, "hard_stop": HARD_STOP})
+    parse_deadline(deadline,hard_stop)
+    atomic_json(Path(args.state_dir) / "deadline.json", {"deadline": deadline, "hard_stop": hard_stop})
     log_event(state_path, "renewed", deadline=deadline)
     print(f"deadline={dt.datetime.fromtimestamp(deadline, ZoneInfo('Asia/Shanghai')).isoformat()}")
     return 0
@@ -301,7 +306,8 @@ def build_parser():
     sub = parser.add_subparsers(dest="action", required=True)
     run = sub.add_parser("run", help="启动并监护一个受控子进程")
     run.add_argument("--state-dir", required=True)
-    run.add_argument("--minutes", type=int, default=60)
+    run.add_argument("--minutes", type=int, default=30)
+    run.add_argument("--max-minutes",type=int,default=60,help="本批最长计算分钟数；硬截止含保存宽限与停机余量")
     run.add_argument("--grace", type=int, default=120)
     run.add_argument("--expected-hostname", required=True)
     run.add_argument("--instance-id", required=True)
