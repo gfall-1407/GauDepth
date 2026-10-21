@@ -85,9 +85,11 @@ def run(input_dir,baseline,out):
                     assert score is not None, 'Require at least one true pair for this mechanism probe'
                     per_ray.append(score)
                     name='conditional_normal_uniform' if lam else 'conditional_depth_uniform'
+                    if name not in record['labels']:name=name.removesuffix('_uniform')
                     baseline_scores.append(pair_metrics(actual,record['labels'][name])['f1'])
                 score=pair_metrics(truth,labels)
                 rows.append(dict(case_index=config['case_index'],kind=config['kind'],gap=config['gap'],
+                    curvature=float(config.get('curvature',0.)),generating_seed=config['seed'],
                     center_noise=config['center_noise'],normal_noise_deg=config['normal_noise_deg'],
                     scale=scale,normal_weight=lam,accepted_unique_gaussians=len(ids),oracle_K=K,
                     global_pair_f1=score['f1'],global_false_merge_pairs=score['fp'],global_false_split_pairs=score['fn'],
@@ -112,7 +114,9 @@ def run(input_dir,baseline,out):
         'No construction labels or true plane angles enter fit; labels supply K and evaluation only. '
         'Fixed two scales are a sensitivity grid, not selected from evaluation. Single-origin K1 pairing success is tautological. '
         'An axis may flip without changing its geometric plane; this unsigned angle is intentionally different from oriented ray-normal constraints. '
-        'A global Gaussian assignment assumes one construction origin across these rays, not a universal physical membership rule.'),indent=2),encoding='utf-8')
+        'A global Gaussian assignment assumes one construction origin across these rays, not a universal physical membership rule. '
+        'Near-optimal center tuple counts may include duplicate geometric planes and do not count distinct member partitions. '
+        'Curvature controls, when present in input metadata, deliberately mismatch the global planar hypothesis.'),indent=2),encoding='utf-8')
 
 
 def csv_write(path,rows):

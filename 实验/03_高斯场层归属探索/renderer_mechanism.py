@@ -19,7 +19,7 @@ ROOT = HERE.parent.parent
 sys.path.insert(0, str(ROOT))
 
 
-def cases():
+def cases(seed_offset=0,curvature=0.):
     result = []
     for kind, angles, gaps in [('single', [0.], [0.]),
                                ('parallel', [0., 0.], [.005, .02]),
@@ -27,7 +27,8 @@ def cases():
         for gap, dz, dn in itertools.product(gaps, (0., .002), (0., 15., 30.)):
             result.append(dict(kind=kind, theta_deg=angles, gap=gap,
                                center_noise=dz, normal_noise_deg=dn,
-                               seed=20261022 + len(result), case_index=len(result)))
+                               seed=20261022 + len(result)+seed_offset, case_index=len(result)))
+            if curvature:result[-1]['curvature']=float(curvature)
     return result
 
 
@@ -38,13 +39,22 @@ def generate(cfg):
     x, y = np.tile(x.ravel(), len(cfg['theta_deg'])), np.tile(y.ravel(), len(cfg['theta_deg']))
     theta = np.deg2rad(np.asarray(cfg['theta_deg'])[origin])
     z = 1. + origin * cfg['gap'] - np.tan(theta) * x
+    curvature=float(cfg.get('curvature',0.))
+    if curvature:z+=curvature*(x*x+y*y)
     z += rng.normal(0, cfg['center_noise'], len(z))
     base = np.c_[np.sin(theta), np.zeros(len(z)), np.cos(theta)]
     tangent = np.c_[np.cos(theta), np.zeros(len(z)), -np.sin(theta)]
+    bitangent=np.array([0.,1.,0.])
+    if curvature:
+        base=np.c_[np.tan(theta)-2*curvature*x,-2*curvature*y,np.ones(len(z))]
+        base/=np.linalg.norm(base,axis=1)[:,None]
+        tangent=np.c_[np.ones(len(z)),np.zeros(len(z)),-base[:,0]/base[:,2]]
+        tangent/=np.linalg.norm(tangent,axis=1)[:,None]
+        bitangent=np.cross(base,tangent)
     delta = rng.normal(0, np.deg2rad(cfg['normal_noise_deg']), len(z))
     azimuth = rng.uniform(0, 2 * np.pi, len(z))
     normals = np.cos(delta)[:, None] * base + np.sin(delta)[:, None] * (
-        np.cos(azimuth)[:, None] * tangent + np.sin(azimuth)[:, None] * [0., 1., 0.])
+        np.cos(azimuth)[:, None] * tangent + np.sin(azimuth)[:, None] * bitangent)
     # Unit wxyz quaternion taking +z to n, including the antipodal special case.
     quat = np.c_[1 + normals[:, 2], -normals[:, 1], normals[:, 0], np.zeros(len(z))]
     antipodal = np.linalg.norm(quat, axis=1) < 1e-12
@@ -89,6 +99,16 @@ def self_check():
             z0, z1 = 1 / (1 + t[0] * slope), (1 + cfg['gap']) / (1 + t[1] * slope)
             assert grid_sep > 0 and np.min(z1 - z0) > 0
             minimum.append(grid_sep)
+    # New curvature control: normals follow analytical derivatives, no truth in fitting.
+    for curvature in (20.,50.):
+        cfg=cases(1000,curvature)[18];cfg.update(center_noise=0.,normal_noise_deg=0.)
+        data=generate(cfg);mu=data['means'];origin=data['source_origin']
+        theta=np.deg2rad(np.array(cfg['theta_deg'])[origin])
+        expected_z=1.+origin*cfg['gap']-np.tan(theta)*mu[:,0]+curvature*(mu[:,0]**2+mu[:,1]**2)
+        np.testing.assert_allclose(mu[:,2],expected_z,atol=2e-7,rtol=0)
+        normal=np.c_[np.tan(theta)-2*curvature*mu[:,0],-2*curvature*mu[:,1],np.ones(len(mu))]
+        normal/=np.linalg.norm(normal,axis=1)[:,None]
+        np.testing.assert_allclose(normal,data['generated_normal'],atol=2e-7,rtol=0)
     print(json.dumps(dict(self_check='passed', cases=30, rays_per_case=81,
                           minimum_nominal_tilted_grid_separation=min(minimum),
                           torch_imported='torch' in sys.modules)))
@@ -152,7 +172,7 @@ def run_analytic(args):
         'No host/CUDA replay validation is claimed. Labels indicate construction origins only.',
         acceptance='Stable center-z order; cap alpha .99, discard alpha<1/255, reject current member and stop if next T<1e-4',
         sampling='fixed 81 pixels 28..36, image64, FoV.08, identity camera',
-        planned_cases=cases()[args.start:args.start+args.limit],cases=[])
+        planned_cases=cases(args.seed_offset,args.curvature)[args.start:args.start+args.limit],cases=[])
     atomic_json(output/'metadata.json',meta)
     for cfg in meta['planned_cases']:
         data=generate(cfg);z,alpha,normal=analytic_peak(data,rays)
@@ -251,7 +271,7 @@ def run(args):
         normal_invalid='nonfinite, norm <= 1e-8, or zero ray-plane host fallback',
         replay_tolerance=dict(rtol=2e-5, atol=2e-6), normal_replay_tolerance=dict(rtol=2e-4, atol=2e-5,
             normalize_eps=1e-12, reduction='CPU float32 multiply/add in original acceptance order; all members'),
-        planned_cases=cases()[args.start:args.start + args.limit], cases=[])
+        planned_cases=cases(args.seed_offset,args.curvature)[args.start:args.start + args.limit], cases=[])
     atomic_json(output / 'metadata.json', metadata)
     with torch.no_grad():
         for cfg in metadata['planned_cases']:
@@ -320,9 +340,13 @@ if __name__ == '__main__':
     parser.add_argument('--start', type=int, default=0, help='Starting case index; original seeds and indices retained')
     parser.add_argument('--limit', type=int, default=30, help='Number of configurations from --start, one seed each')
     parser.add_argument('--self-check', action='store_true', help='Pure NumPy geometry checks; no GPU imports or output')
+    parser.add_argument('--seed-offset',type=int,default=0,help='Explicit independent generating seed offset')
+    parser.add_argument('--curvature',type=float,default=0.,help='Shared z curvature coefficient, world-unit inverse length')
     args = parser.parse_args()
     if args.start < 0 or args.limit < 1 or args.start + args.limit > 30:
         parser.error('Require start >= 0, limit >= 1, and start + limit <= 30')
+    if not np.isfinite(args.curvature) or args.curvature<0 or args.seed_offset < -20261022:
+        parser.error('Require finite nonnegative curvature and valid seed offset')
     if args.self_check:
         self_check()
     elif not args.output:
