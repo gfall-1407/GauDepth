@@ -40,15 +40,18 @@ def pairwise_compatibility(depth, normal, valid, angle, geometry):
 def greedy_clique(compatible, valid_indices):
     """Deterministic multi-start greedy clique; return size and original indices."""
     best = []
+    valid_indices = np.sort(np.asarray(valid_indices, dtype=int))
     for seed in valid_indices:
         clique = [int(seed)]
-        candidates = [int(i) for i in valid_indices if i != seed and not compatible[seed, i]]
-        while candidates:
+        candidates = valid_indices[(valid_indices != seed) & ~compatible[seed, valid_indices]]
+        while len(candidates):
             # Degree is measured in the current induced candidate subgraph.
-            chosen = min(candidates,
-                         key=lambda i: (-sum(not compatible[i, j] for j in candidates if j != i), i))
+            incompatibility = ~compatible[np.ix_(candidates, candidates)]
+            degree = incompatibility.sum(axis=1)
+            # candidates is sorted, so argmax resolves ties by original index.
+            chosen = int(candidates[int(np.argmax(degree))])
             clique.append(chosen)
-            candidates = [i for i in candidates if not compatible[chosen, i]]
+            candidates = candidates[(candidates != chosen) & ~compatible[chosen, candidates]]
         if (len(clique) > len(best)
                 or (len(clique) == len(best) and tuple(sorted(clique)) < tuple(sorted(best)))):
             best = clique
@@ -151,14 +154,18 @@ def analyze(inputs, output):
         with np.load(path, allow_pickle=False) as z:
             offsets, depth = z['offsets'], z['depth']
             normal, valid = z['normal'], z['normal_valid']
+            qualitative = z['qualitative']
             gaussian_id = z['gaussian_id']
             nr = len(offsets) - 1
             if (offsets.ndim != 1 or nr < 0 or offsets[0] != 0
                     or offsets[-1] != len(depth) or np.any(np.diff(offsets) < 0)
                     or normal.shape != (len(depth), 3) or len(valid) != len(depth)
-                    or len(gaussian_id) != len(depth) or len(z['pixel_xy']) != nr):
+                    or len(gaussian_id) != len(depth) or len(z['pixel_xy']) != nr
+                    or len(qualitative) != nr):
                 raise ValueError(f'Invalid ragged NPZ schema: {path}')
             for ray in range(nr):
+                if bool(qualitative[ray]):
+                    continue
                 start, end = int(offsets[ray]), int(offsets[ray + 1])
                 d, nm, v = depth[start:end], normal[start:end], valid[start:end]
                 default_depth_groups = compatible_partition_count(d, nm, v, 15., False)
