@@ -30,6 +30,15 @@ def git(*args):
     return subprocess.check_output(['git', '-C', str(ROOT), *args], text=True).strip()
 
 
+def atomic_json(path, data):
+    temp = path.with_suffix(path.suffix + '.tmp')
+    with temp.open('w', encoding='utf-8') as f:
+        json.dump(data, f, indent=2, ensure_ascii=False)
+        f.flush()
+        os.fsync(f.fileno())
+    os.replace(temp, path)
+
+
 @contextlib.contextmanager
 def protect_scene(output):
     """Redirect Scene's only write during load_iteration; restore module globals."""
@@ -153,8 +162,10 @@ def sample(args):
                     normal_semantics='camera-space oriented geometric direction, host buffer xyz; not RGB/rendered normal',
                     normal_invalid='nonfinite, norm <= 1e-8, or zero ray-plane host fallback',
                     host_build_provenance=args.host_build_provenance,
-                    replay_tolerance=dict(rtol=2e-5, atol=2e-6), views=[])
-    (output / 'metadata.json').write_text(json.dumps(metadata, indent=2, ensure_ascii=False))
+                    replay_tolerance=dict(rtol=2e-5, atol=2e-6),
+                    normal_replay_tolerance=dict(rtol=2e-4, atol=2e-5, normalize_eps=1e-12,
+                        reduction='original acceptance order, CPU float32 multiply/add; host CUDA may fuse FMA'), views=[])
+    atomic_json(output / 'metadata.json', metadata)
     extra = {}
     for spec in args.extra_pixel:
         vi, x, y = map(int, spec.split(':'))
@@ -215,15 +226,35 @@ def sample(args):
             gids = ids.cpu().numpy()[keep]
             valid = (np.isfinite(records[:, 4:7]).all(axis=1)
                      & (np.linalg.norm(records[:, 4:7], axis=1) > 1e-8) & (records[:, 7] == 0))
+            # Independent normal replay from ALL complete saved records, including invalid normals.
+            # Do not filter on normal_valid here: host rendering did not apply that filter either.
+            normal_replay = np.zeros((len(pixels), 3), dtype=np.float32)
+            for ri in range(len(pixels)):
+                for j in range(offsets[ri], offsets[ri + 1]):
+                    normal_replay[ri] += records[j, 4:7] * records[j, 1]
+            normal_length = np.sqrt(np.sum(normal_replay * normal_replay, axis=1, dtype=np.float32))
+            normal_replay /= np.maximum(normal_length, np.float32(1e-12))[:, None]
+            normal_target = normal.reshape(3, -1).T[pix.long()].cpu().numpy()
+            # Slightly looser than scalar replay: CPU separate mul/add versus CUDA FMA,
+            # followed by normalization, can amplify cancellation near zero normals.
+            torch.testing.assert_close(torch.from_numpy(normal_replay), torch.from_numpy(normal_target),
+                                       rtol=2e-4, atol=2e-5, equal_nan=False)
+            normal_error = np.abs(normal_replay - normal_target)
             name = f'view_{vi:03d}.npz'
             # Each view is committed to disk before proceeding to the next one.
-            np.savez_compressed(output / name, offsets=offsets, gaussian_id=gids,
+            temporary = output / (name + '.tmp')
+            with temporary.open('wb') as f:
+                np.savez_compressed(f, offsets=offsets, gaussian_id=gids,
                                 depth=records[:, 0], weight=records[:, 1], alpha=records[:, 2],
                                 transmittance=records[:, 3], normal=records[:, 4:7],
                                 normal_valid=valid, plane_degenerate=records[:, 7].astype(bool),
                                 pixel_xy=np.c_[pixels % W, pixels // W], qualitative=qualitative,
                                 replay=replay.cpu().numpy(), host_target=target.cpu().numpy(),
+                                normal_replay=normal_replay, normal_target=normal_target,
                                 view_index=np.array(vi), image_size=np.array([H, W]))
+                f.flush()
+                os.fsync(f.fileno())
+            os.replace(temporary, output / name)
             vm = dict(view_index=vi, image_name=camera.image_name, file=name, split=args.split,
                       sampling=sampling, mask_source=mask_source, eligible_pixels=len(eligible),
                       random_samples=count, qualitative_samples=len(extras), seed=args.seed,
@@ -231,9 +262,12 @@ def sample(args):
                       world_view_transform=camera.world_view_transform.cpu().tolist(),
                       camera_center=camera.camera_center.cpu().tolist(), capacity=K,
                       overflow_retries=retries, total_members=len(gids), invalid_normal=int((~valid).sum()),
-                      replay_max_abs=errors.max(axis=0).tolist(), npz_sha256=sha256(output / name))
+                      replay_max_abs=errors.max(axis=0).tolist(),
+                      normal_replay_max_abs=normal_error.max(axis=0).tolist(),
+                      normal_min_accumulated_length=float(normal_length.min()),
+                      npz_sha256=sha256(output / name))
             metadata['views'].append(vm)
-            (output / 'metadata.json').write_text(json.dumps(metadata, indent=2, ensure_ascii=False))
+            atomic_json(output / 'metadata.json', metadata)
             print(json.dumps(vm, ensure_ascii=False), flush=True)
             del result, rec, ids, counts, replay, target, geom, binning, image, rgb, normal
     if sha256(ply) != model_hash:
