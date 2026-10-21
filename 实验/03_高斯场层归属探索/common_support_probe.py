@@ -207,15 +207,151 @@ def run_holdout(root,out,given_k=None,single_only=False):
         'No original 3DGS training or physical count claim.'),indent=2),encoding='utf-8')
 
 
+def local_self_check():
+    holdout_self_check()
+    # Fixed planar two-source example: local fitting sees neither held-out ID.
+    p=np.array([[0.,0.,1.],[.001,0.,1.02],[0.,.001,1.],[.001,.001,1.02]])
+    n=np.tile([0.,0.,1.],(4,1));learn=np.array([0,1]);test=np.array([2,3])
+    result=fit(p[learn],n[learn],2,.002,1.)
+    centers=learn[list(result['centers'])]
+    got,_=predict(p[test],n[test],p[centers],n[centers],.002,1.)
+    assert got.tolist()==[0,1] and not np.intersect1d(centers,test).size
+    # Empty local evaluation is retained rather than passed off as a perfect score.
+    assert pair_metrics([],[])['f1'] is None
+    print('local member prediction self-check passed',flush=True)
+
+
+def run_local(root,out):
+    """Fixed x-y neighborhoods; reuse previous train-only global models, no refits."""
+    if out.exists() and any(out.iterdir()):raise FileExistsError(out)
+    previous=root/'gaussian_member_holdout'
+    oldmeta=json.loads((previous/'metadata.json').read_text(encoding='utf-8'))
+    assert oldmeta['status']=='complete'
+    # Fit/energy/scoring definitions must match the original cached global run.
+    for name in ('joint_plane_probe.py','analyze.py'):
+        assert sha(Path(__file__).parent/name)==oldmeta['source_sha256'][name]
+    input_hash={str(Path(item['path'])):item['sha256'] for item in oldmeta['inputs']}
+    keys=('seed_offset','case_index','curvature','scale','normal_weight','repeat')
+    models={};oldrows={}
+    for line in (previous/'models.jsonl').read_text(encoding='utf-8').splitlines():
+        m=json.loads(line)
+        if m['protocol']=='random_half':
+            key=tuple(m[k] for k in keys);assert key not in models;models[key]=m
+    with (previous/'replicates.csv').open(encoding='utf-8-sig',newline='') as f:
+        for row in csv.DictReader(f):
+            if row['protocol']=='random_half':
+                key=tuple(float(row[k]) if k in ('scale','normal_weight') else int(row[k]) for k in keys)
+                oldrows[key]=row
+    assert len(models)==len(oldrows)==3600
+    out.mkdir(parents=True,exist_ok=True);inputs=[];summaries=[];total=0
+    centers_xy=list(itertools.product((-.005,0.,.005),repeat=2))
+    with (out/'replicates.csv').open('w',encoding='utf-8-sig',newline='') as detail, (out/'models.jsonl').open('w',encoding='utf-8') as saved:
+        writer=None
+        for seed,case in itertools.product((1000,2000),range(30)):
+            data={};common=None;case_rows=[]
+            for curvature in (0,20,50):
+                folder=root/f'independent_c{curvature}_s{seed}'
+                meta=json.loads((folder/'metadata.json').read_text(encoding='utf-8'))
+                assert meta['status']=='complete' and meta['backend']=='analytic_ray_peak_gaussian_CPU'
+                item=meta['cases'][case];cfg=item['config']
+                assert cfg['case_index']==case and cfg['seed']==20261022+seed+case
+                assert float(cfg.get('curvature',0.))==curvature
+                if curvature==0:reference=cfg
+                for name in ('kind','gap','theta_deg','center_noise','normal_noise_deg'):assert cfg[name]==reference[name]
+                path=folder/item['file'];digest=sha(path)
+                assert digest==item['npz_sha256']==input_hash[str(path)]
+                inputs.append(dict(path=str(path),sha256=digest))
+                with np.load(path,allow_pickle=False) as z:
+                    data[curvature]={name:z[name].copy() for name in ('means','generated_normal','source_origin')}
+                    ids=np.unique(z['gaussian_id']);common=ids if common is None else np.intersect1d(common,ids)
+            truth=data[0]['source_origin'][common];K=len(np.unique(truth));size=len(common)
+            for curvature in (0,20,50):
+                payload=data[curvature];p=payload['means'].astype(float);n=payload['generated_normal'].astype(float)
+                np.testing.assert_array_equal(payload['source_origin'][common],truth)
+                np.testing.assert_array_equal(p[common,:2],data[0]['means'][common,:2])
+                for scale,lam,repeat in itertools.product((.002,.005),(0.,1.),range(5)):
+                    key=(seed,case,curvature,scale,lam,repeat);model=models[key]
+                    split_seed=700000+seed*100+case*7+repeat
+                    order=np.random.default_rng(split_seed).permutation(size)
+                    learn=common[np.sort(order[:size//2])];test=common[np.sort(order[size//2:])]
+                    np.testing.assert_array_equal(learn,model['fit_ids']);np.testing.assert_array_equal(test,model['heldout_ids'])
+                    global_centers=np.asarray(model['center_ids'],int)
+                    assert len(global_centers)==K and np.isin(global_centers,learn).all() and not np.isin(global_centers,test).any()
+                    global_pred,_=predict(p[test],n[test],p[global_centers],n[global_centers],scale,lam)
+                    np.testing.assert_allclose(pair_metrics(payload['source_origin'][test],global_pred)['f1'],float(oldrows[key]['heldout_pair_f1']),atol=1e-12,rtol=0)
+                    for radius,(cx,cy) in itertools.product((.005,.01),centers_xy):
+                        inside=np.sum((p[:,:2]-np.array([cx,cy]))**2,axis=1)<=radius**2
+                        local_learn=learn[inside[learn]];take=inside[test];local_test=test[take]
+                        actual=payload['source_origin'][local_test];baseline=global_pred[take]
+                        true_pairs=sum(int((actual==origin).sum())*(int((actual==origin).sum())-1)//2 for origin in np.unique(actual))
+                        status='empty_heldout' if len(local_test)==0 else 'no_member_pairs' if len(local_test)<2 else 'no_true_pairs' if true_pairs==0 else 'ok'
+                        base_score=pair_metrics(actual,baseline);fitted=None;local_centers=np.array([],int)
+                        local_pred=None;local_score=None
+                        if len(local_learn)>=K:
+                            fitted=fit(p[local_learn],n[local_learn],K,scale,lam)
+                            local_centers=local_learn[list(fitted['centers'])]
+                            assert np.isin(local_centers,local_learn).all() and not np.isin(local_centers,test).any()
+                            local_pred,_=predict(p[local_test],n[local_test],p[local_centers],n[local_centers],scale,lam)
+                            local_score=pair_metrics(actual,local_pred)
+                        row=dict(seed_offset=seed,case_index=case,kind=reference['kind'],curvature=curvature,scale=scale,normal_weight=lam,
+                            repeat=repeat,split_seed=split_seed,center_x=cx,center_y=cy,radius=radius,oracle_common_K=K,
+                            local_fit_status='ok' if fitted is not None else 'insufficient_fit_members',score_status=status,
+                            global_fit_members=len(learn),local_fit_members=len(local_learn),heldout_members=len(local_test),true_same_source_pairs=true_pairs,
+                            fit_origins=len(np.unique(payload['source_origin'][local_learn])),heldout_origins=len(np.unique(actual)),
+                            global_groups=len(set(baseline.tolist())-{-1}),global_unknown=int((baseline<0).sum()),
+                            local_groups=None if local_pred is None else len(set(local_pred.tolist())-{-1}),
+                            local_unknown=None if local_pred is None else int((local_pred<0).sum()),
+                            global_pair_f1=base_score['f1'],local_pair_f1=None if local_score is None else local_score['f1'])
+                        for prefix,score in (('global',base_score),('local',local_score)):
+                            for name in ('tp','fp','fn'):row[prefix+'_'+name]=None if score is None else score[name]
+                        row['local_minus_global']=None if local_score is None or local_score['f1'] is None or base_score['f1'] is None else local_score['f1']-base_score['f1']
+                        if writer is None:writer=csv.DictWriter(detail,fieldnames=list(row));writer.writeheader()
+                        writer.writerow(row);case_rows.append(row);total+=1
+                        saved.write(json.dumps(dict(**{name:row[name] for name in keys+('center_x','center_y','radius')},
+                            fit_ids=local_learn.tolist(),heldout_ids=local_test.tolist(),center_ids=local_centers.tolist(),
+                            global_center_ids=global_centers.tolist(),local_labels=None if local_pred is None else local_pred.tolist(),
+                            global_labels=baseline.tolist()),ensure_ascii=False)+'\n')
+            for curvature,scale,lam,radius in itertools.product((0,20,50),(.002,.005),(0.,1.),(.005,.01)):
+                part=[r for r in case_rows if (r['curvature'],r['scale'],r['normal_weight'],r['radius'])==(curvature,scale,lam,radius)]
+                paired=[r for r in part if r['score_status']=='ok' and r['local_fit_status']=='ok']
+                assert all(r['global_pair_f1'] is not None and r['local_pair_f1'] is not None for r in paired)
+                result=dict(seed_offset=seed,case_index=case,kind=reference['kind'],oracle_common_K=K,curvature=curvature,scale=scale,
+                    normal_weight=lam,radius=radius,neighborhood_splits=len(part),paired_scoreable=len(paired),
+                    insufficient_fit=sum(r['local_fit_status']!='ok' for r in part),
+                    empty_heldout=sum(r['score_status']=='empty_heldout' for r in part),
+                    no_member_pairs=sum(r['score_status']=='no_member_pairs' for r in part),
+                    no_true_pairs=sum(r['score_status']=='no_true_pairs' for r in part),
+                    fit_missing_origin=sum(r['fit_origins']<K for r in part),heldout_missing_origin=sum(r['heldout_origins']<K for r in part),
+                    mean_heldout_members=float(np.mean([r['heldout_members'] for r in part])))
+                for name in ('global_pair_f1','local_pair_f1','local_minus_global','global_unknown','local_unknown'):
+                    result['paired_mean_'+name]=None if not paired else float(np.mean([r[name] for r in paired]))
+                summaries.append(result)
+            detail.flush();saved.flush();write_csv(out/'summary.csv',summaries)
+            print('local member holdout',seed,case,'finished',flush=True)
+    assert total==64800 and len(summaries)==1440
+    (out/'metadata.json').write_text(json.dumps(dict(status='complete',git_commit=subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(),
+        inputs=inputs,source_sha256={name:sha(Path(__file__).parent/name) for name in ('common_support_probe.py','joint_plane_probe.py','analyze.py')},
+        reused_global_files={name:sha(previous/name) for name in ('metadata.json','models.jsonl','replicates.csv')},
+        rows=total,centers_xy=centers_xy,radii=[.005,.01],random_splits=5,
+        evidence='Only fixed x-y neighborhoods and existing random-half member splits. Global train-only models reused, never refitted. '
+        'Local planes fit local training members only. Both models score identical local heldout pairs. K is the full common-ID source-count oracle, even if local origins vanish. '
+        'All neighborhoods, coverage failures and undefined scores retained. Paired means condition on a usable local fit and at least one true heldout pair, with denominators shown. '
+        'Neighborhoods overlap and correlated member splits are not independent scenes. No cross-neighborhood label matching or surface stitching. '
+        'Single-source K1 F1 is tautological. Analytic CPU construction, not host GPU or trained-scene physical truth. No training or automatic count.'),indent=2),encoding='utf-8')
+
+
 if __name__=='__main__':
     p=argparse.ArgumentParser(description=__doc__);p.add_argument('--root',type=Path)
     p.add_argument('--output',type=Path);p.add_argument('--heldout',action='store_true');p.add_argument('--self-check',action='store_true')
     p.add_argument('--single-only',action='store_true');p.add_argument('--given-k',type=int,choices=(1,2))
+    p.add_argument('--local-heldout',action='store_true')
     args=p.parse_args()
-    if args.self_check:holdout_self_check()
+    if args.self_check:local_self_check() if args.local_heldout else holdout_self_check()
     else:
         if args.root is None or args.output is None:p.error('root and output required')
+        if args.local_heldout and (args.heldout or args.single_only or args.given_k is not None):p.error('local holdout uses its fixed cached global control')
         if (args.single_only or args.given_k is not None) and not args.heldout:p.error('count control requires --heldout')
         if args.given_k is not None and not args.single_only:p.error('--given-k requires --single-only')
-        if args.heldout:run_holdout(args.root,args.output,args.given_k,args.single_only)
+        if args.local_heldout:run_local(args.root,args.output)
+        elif args.heldout:run_holdout(args.root,args.output,args.given_k,args.single_only)
         else:run(args.root,args.output)
