@@ -113,7 +113,81 @@ def sync_dir(path):
             os.close(fd)
 
 
+def analytic_peak(data, rays):
+    """Exact Mahalanobis-density maximum along each ray; NOT the host rasterizer."""
+    mu, scale = data['means'].astype(float), data['scales'].astype(float)
+    q = data['rotations'].astype(float)
+    q /= np.linalg.norm(q, axis=1)[:, None]
+    qw, qx, qy, qz = q.T
+    axis = np.c_[2*(qx*qz+qw*qy), 2*(qy*qz-qw*qx), 1-2*(qx*qx+qy*qy)]
+    assert np.allclose(scale[:,0],scale[:,1])
+    a = 1/scale[:,0]**2
+    b = 1/scale[:,2]**2-a
+    nd = rays@axis.T
+    nm = np.sum(axis*mu,axis=1)
+    denominator = np.sum(rays*rays,axis=1)[:,None]*a+nd*nd*b
+    z = ((rays@mu.T)*a+nd*nm*b)/denominator
+    residual = z[:,:,None]*rays[:,None,:]-mu[None,:,:]
+    mahal = np.sum(residual*residual,axis=2)*a+np.sum(residual*axis,axis=2)**2*b
+    alpha = np.minimum(.99,data['opacity'].ravel()*np.exp(-.5*mahal))
+    oriented = axis*np.where(nm>0,-1.,1.)[:,None]
+    return z,alpha,oriented
+
+
+def run_analytic(args):
+    from sample import git,sha256,atomic_json
+    output=Path(args.output).resolve()
+    if output.exists() and any(output.iterdir()):raise FileExistsError(output)
+    output.mkdir(parents=True,exist_ok=True)
+    px,py=np.meshgrid(np.arange(28,37),np.arange(28,37))
+    xy=np.c_[px.ravel(),py.ravel()]
+    focal=64/(2*np.tan(.04))
+    rays=np.c_[(xy[:,0]-31.5)/focal,(xy[:,1]-31.5)/focal,np.ones(len(xy))]
+    meta=dict(schema=1,status='running',backend='analytic_ray_peak_gaussian_CPU',
+        codeHEAD=git('rev-parse','HEAD'),git_status=git('status','--short'),
+        git_remote=git('remote','get-url','origin'),hostname=platform.node(),
+        sourceSHA={'renderer_mechanism.py':sha256(__file__)},numpy=np.__version__,args=vars(args),
+        mechanism='z=argmin_t (t*d-mu)^T Sigma^-1(t*d-mu), alpha=opacity*exp(-minimum_Mahalanobis/2)',
+        caveat='Independent analytical ray-density mechanism, NOT RaDe-GS projected 2D rasterization. '
+        'No host/CUDA replay validation is claimed. Labels indicate construction origins only.',
+        acceptance='Stable center-z order; cap alpha .99, discard alpha<1/255, reject current member and stop if next T<1e-4',
+        sampling='fixed 81 pixels 28..36, image64, FoV.08, identity camera',
+        planned_cases=cases()[args.start:args.start+args.limit],cases=[])
+    atomic_json(output/'metadata.json',meta)
+    for cfg in meta['planned_cases']:
+        data=generate(cfg);z,alpha,normal=analytic_peak(data,rays)
+        order=np.argsort(data['means'][:,2],kind='stable')
+        offsets=[0];ids=[];records=[];replay=[]
+        for ri in range(len(rays)):
+            T,D,M=1.,0.,0.
+            for i in order:
+                al=float(alpha[ri,i])
+                if al<1/255:continue
+                next_T=T*(1-al)
+                if next_T<1e-4:break
+                w=T*al
+                ids.append(int(i));records.append([z[ri,i],w,al,T,*normal[i]])
+                D+=w*z[ri,i]
+                if T>.5:M=z[ri,i]
+                T=next_T
+            offsets.append(len(ids));replay.append([D/(1-T) if T<1 else 0.,M,1-T])
+        rec=np.asarray(records,dtype=float).reshape(-1,7);gids=np.asarray(ids,np.int32)
+        filename=f"case_{cfg['case_index']:03d}.npz"
+        atomic_npz(output/filename,dict(**data,offsets=np.asarray(offsets),gaussian_id=gids,
+            depth=rec[:,0],weight=rec[:,1],alpha=rec[:,2],transmittance=rec[:,3],normal=rec[:,4:7],
+            normal_valid=np.ones(len(rec),bool),plane_degenerate=np.zeros(len(rec),bool),
+            truth_origin=data['source_origin'][gids],pixel_xy=xy,qualitative=np.zeros(len(rays),bool),
+            replay=np.asarray(replay),image_size=np.array([64,64])))
+        meta['cases'].append(dict(config=cfg,file=filename,status='complete',npz_sha256=sha256(output/filename),
+                                  total_members=len(rec),validation='analytic identities only; no host replay'))
+        atomic_json(output/'metadata.json',meta)
+        print('analytic Gaussian case',cfg['case_index'],'members',len(rec),flush=True)
+    meta['status']='complete';atomic_json(output/'metadata.json',meta)
+
+
 def run(args):
+    if args.backend=='analytic_cpu':
+        return run_analytic(args)
     # All GPU dependencies are deliberately deferred beyond --self-check.
     from sample import forward, git, sha256, atomic_json
     output = Path(args.output).resolve()
@@ -241,6 +315,8 @@ def run(args):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--output', help='New or empty synthetic-result directory')
+    parser.add_argument('--backend',choices=('host','analytic_cpu'),default='host',
+                        help='host requires G1 GPU; analytic_cpu is an independent model, not host validation')
     parser.add_argument('--start', type=int, default=0, help='Starting case index; original seeds and indices retained')
     parser.add_argument('--limit', type=int, default=30, help='Number of configurations from --start, one seed each')
     parser.add_argument('--self-check', action='store_true', help='Pure NumPy geometry checks; no GPU imports or output')
