@@ -144,10 +144,55 @@ def csv_write(path,rows):
         w=csv.DictWriter(f,fieldnames=list(rows[0]));w.writeheader();w.writerows(rows)
 
 
+def edge_audit(source,out):
+    """Isolate closure on the exact same decisive pair subset; no filled unknowns."""
+    if out.exists() and any(out.iterdir()):raise FileExistsError(out)
+    out.mkdir(parents=True,exist_ok=True);rows=[];inputs=[]
+    for path in sorted(source.glob('labels_*.json')):
+        data=json.loads(path.read_text(encoding='utf-8'));rays=data['rays'];cfg=data['config']
+        size=max(max(r['gaussian_id']) for r in rays)+1
+        inputs.append(dict(path=str(path),sha256=sha(path)))
+        for method in sorted(rays[0]['labels']):
+            if not method.startswith('conditional'):continue
+            count=np.zeros((size,size),np.int64);yes=np.zeros_like(count)
+            for ray in rays:
+                i,j,known,same=pair_state(ray,method)
+                count[i,j]+=known;count[j,i]+=known;yes[i,j]+=same;yes[j,i]+=same
+            for ray in rays:
+                ids=np.asarray(ray['gaussian_id']);truth=np.asarray(ray['truth_origin'])
+                a,b=np.triu_indices(len(ids),1);i,j,known,same=pair_state(ray,method)
+                total=count[i,j]-known;positive=yes[i,j]-same
+                decisive=(total>=2)&(2*positive!=total);vote=2*positive>total
+                labels=positive_components(len(ids),a[decisive&vote],b[decisive&vote])
+                closed=labels[a]==labels[b];actual=truth[a]==truth[b]
+                assert np.all(~(decisive&vote)|closed)
+                for policy,pred in (('vote_decisive',vote),('closure_same_decisive',closed)):
+                    score=evaluate(actual[decisive],pred[decisive],np.ones(int(decisive.sum()),bool))
+                    rows.append(dict(case_index=cfg['case_index'],kind=cfg['kind'],method=method,ray=ray['ray'],
+                        policy=policy,all_pairs=len(a),decisive_pairs=int(decisive.sum()),
+                        newly_positive_known_negative_votes=int((decisive&~vote&closed).sum()),**score))
+        csv_write(out/'rays.csv',rows)
+    summary=[]
+    for case,method,policy in sorted(set((r['case_index'],r['method'],r['policy']) for r in rows)):
+        part=[r for r in rows if (r['case_index'],r['method'],r['policy'])==(case,method,policy)]
+        summary.append(dict(case_index=case,kind=part[0]['kind'],method=method,policy=policy,rays=len(part),
+            mean_decisive_fraction=float(np.mean([r['decisive_pairs']/r['all_pairs'] for r in part])),
+            mean_decisive_pair_f1=float(np.mean([r['pair_f1'] for r in part if r['pair_f1'] is not None])),
+            total_tp=sum(r['tp'] for r in part),total_fp=sum(r['fp'] for r in part),total_fn=sum(r['fn'] for r in part)))
+    csv_write(out/'summary.csv',summary)
+    (out/'metadata.json').write_text(json.dumps(dict(status='complete',inputs=inputs,
+        git_commit=subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(),source_sha256=sha(__file__),
+        evidence='Closure-vote comparison restricted to exactly the same decisive LOO pair subset per ray. '
+        'Unknown fill-in cannot affect this restricted score; coverage is reported and this is not full-universe F1. '
+        'Connected components still may use intermediate decisive positive edges through other current-ray members. '
+        'Construction labels only score, not vote; correlated mechanism, no physical or independent validation claim.'),indent=2),encoding='utf-8')
+
+
 if __name__=='__main__':
     parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('--input',type=Path)
+    parser.add_argument('--edge-audit',action='store_true')
     parser.add_argument('--output',type=Path);parser.add_argument('--self-check',action='store_true');args=parser.parse_args()
     if args.self_check:self_check()
     else:
         if args.input is None or args.output is None:parser.error('input and output required')
-        run(args.input,args.output)
+        (edge_audit if args.edge_audit else run)(args.input,args.output)
