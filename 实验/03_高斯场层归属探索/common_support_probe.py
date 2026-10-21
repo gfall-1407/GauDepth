@@ -115,7 +115,7 @@ def holdout_self_check():
     print('held-out plane prediction self-check passed',flush=True)
 
 
-def run_holdout(root,out):
+def run_holdout(root,out,given_k=None,single_only=False):
     if out.exists() and any(out.iterdir()):raise FileExistsError(out)
     out.mkdir(parents=True,exist_ok=True);rows=[];inputs=[]
     with (out/'models.jsonl').open('w',encoding='utf-8') as models:
@@ -124,6 +124,7 @@ def run_holdout(root,out):
             metas={k:json.loads((folder/'metadata.json').read_text(encoding='utf-8')) for k,folder in folders.items()}
             for meta in metas.values():assert meta['status']=='complete' and len(meta['cases'])==30
             for case in range(30):
+                if single_only and metas[0]['cases'][case]['config']['kind']!='single':continue
                 data={};common=None
                 for curvature,folder in folders.items():
                     item=metas[curvature]['cases'][case];cfg=item['config']
@@ -136,6 +137,7 @@ def run_holdout(root,out):
                         data[curvature]={k:z[k].copy() for k in ('means','generated_normal','source_origin')}
                         ids=np.unique(z['gaussian_id']);common=ids if common is None else np.intersect1d(common,ids)
                 truth=data[0]['source_origin'][common];K=len(np.unique(truth));size=len(common)
+                model_K=K if given_k is None else given_k
                 splits=[]
                 for repeat in range(5):
                     split_seed=700000+seed*100+case*7+repeat
@@ -147,20 +149,20 @@ def run_holdout(root,out):
                     p=data[curvature]['means'][common].astype(float);n=data[curvature]['generated_normal'][common].astype(float)
                     np.testing.assert_array_equal(data[curvature]['source_origin'][common],truth)
                     for scale,lam in itertools.product((.002,.005),(0.,1.)):
-                        full=fit(p,n,K,scale,lam);full_ix=list(full['centers'])
+                        full=fit(p,n,model_K,scale,lam);full_ix=list(full['centers'])
                         for protocol,repeat,split_seed,learn,test in splits:
-                            assert len(learn)>=K and len(test)>=2 and not np.intersect1d(learn,test).size
-                            fitted=fit(p[learn],n[learn],K,scale,lam);centers=learn[list(fitted['centers'])]
+                            assert len(learn)>=model_K and len(test)>=2 and not np.intersect1d(learn,test).size
+                            fitted=fit(p[learn],n[learn],model_K,scale,lam);centers=learn[list(fitted['centers'])]
                             assert np.isin(centers,learn).all() and not np.isin(centers,test).any()
-                            pred,_=predict(p[test],n[test],p[centers],n[centers],scale,lam)
-                            full_pred,_=predict(p[test],n[test],p[full_ix],n[full_ix],scale,lam)
+                            pred,test_cost=predict(p[test],n[test],p[centers],n[centers],scale,lam)
+                            full_pred,ref_cost=predict(p[test],n[test],p[full_ix],n[full_ix],scale,lam)
                             score=pair_metrics(truth[test],pred);fit_score=pair_metrics(truth[learn],fitted['labels'])
                             ref_score=pair_metrics(truth[test],full_pred)
                             assert score['f1'] is not None and fit_score['f1'] is not None and ref_score['f1'] is not None
                             row=dict(seed_offset=seed,case_index=case,kind=reference['kind'],gap=reference['gap'],
                                 center_noise=reference['center_noise'],normal_noise_deg=reference['normal_noise_deg'],
                                 curvature=curvature,scale=scale,normal_weight=lam,protocol=protocol,repeat=repeat,
-                                split_seed=split_seed,oracle_common_K=K,common_members=size,fit_members=len(learn),
+                                split_seed=split_seed,oracle_common_K=K,given_K=model_K,common_members=size,fit_members=len(learn),
                                 heldout_members=len(test),excluded_members=size-len(learn)-len(test),
                                 fit_origins=len(np.unique(truth[learn])),heldout_origins=len(np.unique(truth[test])),
                                 fit_pair_f1=fit_score['f1'],heldout_pair_f1=score['f1'],
@@ -168,10 +170,12 @@ def run_holdout(root,out):
                                 heldout_minus_full_reference=score['f1']-ref_score['f1'],
                                 heldout_false_merge_pairs=score['fp'],heldout_false_split_pairs=score['fn'],
                                 heldout_unknown=int((pred<0).sum()),fit_unknown=int((fitted['labels']<0).sum()),
+                                heldout_mean_min_energy=float(test_cost.min(axis=1).mean()),
+                                full_data_reference_heldout_energy=float(ref_cost.min(axis=1).mean()),
                                 fit_objective=fitted['objective'])
                             rows.append(row)
                             models.write(json.dumps(dict(**{k:row[k] for k in ('seed_offset','case_index','curvature','scale','normal_weight','protocol','repeat')},
-                                fit_ids=common[learn].tolist(),heldout_ids=common[test].tolist(),
+                                given_K=model_K,fit_ids=common[learn].tolist(),heldout_ids=common[test].tolist(),
                                 center_ids=common[centers].tolist()),ensure_ascii=False)+'\n')
                 write_csv(out/'replicates.csv',rows);models.flush()
                 print('held-out common Gaussian fit',seed,case,'finished',flush=True)
@@ -182,29 +186,36 @@ def run_holdout(root,out):
         summary.append(dict(**config,**{k:part[0][k] for k in ('kind','gap','center_noise','normal_noise_deg','oracle_common_K')},
             repeats=len(part),fit_missing_origin_splits=sum(r['fit_origins']<r['oracle_common_K'] for r in part),
             heldout_missing_origin_splits=sum(r['heldout_origins']<r['oracle_common_K'] for r in part),
-            **{'mean_'+k:float(np.mean([r[k] for r in part])) for k in ('fit_pair_f1','heldout_pair_f1',
+            given_K=part[0]['given_K'],**{'mean_'+k:float(np.mean([r[k] for r in part])) for k in ('fit_pair_f1','heldout_pair_f1',
                 'full_data_reference_on_same_heldout_pairs','heldout_minus_full_reference','heldout_unknown','fit_members','heldout_members','excluded_members')},
+            mean_heldout_min_energy=float(np.mean([r['heldout_mean_min_energy'] for r in part])),
             std_heldout_pair_f1=float(np.std([r['heldout_pair_f1'] for r in part])),
             min_heldout_pair_f1=min(r['heldout_pair_f1'] for r in part)))
     write_csv(out/'summary.csv',summary)
     (out/'metadata.json').write_text(json.dumps(dict(status='complete',inputs=inputs,
         git_commit=subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(),
         source_sha256={name:sha(Path(__file__).parent/name) for name in ('common_support_probe.py','joint_plane_probe.py','analyze.py')},
-        random_splits=5,split_seed_rule='700000 + seed_offset*100 + case_index*7 + repeat',
+        random_splits=5,split_seed_rule='700000 + seed_offset*100 + case_index*7 + repeat',given_K=given_k,single_source_only=single_only,
         evidence='Common Gaussian IDs across curvature. Fit/test split ignores source labels and is identical across kappa and all energy configurations. '
         'Only fit-member centers/axes form candidate planes and only fit members optimize the objective; held-out features only assign to fixed selected planes. '
-        'K supplied from the full common-set source count is an explicit oracle, including when one fitting subset lacks a source. No resampling. '
+        'K is normally the full common-set source count oracle; explicit given_K overrides it for a conditional count stress. No resampling. '
         'Random half tests interpolation among correlated members. Spatial x<0 fitting vs x>0 evaluation omits x=0 and tests one-sided extrapolation, not exact 50%. '
         'Full-data reference is scored on the same held-out pairs but has seen them; it is descriptive resubstitution, not independent validation. '
         'Two generating seed repeats and five dependent member splits do not constitute independent scenes. '
-        'K1 pairing is tautological; main result must isolate K2 and retain coverage loss/unknowns. No original 3DGS training or physical count claim.'),indent=2),encoding='utf-8')
+        'K1 pairing is tautological; main result must isolate true K2 and retain coverage loss/unknowns. '
+        'Single-source explicit-K runs test whether validation loss can favor extra components; same held-out features used for selection are not an independent final test. '
+        'No original 3DGS training or physical count claim.'),indent=2),encoding='utf-8')
 
 
 if __name__=='__main__':
     p=argparse.ArgumentParser(description=__doc__);p.add_argument('--root',type=Path)
     p.add_argument('--output',type=Path);p.add_argument('--heldout',action='store_true');p.add_argument('--self-check',action='store_true')
+    p.add_argument('--single-only',action='store_true');p.add_argument('--given-k',type=int,choices=(1,2))
     args=p.parse_args()
     if args.self_check:holdout_self_check()
     else:
         if args.root is None or args.output is None:p.error('root and output required')
-        (run_holdout if args.heldout else run)(args.root,args.output)
+        if (args.single_only or args.given_k is not None) and not args.heldout:p.error('count control requires --heldout')
+        if args.given_k is not None and not args.single_only:p.error('--given-k requires --single-only')
+        if args.heldout:run_holdout(args.root,args.output,args.given_k,args.single_only)
+        else:run(args.root,args.output)
