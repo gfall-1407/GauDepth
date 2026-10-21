@@ -340,18 +340,128 @@ def run_local(root,out):
         'Single-source K1 F1 is tautological. Analytic CPU construction, not host GPU or trained-scene physical truth. No training or automatic count.'),indent=2),encoding='utf-8')
 
 
+def overlap_pairs(records):
+    # Each pair is counted once per neighborhood; numeric labels may permute.
+    pairs={}
+    for record in records:
+        ids=record['heldout_ids'];local=record['local_labels'];glob=record['global_labels']
+        assert len(ids)==len(set(ids))==len(glob) and (local is None or len(local)==len(ids))
+        for a,b in itertools.combinations(range(len(ids)),2):
+            key=tuple(sorted((ids[a],ids[b])))
+            v=pairs.setdefault(key,[0]*9);v[0]+=1
+            if local is None:v[7]+=1
+            elif local[a]<0 or local[b]<0:v[8]+=1
+            else:v[1]+=1;v[2 if local[a]==local[b] else 3]+=1
+            if glob[a]>=0 and glob[b]>=0:v[4]+=1;v[5 if glob[a]==glob[b] else 6]+=1
+    return pairs
+
+
+def overlap_self_check():
+    records=[dict(heldout_ids=[3,8,9],local_labels=[0,0,1],global_labels=[0,0,1]),
+             dict(heldout_ids=[3,8,9],local_labels=[7,8,8],global_labels=[4,4,5])]
+    got=overlap_pairs(records)
+    assert got[(3,8)][:4]==[2,2,1,1] and got[(3,9)][:4]==[2,2,0,2]
+    changed=[dict(r,local_labels=[100+x for x in r['local_labels']],global_labels=[200+x for x in r['global_labels']]) for r in records]
+    assert overlap_pairs(changed)==got
+    unknown=[dict(heldout_ids=[3,8],local_labels=[-1,-1],global_labels=[0,0]),
+             dict(heldout_ids=[3,8],local_labels=None,global_labels=[1,1])]
+    assert overlap_pairs(unknown)[(3,8)]==[2,0,0,0,2,2,0,1,1]
+    print('overlap relation/label-permutation/unknown self-check passed',flush=True)
+
+
+def run_overlap(root,out):
+    if out.exists() and any(out.iterdir()):raise FileExistsError(out)
+    source=root/'local_member_holdout';meta=json.loads((source/'metadata.json').read_text(encoding='utf-8'))
+    assert meta['status']=='complete' and meta['rows']==64800
+    for item in meta['inputs']:assert sha(Path(item['path']))==item['sha256']
+    keys=('seed_offset','case_index','curvature','scale','normal_weight','repeat','radius')
+    def rowkey(r):return tuple(float(r[k]) if k in ('scale','normal_weight','radius') else int(r[k]) for k in keys)
+    raw={}
+    with (source/'replicates.csv').open(encoding='utf-8-sig',newline='') as f:
+        for r in csv.DictReader(f):
+            key=rowkey(r)+(float(r['center_x']),float(r['center_y']));assert key not in raw;raw[key]=r
+    assert len(raw)==64800
+    out.mkdir(parents=True,exist_ok=True);aggregated={};groups_seen=set();processed=0;truth_cache={};writer=None
+    names=('observed_pairs','repeated_observed_pairs','pair_observations','local_known_pair_observations',
+           'unfitted_pair_observations','unknown_local_pair_observations','local_repeated_known_pairs',
+           'local_conflict_pairs','global_repeated_known_pairs','global_conflict_pairs')
+    with (source/'models.jsonl').open(encoding='utf-8') as models, (out/'conditions.csv').open('w',encoding='utf-8-sig',newline='') as detail, (out/'witnesses.jsonl').open('w',encoding='utf-8') as witnesses:
+        stream=(json.loads(line) for line in models)
+        for key,batch in itertools.groupby(stream,key=rowkey):
+            assert key not in groups_seen;groups_seen.add(key);records=list(batch);assert len(records)==9
+            config=dict(zip(keys,key));seed,case=key[:2]
+            if (seed,case) not in truth_cache:
+                with np.load(root/f'independent_c0_s{seed}'/f'case_{case:03d}.npz',allow_pickle=False) as z:truth_cache[(seed,case)]=z['source_origin'].copy()
+            truth=truth_cache[(seed,case)]
+            flags=[];K=None
+            for m in records:
+                row=raw[key+(m['center_x'],m['center_y'])];K=int(row['oracle_common_K'])
+                assert len(m['heldout_ids'])==int(row['heldout_members'])
+                assert not set(m['fit_ids'])&set(m['heldout_ids']) and set(m['center_ids'])<=set(m['fit_ids'])
+                flags.append(int(row['fit_origins'])==K and int(row['heldout_origins'])==K)
+                processed+=1
+            for coverage in ('all','complete_origins','missing_origin'):
+                selected=[m for m,complete in zip(records,flags) if coverage=='all' or complete==(coverage=='complete_origins')]
+                pairs=overlap_pairs(selected)
+                for kind in ('all','same_origin','different_origin'):
+                    part={pair:v for pair,v in pairs.items() if kind=='all' or (truth[pair[0]]==truth[pair[1]])==(kind=='same_origin')}
+                    counts=[len(part),sum(v[0]>=2 for v in part.values()),sum(v[0] for v in part.values()),
+                            sum(v[1] for v in part.values()),sum(v[7] for v in part.values()),sum(v[8] for v in part.values()),
+                            sum(v[1]>=2 for v in part.values()),sum(v[2]>0 and v[3]>0 for v in part.values()),
+                            sum(v[4]>=2 for v in part.values()),sum(v[5]>0 and v[6]>0 for v in part.values())]
+                    assert counts[-1]==0, 'Cached global relation must be invariant within one split'
+                    row=dict(**config,oracle_common_K=K,source_coverage=coverage,pair_origin=kind,neighborhoods=len(selected),**dict(zip(names,counts)))
+                    row['local_conflict_fraction']=counts[7]/counts[6] if counts[6] else None
+                    if writer is None:writer=csv.DictWriter(detail,fieldnames=list(row));writer.writeheader()
+                    writer.writerow(row)
+                    aggkey=(config['curvature'],config['scale'],config['normal_weight'],config['radius'],K,coverage,kind)
+                    if aggkey not in aggregated:aggregated[aggkey]=dict(conditions=0,**{name:0 for name in names},conditions_with_known_pairs=0,conditions_with_conflict=0,sum_defined_conflict_fraction=0.)
+                    agg=aggregated[aggkey];agg['conditions']+=1
+                    for name in names:agg[name]+=row[name]
+                    if row['local_conflict_fraction'] is not None:
+                        agg['conditions_with_known_pairs']+=1;agg['sum_defined_conflict_fraction']+=row['local_conflict_fraction']
+                    agg['conditions_with_conflict']+=row['local_conflict_pairs']>0
+                    if coverage=='all' and kind=='all':
+                        for pair,v in part.items():
+                            if v[2] and v[3]:
+                                views=[]
+                                for m in selected:
+                                    if pair[0] in m['heldout_ids'] and pair[1] in m['heldout_ids'] and m['local_labels'] is not None:
+                                        a=m['heldout_ids'].index(pair[0]);b=m['heldout_ids'].index(pair[1]);labels=[m['local_labels'][a],m['local_labels'][b]]
+                                        views.append(dict(center_x=m['center_x'],center_y=m['center_y'],labels=labels))
+                                witnesses.write(json.dumps(dict(**config,pair=list(pair),same_origin=bool(truth[pair[0]]==truth[pair[1]]),neighborhoods=views))+'\n');break
+            if len(groups_seen)%120==0:detail.flush();witnesses.flush();print('overlap groups',len(groups_seen),flush=True)
+    assert processed==64800 and len(groups_seen)==7200
+    summary=[]
+    for key,agg in sorted(aggregated.items()):
+        row=dict(zip(('curvature','scale','normal_weight','radius','oracle_common_K','source_coverage','pair_origin'),key));row.update(agg)
+        row['pooled_local_conflict_fraction']=agg['local_conflict_pairs']/agg['local_repeated_known_pairs'] if agg['local_repeated_known_pairs'] else None
+        row['mean_condition_conflict_fraction']=agg['sum_defined_conflict_fraction']/agg['conditions_with_known_pairs'] if agg['conditions_with_known_pairs'] else None
+        summary.append(row)
+    write_csv(out/'summary.csv',summary)
+    (out/'metadata.json').write_text(json.dumps(dict(status='complete',git_commit=subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(),source_sha256=sha(__file__),
+        input_files={name:sha(source/name) for name in ('metadata.json','models.jsonl','replicates.csv')},groups=len(groups_seen),processed_neighborhoods=processed,
+        evidence='Read-only saved local/global predictions, no fitting or generation. Per seed/case/kappa/scale/angle/repeat/radius; compare pair co-membership, not numeric labels. '
+        'Repeated known pairs require at least two neighborhoods with both labels known. Empty/unknown/unfitted observations retained separately. '
+        'Counts pool pair-condition units, not independent Gaussian pairs across splits; mean condition ratios also reported. Origin coverage subgroups do not assess cross-subgroup conflicts. '
+        'One representative conflict witness per condition, not all conflicts. No voting/closure/stitching or global physical membership axiom.'),indent=2),encoding='utf-8')
+
+
 if __name__=='__main__':
     p=argparse.ArgumentParser(description=__doc__);p.add_argument('--root',type=Path)
     p.add_argument('--output',type=Path);p.add_argument('--heldout',action='store_true');p.add_argument('--self-check',action='store_true')
     p.add_argument('--single-only',action='store_true');p.add_argument('--given-k',type=int,choices=(1,2))
     p.add_argument('--local-heldout',action='store_true')
+    p.add_argument('--overlap-audit',action='store_true')
     args=p.parse_args()
-    if args.self_check:local_self_check() if args.local_heldout else holdout_self_check()
+    if args.self_check:overlap_self_check() if args.overlap_audit else local_self_check() if args.local_heldout else holdout_self_check()
     else:
         if args.root is None or args.output is None:p.error('root and output required')
+        if args.overlap_audit and (args.local_heldout or args.heldout or args.single_only or args.given_k is not None):p.error('overlap audit only reads fixed saved predictions')
         if args.local_heldout and (args.heldout or args.single_only or args.given_k is not None):p.error('local holdout uses its fixed cached global control')
         if (args.single_only or args.given_k is not None) and not args.heldout:p.error('count control requires --heldout')
         if args.given_k is not None and not args.single_only:p.error('--given-k requires --single-only')
-        if args.local_heldout:run_local(args.root,args.output)
+        if args.overlap_audit:run_overlap(args.root,args.output)
+        elif args.local_heldout:run_local(args.root,args.output)
         elif args.heldout:run_holdout(args.root,args.output,args.given_k,args.single_only)
         else:run(args.root,args.output)
