@@ -177,7 +177,7 @@ def run(args):
         normal_invalid='nonfinite, norm <= 1e-8, or zero ray-plane host fallback',
         replay_tolerance=dict(rtol=2e-5, atol=2e-6), normal_replay_tolerance=dict(rtol=2e-4, atol=2e-5,
             normalize_eps=1e-12, reduction='CPU float32 multiply/add in original acceptance order; all members'),
-        planned_cases=cases()[:args.limit], cases=[])
+        planned_cases=cases()[args.start:args.start + args.limit], cases=[])
     atomic_json(output / 'metadata.json', metadata)
     with torch.no_grad():
         for cfg in metadata['planned_cases']:
@@ -241,11 +241,12 @@ def run(args):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--output', help='New or empty synthetic-result directory')
-    parser.add_argument('--limit', type=int, default=30, help='First 1..30 configurations, one seed each')
+    parser.add_argument('--start', type=int, default=0, help='Starting case index; original seeds and indices retained')
+    parser.add_argument('--limit', type=int, default=30, help='Number of configurations from --start, one seed each')
     parser.add_argument('--self-check', action='store_true', help='Pure NumPy geometry checks; no GPU imports or output')
     args = parser.parse_args()
-    if not 1 <= args.limit <= 30:
-        parser.error('--limit must be in 1..30')
+    if args.start < 0 or args.limit < 1 or args.start + args.limit > 30:
+        parser.error('Require start >= 0, limit >= 1, and start + limit <= 30')
     if args.self_check:
         self_check()
     elif not args.output:
