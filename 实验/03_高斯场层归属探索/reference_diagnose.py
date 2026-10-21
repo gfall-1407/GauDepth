@@ -95,13 +95,17 @@ def write_csv(path, rows):
 
 
 def find_scan(metadata):
-    paths = [metadata.get('model_path', '')]
-    paths.extend(v.get('model_path', '') for v in metadata.get('views', []))
+    paths = [metadata.get('model', ''), metadata.get('model_path', ''),
+             metadata.get('effective_model_args', {}).get('model_path', ''),
+             metadata.get('args', {}).get('model_path', '')]
+    scans = set()
     for p in paths:
         match = re.search(r'(scan\d+)', str(p), re.I)
         if match:
-            return match.group(1).lower()
-    raise ValueError('Cannot infer scan name from metadata model_path')
+            scans.add(match.group(1).lower())
+    if len(scans) != 1:
+        raise ValueError(f'Missing or inconsistent scan identity: {scans}')
+    return scans.pop()
 
 
 def run(inputs, model_root, output, voxel=.002, bands=(2, 4, 8), eta=.01, angle=15.):
@@ -144,6 +148,8 @@ def run(inputs, model_root, output, voxel=.002, bands=(2, 4, 8), eta=.01, angle=
         view = next((v for v in meta.get('views', []) if int(v['view_index']) == view_index), None)
         if view is None:
             raise ValueError(f'No metadata view_index={view_index} for {path}')
+        if sha256(path) != view['npz_sha256']:
+            raise ValueError(f'NPZ hash differs from sampler metadata: {path}')
         H, W = map(int, view['image_size'])
         fx, fy = map(float, view['focal'])
         mat = np.asarray(view['world_view_transform'], dtype=np.float64)
@@ -166,9 +172,9 @@ def run(inputs, model_root, output, voxel=.002, bands=(2, 4, 8), eta=.01, angle=
                 hit_id = int(hit['geometry_ids'].numpy()[0])
                 has_hit = math.isfinite(t_hit) and hit_id != 0xFFFFFFFF
                 sl = slice(int(off[r]), int(off[r + 1]))
-                d, w, n_world, nv = depth[sl].astype(float), weight[sl].astype(float), normals[sl].astype(float), valid[sl]
-                # Stored primitive normals are world-space; world-to-camera rotation is stored matrix's 3x3.
-                n_cam = n_world @ mat[:3, :3].T
+                d, w, n_cam, nv = depth[sl].astype(float), weight[sl].astype(float), normals[sl].astype(float), valid[sl]
+                # Sampler normals already use camera coordinates (verified by host replay).
+                partitions = {geom: group_ray(d, n_cam, nv, eta, angle, geom) for geom in (False, True)}
                 if has_hit:
                     point = origin + t_hit * direction
                     p_cam = world_to_camera(mat, point)
@@ -190,10 +196,10 @@ def run(inputs, model_root, output, voxel=.002, bands=(2, 4, 8), eta=.01, angle=
                     if accepted:
                         near = np.isfinite(d) & np.isfinite(w) & (w > 0) & (np.abs(d - z_ref) <= half_z)
                         for geom in (False, True):
-                            labels, flags = group_ray(d, n_cam, nv, eta, angle, geom)
+                            labels, flags = partitions[geom]
                             metrics = grouped_mass_metrics(w[near], labels[near])
                             primitive_n_world = hit['primitive_normals'].numpy()[0].astype(np.float64)
-                            primitive_n_cam = mat[:3, :3] @ primitive_n_world
+                            primitive_n_cam = mat[:3, :3].T @ primitive_n_world
                             normal_angle = weighted_normal_angle(n_cam, w, nv, near, primitive_n_cam)
                             row = dict(scan=scan, view=path.stem, ray=r, pixel_x=x, pixel_y=y,
                                        qualitative=bool(qual[r]), status=status, expected_z=expected_z,
@@ -230,9 +236,13 @@ def run(inputs, model_root, output, voxel=.002, bands=(2, 4, 8), eta=.01, angle=
                                        eta=eta, angle_degrees=angle, ambiguous_insertions=None,
                                        compatible_cross_group_pairs=None)
                             ray_rows.append(row)
+                            if not bool(qual[r]):
+                                key = (scan, path.stem, half_band, method)
+                                summary_map.setdefault(key, []).append(row)
         manifests.append(dict(npz=str(path), npz_sha256=sha256(path), metadata=str(meta_path),
                               metadata_sha256=sha256(meta_path), scan=scan, mesh=str(mesh_path),
-                              mesh_sha256=mesh_hashes[str(mesh_path)], source_sha256=sha256(Path(__file__))))
+                              mesh_sha256=mesh_hashes[str(mesh_path)], source_sha256=sha256(Path(__file__)),
+                              analyze_sha256=sha256(Path(__file__).with_name('analyze.py'))))
     write_csv(output / 'rays.csv', ray_rows)
     summaries = []
     for (scan, view, band, method), rows in sorted(summary_map.items()):
@@ -272,6 +282,11 @@ def self_check():
     pw = center + 3. * dw
     assert np.allclose(world_to_camera(stored, pw), dc * 3.)
     assert np.allclose(project_camera(world_to_camera(stored, pw), 11, 9, 10, 10), [5, 4])
+    world_normal = np.array([1., 0., 0.])
+    camera_normal = stored[:3, :3].T @ world_normal
+    assert weighted_normal_angle([camera_normal], [1.], [True], np.array([True]), camera_normal) == 0.
+    assert find_scan({'model': '/models/scan24/point_cloud.ply',
+                      'effective_model_args': {'model_path': '/models/scan24'}}) == 'scan24'
     assert [b * .002 for b in (2, 4, 8)] == [.004, .008, .016]
     m = grouped_mass_metrics([.5, .3, .2], [0, 1, -1])
     assert m['groups_for_90pct_near_mass'] is None and m['undetermined_near_mass_fraction'] == .2
