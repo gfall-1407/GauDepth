@@ -15,7 +15,8 @@ def fit(depth, normal, valid, K, normal_weight=1., scale=np.log1p(.005),
 
     Exact objective ties use the first lexicographic candidate tuple. Near-optimal
     counts and next gap use tolerance 1e-10; near ties do not imply uniqueness.
-    Memory is O(valid_count * chunk_size), time O(valid_count * candidates**K).
+    Energy tables up to 16 MB are cached; larger inputs use chunked evaluation.
+    Search time is O(valid_count * candidates**K).
     Invalid rows remain unknown even when normal_weight=0. All outputs are JSON-safe.
     """
     if K not in (1, 2) or normal_weight not in (0., 1.):
@@ -55,7 +56,7 @@ def fit(depth, normal, valid, K, normal_weight=1., scale=np.log1p(.005),
     centers, first = np.unique(features, axis=0, return_index=True)
     count = len(centers)
 
-    def energy(which):
+    def raw_energy(which):
         delta = np.abs(logz[:, None] - centers[which, 0])
         with np.errstate(divide='ignore'):
             log_square = 2 * (np.log(delta) - np.log(scale)) - np.log(nu)
@@ -64,6 +65,13 @@ def fit(depth, normal, valid, K, normal_weight=1., scale=np.log1p(.005),
             theta = np.arccos(np.clip(unit @ centers[which, 1:].T, -1., 1.))
             e += normal_weight * np.minimum((theta / np.deg2rad(angle)) ** 2, 1.)
         return e
+
+    # Observed rays have <=256 members; avoid re-evaluating the same angular
+    # costs for every pair in the exhaustive search. Bound the optional cache.
+    cached = raw_energy(np.arange(count)) if len(ids)*count <= 2_000_000 else None
+
+    def energy(which):
+        return raw_energy(which) if cached is None else cached[:, which]
 
     def objectives():
         if K == 1:
