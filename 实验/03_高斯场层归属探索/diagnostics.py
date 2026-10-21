@@ -2,6 +2,7 @@
 import argparse
 import csv
 import glob
+import hashlib
 import json
 import re
 from pathlib import Path
@@ -38,8 +39,12 @@ def contribution_stats(weights, labels):
     singleton_mask = np.isin(lab, list(singleton))
     masses = [float(np.sum(w[lab == k])) for k in group_ids]
     largest = max(masses, default=0.)
-    ordered = np.sort(w[np.isfinite(w) & (w > 0)])[::-1]
-    n90 = int(np.searchsorted(np.cumsum(ordered), .9 * total) + 1) if total > 0 and len(ordered) else None
+    ordered = np.sort(np.asarray(masses, float))[::-1]
+    cumulative = np.cumsum(ordered)
+    # Count candidate GROUPS, not individual Gaussian members. Unknown mass
+    # remains in the denominator; known groups may not cover 90% at all.
+    n90 = (int(np.searchsorted(cumulative, .9 * total) + 1)
+           if total > 0 and len(cumulative) and cumulative[-1] >= .9 * total else None)
     return dict(max_group_contribution_fraction=largest / total if total > 0 else None,
                 candidates_for_90pct_contribution=n90,
                 singleton_group_fraction=float(len(singleton) / len(group_ids)) if len(group_ids) else None,
@@ -118,6 +123,8 @@ def expand_inputs(inputs):
 
 
 def run(paths, output, eta=.01, angle=15.):
+    if output.exists() and any(output.iterdir()):
+        raise FileExistsError(f'Diagnostic output is not empty: {output}')
     output.mkdir(parents=True, exist_ok=True)
     ray_rows = []
     for path in paths:
@@ -165,7 +172,10 @@ def run(paths, output, eta=.01, angle=15.):
     keys = ['max_group_contribution_fraction', 'candidates_for_90pct_contribution',
             'singleton_group_fraction', 'singleton_contribution_fraction',
             'undetermined_member_fraction', 'undetermined_contribution_fraction',
-            'compatible_cross_group_pairs', 'pair_precision', 'pair_recall', 'pair_f1']
+            'compatible_cross_group_pairs', 'pair_precision', 'pair_recall', 'pair_f1',
+            'largest_group_oriented_angle_p50', 'largest_group_oriented_angle_p75',
+            'largest_group_90_oriented_angle_p50', 'largest_group_90_oriented_angle_p75',
+            'largest_group_normal_valid_coverage', 'largest_group_90_normal_valid_coverage']
     summaries = []
     for key in sorted(set((r['scan'], r['view'], r['method'], r['order']) for r in ray_rows)):
         subset = [r for r in ray_rows if (r['scan'], r['view'], r['method'], r['order']) == key]
@@ -174,6 +184,9 @@ def run(paths, output, eta=.01, angle=15.):
                                  if any(r.get(m) is not None for r in subset) else None for m in keys}))
     write_csv(output / 'summary.csv', summaries)
     payload = dict(inputs=[str(p) for p in paths], eta=eta, angle_degrees=angle,
+                   input_sha256={str(p): hashlib.sha256(p.read_bytes()).hexdigest() for p in paths},
+                   source_sha256={name: hashlib.sha256(Path(__file__).with_name(name).read_bytes()).hexdigest()
+                                  for name in ('analyze.py', 'diagnostics.py')},
                    interpretation='Algorithmic order dependence only; no order is a truth label. Original contribution is descriptive, not member support or surface probability.',
                    qualitative_rows_excluded=True, summaries=summaries)
     (output / 'summary.json').write_text(json.dumps(payload, indent=2), encoding='utf-8')
