@@ -34,20 +34,22 @@ def stats(result):
                 next_objective_gap=result['next_objective_gap'])
 
 
-def mechanism(out, repeats=20, seed=20261022):
+def mechanism(out, repeats=20, seed=20261022,objective='soft_uniform',single_force_two=False):
     rows = []
     conditions = 0
     for sources in (1,2):
+        if single_force_two and sources==2:continue
         gaps = (0.,) if sources == 1 else (0.,.005,.02,.05)
         directions = (0.,) if sources == 1 else (0.,10.,30.,60.)
         for gap, angle, dz, dn in itertools.product(gaps,directions,(0.,.002,.008),(0.,5.,15.,30.)):
             config = dict(sources=sources, depth_gap=gap, direction_gap_deg=angle,
-                          depth_noise=dz, normal_noise_deg=dn, oracle_K=sources)
+                          depth_noise=dz, normal_noise_deg=dn, oracle_K=2 if single_force_two else sources)
             for rep in range(repeats):
                 rng=np.random.default_rng(seed+conditions*repeats+rep)
                 d,n,truth=proposals(rng,sources,gap,angle,dz,dn,12)
                 for lam in (0.,1.):
-                    result=fit(d,n,np.ones(len(d),bool),sources,normal_weight=lam)
+                    result=fit(d,n,np.ones(len(d),bool),2 if single_force_two else sources,
+                               normal_weight=lam,objective=objective)
                     score=pair_metrics(truth,result['labels'])
                     rows.append(dict(**config, repeat=rep, normal_weight=lam,
                                      pair_f1=score['f1'], false_merge_pairs=score['fp'],
@@ -67,12 +69,13 @@ def mechanism(out, repeats=20, seed=20261022):
         summary.append(dict(**config,repeats=len(part),**{f'mean_{k}':float(np.mean([r[k] for r in part])) for k in keys}))
     write_csv(out/'summary.csv',summary)
     return dict(seed=seed,repeats=repeats,conditions=conditions,generated_cases=conditions*repeats,
-                oracle_K=True,evidence='Known source count only; labels used exclusively for scoring. '
+                oracle_K=not single_force_two,single_source_forced_K2=single_force_two,
+                evidence='Known source count only except explicit single-source wrong-K stress; labels only for scoring. '
                 'K=1 produces one group by construction and cannot demonstrate layer-number discovery. '
                 'Same feature proposals/seeds as mechanism_sweep.py; not a Gaussian renderer.')
 
 
-def scenes(inputs,out):
+def scenes(inputs,out,objective='soft_uniform'):
     files=[]
     for name in inputs:
         p=Path(name);files.extend(sorted(p.glob('view_*.npz')) if p.is_dir() else [p])
@@ -92,7 +95,7 @@ def scenes(inputs,out):
                     a,b=map(int,z['offsets'][ray:ray+2]);d,n,v=[z[k][a:b] for k in ('depth','normal','normal_valid')]
                     for lam in (0.,1.):
                         for K in (1,2):
-                            result=fit(d,n,v,K,normal_weight=lam)
+                            result=fit(d,n,v,K,normal_weight=lam,objective=objective)
                             config=dict(input_dir=path.parent.name,view=path.stem,ray=ray,
                                         conditional_K=K,normal_weight=lam)
                             rows.append(dict(**config,**stats(result)))
@@ -115,7 +118,7 @@ def scenes(inputs,out):
                 'Energy and entropy are model diagnostics, not calibrated confidence or geometric accuracy.')
 
 
-def imbalance(out):
+def imbalance(out,objective='soft_uniform'):
     """Fixed two prototypes; change only how often each is represented."""
     rows=[];details=[]
     for na,nb in ((12,12),(4,20),(2,22)):
@@ -124,9 +127,9 @@ def imbalance(out):
         theta=np.deg2rad(30.*truth)
         n=np.c_[np.sin(theta),np.zeros(len(truth)),-np.cos(theta)]
         for lam in (0.,1.):
-            result=fit(d,n,np.ones(len(d),bool),2,normal_weight=lam)
+            result=fit(d,n,np.ones(len(d),bool),2,normal_weight=lam,objective=objective)
             D=2.5*np.log1p(1./4)+lam
-            mixed=np.log(2.)-np.logaddexp(0.,-D)
+            mixed=np.log(2.)-np.logaddexp(0.,-D) if objective=='soft_uniform' else 0.
             repeated_majority=na/(na+nb)*D
             repeated_minority=nb/(na+nb)*D
             assert np.isclose(result['objective'],min(mixed,repeated_majority,repeated_minority),atol=1e-10,rtol=0)
@@ -150,12 +153,17 @@ if __name__=='__main__':
     p.add_argument('--mechanism',action='store_true');p.add_argument('--imbalance',action='store_true')
     p.add_argument('--input',action='append')
     p.add_argument('--output',required=True);p.add_argument('--repeats',type=int,default=20)
+    p.add_argument('--objective',choices=('soft_uniform','hard_min'),default='soft_uniform')
+    p.add_argument('--single-force-two',action='store_true',help='Wrong-K stress on the 12 single-source conditions only')
     args=p.parse_args();out=Path(args.output)
     if sum(map(bool,(args.mechanism,args.imbalance,args.input)))!=1:p.error('Choose --mechanism, --imbalance, or --input')
     if out.exists() and any(out.iterdir()):raise FileExistsError(out)
     out.mkdir(parents=True,exist_ok=True)
-    metadata=(mechanism(out,args.repeats) if args.mechanism else
-              imbalance(out) if args.imbalance else scenes(args.input,out))
+    if args.single_force_two and not args.mechanism:p.error('--single-force-two requires --mechanism')
+    metadata=(mechanism(out,args.repeats,objective=args.objective,single_force_two=args.single_force_two)
+              if args.mechanism else imbalance(out,args.objective) if args.imbalance else scenes(args.input,out,args.objective))
+    metadata['objective']=args.objective
+    metadata['responsibility_note']='Softmax energy assignments; for hard_min they are post-fit descriptions, not the optimized objective.'
     root=Path(__file__).parent
     metadata.update(source_sha256={n:sha(root/n) for n in
         ('competition_probe.py','latent_competition.py','mechanism_sweep.py','analyze.py')})

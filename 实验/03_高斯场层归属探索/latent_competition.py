@@ -10,7 +10,7 @@ import numpy as np
 
 
 def fit(depth, normal, valid, K, normal_weight=1., scale=np.log1p(.005),
-        nu=4., angle=30., chunk_size=256):
+        nu=4., angle=30., chunk_size=256, objective='soft_uniform'):
     """Exhaustive global minimum over distinct member features (repeats allowed).
 
     Exact objective ties use the first lexicographic candidate tuple. Near-optimal
@@ -21,6 +21,8 @@ def fit(depth, normal, valid, K, normal_weight=1., scale=np.log1p(.005),
     """
     if K not in (1, 2) or normal_weight not in (0., 1.):
         raise ValueError('Require K=1 or 2 and normal_weight=0 or 1')
+    if objective not in ('soft_uniform','hard_min'):
+        raise ValueError('Unknown finite-search objective')
     if not (np.isfinite([scale, nu, angle]).all() and scale > 0 and nu > 0
             and 0 < angle <= 180 and isinstance(chunk_size, (int, np.integer))
             and chunk_size > 0):
@@ -42,6 +44,7 @@ def fit(depth, normal, valid, K, normal_weight=1., scale=np.log1p(.005),
     settings = dict(K=int(K), normal_weight=float(normal_weight), scale=float(scale),
                     nu=float(nu), angle=float(angle), chunk_size=int(chunk_size),
                     tie_tolerance=1e-10, prior='equal', candidate='joint_member_medoid')
+    settings['objective']=objective
     result = dict(labels=labels.tolist(), responsibilities=responsibility.tolist(),
                   hypothesis_member_indices=[], objective=None, hypothesis_pair_count=0,
                   near_optimal_count=0, next_objective_gap=None, collapsed=False,
@@ -83,7 +86,9 @@ def fit(depth, normal, valid, K, normal_weight=1., scale=np.log1p(.005),
                 ei = energy([i])
                 for start in range(i, count, chunk_size):
                     js = np.arange(start, min(start + chunk_size, count))
-                    value = (np.log(2.) - np.logaddexp(-ei, -energy(js))).mean(axis=0)
+                    ej=energy(js)
+                    value = ((np.log(2.)-np.logaddexp(-ei,-ej)) if objective=='soft_uniform'
+                             else np.minimum(ei,ej)).mean(axis=0)
                     yield [(i, int(j)) for j in js], value
 
     best, chosen = float('inf'), None
@@ -171,6 +176,14 @@ def self_check():
     assert partial['labels'] == [0, -1] and partial['responsibilities'] == [[1.], [0.]]
     empty = fit([], np.empty((0, 3)), [], 1)
     assert empty['labels'] == [] and empty['objective'] is None
+    # Hard minimum removes equal-prior duplication penalty, while retaining fixed K.
+    repeated_d=np.r_[np.ones(4),np.full(20,1.005)]
+    repeated_n=np.tile([0.,0.,1.],(24,1))
+    hard=fit(repeated_d,repeated_n,np.ones(24,bool),2,normal_weight=0.,objective='hard_min')
+    assert np.isclose(hard['objective'],0.) and not hard['collapsed']
+    assert len(set(hard['labels']))==2
+    independent_hard=min(np.minimum(e[:,i],e[:,j]).mean() for i in range(4) for j in range(i,4))
+    assert np.isclose(fit(ds,ns,v[:4],2,1.,objective='hard_min')['objective'],independent_hard,atol=1e-12)
     print('self-check passed: global enumeration, degeneracy, invariances, stability, invalid/empty')
 
 
