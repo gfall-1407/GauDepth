@@ -40,12 +40,12 @@ def organize(depth,sigma,c):
 
 
 def self_check():
-    lab,unique,anchors,support=organize([1.,1.01,1.02],[.02,.001,.001],1.)
+    lab,unique,anchors,support=organize([1.,1.01,1.02],[.03,.001,.001],1.)
     assert len(anchors)==2 and unique[0]==-1 and support[0].sum()==2
     assert len(organize([1.,1.0001],[.001,.001],2.)[2])==1
     assert len(organize([1.,1.02],[.001,.001],2.)[2])==2
     assert len(organize([],[],2.)[2])==0
-    shifted=organize(np.array([1.,1.01,1.02])*1000,np.array([.02,.001,.001])*1000,1.)
+    shifted=organize(np.array([1.,1.01,1.02])*1000,np.array([.03,.001,.001])*1000,1.)
     assert np.array_equal(shifted[0],lab) and np.array_equal(shifted[1],unique)
     print('common response band self-check passed')
 
