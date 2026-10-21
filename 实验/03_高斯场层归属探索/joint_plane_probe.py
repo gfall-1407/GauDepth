@@ -108,7 +108,7 @@ def run(input_dir,baseline,out):
         git_commit=subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(),source_sha256=sha(__file__),
         inputs_note='Only Gaussians accepted on at least one of the 81 analytic rays; each counted once.',
         objective='Finite observed tangent-plane hypotheses, mean minimum robust point-to-plane energy, optional unsigned-axis angle term.',
-        evidence='Known accepted-source K and a globally planar generating mechanism; not automatic layer count or physical truth in trained models. '
+        evidence='Known accepted-source K; generating geometry is planar when curvature=0 and curved otherwise; not automatic layer count or physical truth in trained models. '
         'This probe adds 3D means and Gaussian axes, pools all rays, changes candidate/energy and counts each Gaussian once; '
         'comparison with independent per-ray fits is an information/hypothesis ablation, not an equal-information algorithm ranking. '
         'No construction labels or true plane angles enter fit; labels supply K and evaluation only. '
