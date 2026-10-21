@@ -216,6 +216,8 @@ def command_run(args):
     while True:
         try:
             current = read_json(deadline_path)
+            if not isinstance(current,dict):
+                raise ValueError('deadline 文件必须为 JSON 对象')
             observed_deadline = parse_deadline(current.get("deadline"), hard_stop, require_future=False)
             last_valid_deadline = observed_deadline
             invalid_deadline_logged = False
