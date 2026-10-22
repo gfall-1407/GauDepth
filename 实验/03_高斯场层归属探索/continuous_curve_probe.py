@@ -124,7 +124,7 @@ def self_check():
     print('continuous graph parameter/d0/fit-only/heldout/permutation/failure self-check passed',flush=True)
 
 
-def run(root,out):
+def run(root,out,protocol='random_half'):
     if out.exists() and any(out.iterdir()):
         raise FileExistsError(out)
     previous=root/'gaussian_member_holdout'
@@ -133,11 +133,12 @@ def run(root,out):
     cached={}
     for line in (previous/'models.jsonl').read_text(encoding='utf-8').splitlines():
         model=json.loads(line)
-        if model['case_index'] in (9,10,11) and model['protocol']=='random_half' and model['scale']==SCALE and model['normal_weight']==LAMBDA and model['curvature'] in (0,50):
+        if model['case_index'] in (9,10,11) and model['protocol']==protocol and model['scale']==SCALE and model['normal_weight']==LAMBDA and model['curvature'] in (0,50):
             key=(model['case_index'],model['seed_offset'],model['curvature'],model['repeat'])
             assert key not in cached
             cached[key]=model
-    assert len(cached)==60
+    repeats=range(5) if protocol=='random_half' else range(1)
+    assert len(cached)==12*len(repeats)
     out.mkdir(parents=True,exist_ok=True);rows=[];inputs=[];started=time.monotonic()
     with (out/'models.jsonl').open('w',encoding='utf-8') as stream:
         for case in (9,10,11):
@@ -156,16 +157,20 @@ def run(root,out):
                 for curvature in (0,50):
                     payload=payloads[curvature];p=payload['means'].astype(float);n=payload['generated_normal'].astype(float)
                     assert len(np.unique(payload['source_origin'][common]))==2 # Explicit oracle K2.
-                    for repeat in range(5):
+                    for repeat in repeats:
                         model=cached[(case,seed,curvature,repeat)];learn=np.array(model['fit_ids']);test=np.array(model['heldout_ids'])
-                        order=np.random.default_rng(700000+seed*100+case*7+repeat).permutation(len(common))
-                        np.testing.assert_array_equal(learn,common[np.sort(order[:len(common)//2])])
-                        np.testing.assert_array_equal(test,common[np.sort(order[len(common)//2:])])
+                        if protocol=='random_half':
+                            order=np.random.default_rng(700000+seed*100+case*7+repeat).permutation(len(common))
+                            np.testing.assert_array_equal(learn,common[np.sort(order[:len(common)//2])])
+                            np.testing.assert_array_equal(test,common[np.sort(order[len(common)//2:])])
+                        else:
+                            np.testing.assert_array_equal(learn,common[p[common,0]<0])
+                            np.testing.assert_array_equal(test,common[p[common,0]>0])
                         assert not np.intersect1d(learn,test).size
                         centers=np.array(model['center_ids']);assert np.isin(centers,learn).all()
                         coeff,valid=curve_candidates(p[centers],n[centers],0.);assert len(valid)==2
                         plane,curve=fit_models(p[learn],n[learn],coeff)
-                        row=dict(case_index=case,seed_offset=seed,curvature=curvature,repeat=repeat,
+                        row=dict(protocol=protocol,case_index=case,seed_offset=seed,curvature=curvature,repeat=repeat,
                                  scale=SCALE,normal_weight=LAMBDA,oracle_K=2,fit_members=len(learn),heldout_members=len(test),
                                  fit_origins=len(np.unique(payload['source_origin'][learn])),heldout_origins=len(np.unique(payload['source_origin'][test])))
                         detail=dict(**row,fit_ids=learn.tolist(),heldout_ids=test.tolist(),models={})
@@ -183,13 +188,13 @@ def run(root,out):
                         row['curve_minus_plane']=row['curve_f1']-row['plane_f1'] if row['curve_f1'] is not None and row['plane_f1'] is not None else None
                         rows.append(row);stream.write(json.dumps(detail)+'\n');stream.flush();csv_write(out/'replicates.csv',rows)
                 print('continuous graphs case',case,'seed',seed,'finished',round(time.monotonic()-started,2),flush=True)
-    assert len(rows)==60
+    assert len(rows)==12*len(repeats)
     metadata=dict(status='complete',git_commit=subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(),
         source_sha256=sha(__file__),dependency_sha256={name:sha(Path(__file__).parent/name) for name in ('analyze.py','joint_plane_probe.py')},
         python=sys.version,numpy=np.__version__,scipy=scipy.__version__,inputs=inputs,
         cached_input_sha256={name:sha(previous/name) for name in ('metadata.json','models.jsonl')},
-        elapsed_seconds=time.monotonic()-started,
-        evidence='CPU analytic existing case9-11, two seeds, curvature0/50, five saved random halves, scale.002 lambda1. K2 oracle. '
+        elapsed_seconds=time.monotonic()-started,protocol=protocol,
+        evidence='CPU analytic existing case9-11, two seeds, curvature0/50, saved random halves or x<0 fit/x>0 heldout with x=0 excluded, scale.002 lambda1. K2 oracle. '
         'Physical shared graph d is unbounded continuous, initialized from fit arrays only, never construction d/gap/origin or heldout. '
         'Same robust normalized graph residual plus unsigned capped axis angle as finite probe; not exact surface distance or calibrated support. '
         'Two deterministic starts each; L-BFGS-B maxiter200 ftol1e-10 gtol1e-6. Plane6 and curve7 parameters. '
@@ -202,8 +207,9 @@ def run(root,out):
 
 if __name__=='__main__':
     parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('--self-check',action='store_true')
-    parser.add_argument('--root',type=Path);parser.add_argument('--output',type=Path);args=parser.parse_args()
+    parser.add_argument('--root',type=Path);parser.add_argument('--output',type=Path)
+    parser.add_argument('--protocol',choices=('random_half','spatial_left_right'),default='random_half');args=parser.parse_args()
     if args.self_check:self_check()
     else:
         if args.root is None or args.output is None:parser.error('root and output required')
-        run(args.root,args.output)
+        run(args.root,args.output,args.protocol)
