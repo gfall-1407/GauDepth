@@ -127,11 +127,147 @@ def run(inputs,out,measures=('uniform',),objective='soft_uniform'):
         'Single-source K1 success is imposed. All 30 adjacent-pixel cases are correlated, not independent scene samples.'),indent=2),encoding='utf-8')
 
 
+def ray_profiles(data,rays):
+    """Independent full-matrix Gaussian restriction, with camera-z ray parameter."""
+    mu=np.asarray(data['means'],float);scales=np.asarray(data['scales'],float);q=np.asarray(data['rotations'],float)
+    good=np.isfinite(mu).all(axis=1)&np.isfinite(scales).all(axis=1)&(scales>0).all(axis=1)&np.isfinite(q).all(axis=1)&(np.linalg.norm(q,axis=1)>1e-12)
+    with np.errstate(invalid='ignore',divide='ignore'):
+        q=np.where(good[:,None],q,np.nan);q=q/np.linalg.norm(q,axis=1)[:,None]
+        w,x,y,z=q.T
+        rot=np.array([[1-2*(y*y+z*z),2*(x*y-w*z),2*(x*z+w*y)],
+                      [2*(x*y+w*z),1-2*(x*x+z*z),2*(y*z-w*x)],
+                      [2*(x*z-w*y),2*(y*z+w*x),1-2*(x*x+y*y)]]).transpose(2,0,1)
+        inv_var=1/np.where(good[:,None],scales,np.nan)**2
+        precision=np.einsum('nij,nj,nkj->nik',rot,inv_var,rot)
+        denominator=np.einsum('ri,nij,rj->rn',rays,precision,rays)
+        numerator=np.einsum('ri,nij,nj->rn',rays,precision,mu)
+        peak=numerator/denominator;sigma=1/np.sqrt(denominator)
+    valid=good[None,:]&np.isfinite(peak)&np.isfinite(sigma)&(sigma>0)
+    return peak,sigma,valid
+
+
+def patch_intersections(ray,cfg,origin):
+    dx,dy,dz=map(float,ray);kappa=float(cfg.get('curvature',0.))
+    a=kappa*(dx*dx+dy*dy);b=dz+np.tan(np.deg2rad(cfg['theta_deg'][origin]))*dx;c=1.+origin*cfg['gap']
+    roots=np.roots([a,-b,c]) if abs(a)>1e-14 else np.array([c/b]) if abs(b)>1e-14 else np.array([])
+    positive=[]
+    for root in roots:
+        if abs(np.imag(root))>1e-10:continue
+        z=float(np.real(root))
+        if np.isfinite(z) and z>0 and not any(np.isclose(z,old,atol=1e-10,rtol=1e-10) for old in positive):positive.append(z)
+    inside=[z for z in sorted(positive) if abs(z*dx)<=.01+1e-12 and abs(z*dy)<=.01+1e-12]
+    return inside,len(positive)-len(inside)
+
+
+def profile_self_check():
+    cfg=dict(theta_deg=[0.,0.],gap=.005,curvature=0.)
+    roots,excluded=patch_intersections([.005,-.004,1.],cfg,1)
+    np.testing.assert_allclose(roots,[1.005],atol=1e-12);assert excluded==0
+    cfg['curvature']=50.
+    roots,excluded=patch_intersections([.005,0.,1.],cfg,0)
+    assert len(roots)==1 and excluded==1
+    np.testing.assert_allclose(roots[0],1.+50*(.005*roots[0])**2,atol=1e-12)
+    assert patch_intersections([.05,0.,1.],cfg,0)==([],2)
+    assert patch_intersections([0.,0.,-1.],cfg,0)==([],0)
+    rays=np.array([[.01,-.02,1.]])
+    data=dict(means=np.array([[0.,0.,1.]]),scales=np.array([[.006,.006,.0005]]),rotations=np.array([[1.,0.,0.,0.]]))
+    peak,sigma,valid=ray_profiles(data,rays);assert valid.all()
+    omega=np.diag(1/data['scales'][0]**2);direction=rays[0]
+    np.testing.assert_allclose(sigma[0,0]**2,1/(direction@omega@direction),rtol=1e-12)
+    v0=peak[0,0]*direction-data['means'][0];v1=(peak[0,0]+sigma[0,0])*direction-data['means'][0]
+    np.testing.assert_allclose(v1@omega@v1-v0@omega@v0,1.,atol=1e-9)
+    data['rotations']=np.array([[0.,1.,0.,0.]])
+    flipped=ray_profiles(data,rays);np.testing.assert_allclose(flipped[0],peak);np.testing.assert_allclose(flipped[1],sigma)
+    data['scales'][0,2]=0.;assert not ray_profiles(data,rays)[2].any()
+    print('ray profile/variance/axis/finite-patch-root self-check passed',flush=True)
+
+
+def run_ray_profiles(root,out):
+    if out.exists() and any(out.iterdir()):raise FileExistsError(out)
+    out.mkdir(parents=True,exist_ok=True);summaries=[];inputs=[];ray_rows=[];replay_max=0.;total_rays=0;total_members=0
+    for seed in (1000,2000):
+        for curvature in (0,20,50):
+            folder=root/f'independent_c{curvature}_s{seed}'
+            meta=json.loads((folder/'metadata.json').read_text(encoding='utf-8'))
+            assert meta['status']=='complete' and meta['backend']=='analytic_ray_peak_gaussian_CPU'
+            for case in range(6,12):
+                item=meta['cases'][case];cfg=item['config'];path=folder/item['file']
+                assert cfg['case_index']==case and cfg['seed']==20261022+seed+case and float(cfg.get('curvature',0.))==curvature
+                assert len(cfg['theta_deg'])==2 and sha(path)==item['npz_sha256']
+                inputs.append(dict(path=str(path),sha256=sha(path)))
+                with np.load(path,allow_pickle=False) as z:data={name:z[name].copy() for name in z.files}
+                assert data['image_size'].tolist()==[64,64] and len(data['pixel_xy'])==81 and not data['qualitative'].any()
+                assert len(data['offsets'])==82 and data['offsets'][-1]==len(data['gaussian_id']) and np.all(np.diff(data['offsets'])>=0)
+                focal=64/(2*np.tan(.04));xy=data['pixel_xy']
+                rays=np.column_stack(((xy[:,0]-31.5)/focal,(xy[:,1]-31.5)/focal,np.ones(81)))
+                peak,sigma,valid=ray_profiles(data,rays);ids=data['gaussian_id'];ray_index=np.repeat(np.arange(81),np.diff(data['offsets']))
+                assert ((ids>=0)&(ids<len(data['means']))).all()
+                np.testing.assert_array_equal(data['truth_origin'],data['source_origin'][ids])
+                record_peak=peak[ray_index,ids];record_sigma=sigma[ray_index,ids]
+                profile_valid=valid[ray_index,ids]&np.isfinite(data['depth'])
+                np.testing.assert_allclose(record_peak[profile_valid],data['depth'][profile_valid],rtol=1e-10,atol=1e-10)
+                error=float(np.max(np.abs(record_peak[profile_valid]-data['depth'][profile_valid]))) if profile_valid.any() else None
+                if error is not None:replay_max=max(replay_max,error)
+                roots=np.full((81,2),np.nan);root_counts=np.zeros((81,2),int);excluded=np.zeros((81,2),int)
+                for ri,ray in enumerate(rays):
+                    for origin in (0,1):
+                        values,rejected=patch_intersections(ray,cfg,origin);root_counts[ri,origin]=len(values);excluded[ri,origin]=rejected
+                        if len(values)==1:roots[ri,origin]=values[0]
+                with np.errstate(invalid='ignore',divide='ignore'):
+                    delta=(roots[ray_index]-record_peak[:,None])/record_sigma[:,None]
+                delta[~profile_valid]=np.nan;relative=np.exp(-.5*delta**2)
+                eligible=profile_valid&np.isfinite(delta).all(axis=1);source=data['source_origin'][ids]
+                source_delta=delta[np.arange(len(ids)),source];other_delta=delta[np.arange(len(ids)),1-source]
+                summary_config=dict(seed_offset=seed,case_index=case,curvature=curvature,center_noise=cfg['center_noise'],normal_noise_deg=cfg['normal_noise_deg'])
+                for band in (1.,2.):
+                    counts=np.full(len(ids),-1,int);counts[eligible]=(np.abs(delta[eligible])<=band).sum(axis=1)
+                    for ri in range(81):
+                        ix=slice(data['offsets'][ri],data['offsets'][ri+1]);local=counts[ix]
+                        ray_rows.append(dict(**summary_config,ray=ri,sigma_band=band,members=len(local),valid_profiles=int(profile_valid[ix].sum()),
+                            origin0_roots=int(root_counts[ri,0]),origin1_roots=int(root_counts[ri,1]),excluded_patch_roots=int(excluded[ri].sum()),
+                            compatible_none=int((local==0).sum()),compatible_one=int((local==1).sum()),compatible_two=int((local==2).sum()),unknown_members=int((local<0).sum())))
+                    known_source=np.isfinite(source_delta);known_other=np.isfinite(other_delta)
+                    summaries.append(dict(**summary_config,sigma_band=band,rays=81,members=len(ids),valid_profiles=int(profile_valid.sum()),
+                        both_unique_root_rays=int((root_counts==1).all(axis=1).sum()),missing_root_rays=int((root_counts==0).any(axis=1).sum()),
+                        ambiguous_root_rays=int((root_counts>1).any(axis=1).sum()),excluded_patch_roots=int(excluded.sum()),
+                        compatible_none=int((counts==0).sum()),compatible_one=int((counts==1).sum()),compatible_two=int((counts==2).sum()),unknown_members=int((counts<0).sum()),
+                        source_delta_known=int(known_source.sum()),source_within_band=int((np.abs(source_delta[known_source])<=band).sum()),
+                        other_delta_known=int(known_other.sum()),other_within_band=int((np.abs(other_delta[known_other])<=band).sum()),
+                        mean_source_relative_peak=float(np.mean(np.exp(-.5*source_delta[known_source]**2))) if known_source.any() else None,
+                        mean_other_relative_peak=float(np.mean(np.exp(-.5*other_delta[known_other]**2))) if known_other.any() else None,
+                        mean_sigma_z=float(np.mean(record_sigma[profile_valid])) if profile_valid.any() else None,depth_replay_max_abs=error))
+                    assert sum(int((counts==v).sum()) for v in (-1,0,1,2))==len(ids)
+                np.savez_compressed(out/f'profile_s{seed}_c{curvature}_case{case}.npz',gaussian_id=ids,ray_index=ray_index,
+                    peak=record_peak,sigma_z=record_sigma,profile_valid=profile_valid,source_origin=source,
+                    delta=delta,relative_peak=relative,root_depths=roots,root_counts=root_counts,excluded_patch_roots=excluded)
+                total_rays+=81;total_members+=len(ids);write_csv(out/'summary.csv',summaries);write_csv(out/'rays.csv',ray_rows)
+                print('ray profile',seed,curvature,case,'members',len(ids),'finished',flush=True)
+    assert len(inputs)==36 and total_rays==2916 and len(summaries)==72 and len(ray_rows)==5832
+    (out/'metadata.json').write_text(json.dumps(dict(status='complete',inputs=inputs,git_commit=subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(),
+        source_sha256=sha(__file__),total_rays=total_rays,total_members=total_members,depth_replay_max_abs=replay_max,
+        interpretation='Read-only existing analytic CPU Gaussian records; independent full precision matrix peak/variance and finite-patch nominal intersections. '
+        'Camera-z ray parameter, FOV .08/image64/identity camera; roots retained only positive inside nominal [-.01,.01] x-y patch. '
+        'Relative Gaussian ray-profile peak response exp(-delta^2/2) and fixed 1/2 sigma bands are geometric diagnostics, not physical support probabilities or rendering contribution. '
+        'No w/alpha/T-based assignment, no impurity declaration, no threshold-defined layer or forced winner. '
+        'All original accepted records retained; invalid profiles or nonunique/missing intersections remain unknown. Hidden/pruned members not inferred. '
+        'Rays/members repeat Gaussians; measures pool accepted record counts, not independent scenes. Acceptance composition changes with curvature. '
+        'Source origins and nominal graphs are construction controls, not trained-scene truth or host 2D rasterization; no fitting/generation/training.'),indent=2),encoding='utf-8')
+
+
 if __name__=='__main__':
     p=argparse.ArgumentParser(description=__doc__)
-    p.add_argument('--input',action='append',required=True);p.add_argument('--output',required=True)
+    p.add_argument('--input',action='append');p.add_argument('--output');p.add_argument('--root',type=Path)
+    p.add_argument('--ray-profile',action='store_true');p.add_argument('--self-check',action='store_true')
     p.add_argument('--member-measures',default='uniform',help='comma-separated uniform,tau,w')
     p.add_argument('--objective',choices=('soft_uniform','hard_min'),default='soft_uniform')
     args=p.parse_args();measures=tuple(args.member_measures.split(','))
-    if not measures or len(set(measures))!=len(measures) or any(m not in ('uniform','tau','w') for m in measures):p.error('Invalid measures')
-    run(args.input,Path(args.output),measures,args.objective)
+    if args.self_check:
+        if not args.ray_profile:p.error('self-check requires ray-profile mode')
+        profile_self_check()
+    elif args.ray_profile:
+        if args.root is None or args.output is None:p.error('root and output required')
+        run_ray_profiles(args.root,Path(args.output))
+    else:
+        if not args.input or args.output is None:p.error('input and output required')
+        if not measures or len(set(measures))!=len(measures) or any(m not in ('uniform','tau','w') for m in measures):p.error('Invalid measures')
+        run(args.input,Path(args.output),measures,args.objective)
