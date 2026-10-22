@@ -1,5 +1,6 @@
 """Fuse the four saved means with host TSDF; compare against DTU in both directions."""
 import argparse
+import ast
 import inspect
 import json
 import os
@@ -53,7 +54,7 @@ Path(config['tail_path']).write_text(json.dumps(tail,indent=2))
             check=True,timeout=1200,cwd=ROOT)
 
 
-def fuse(scan,means_root,out):
+def fuse(scan,means_root,out,model_root,source_root,model_group):
     import torch
     import open3d as o3d
     import mesh_extract as host
@@ -63,17 +64,30 @@ def fuse(scan,means_root,out):
     assert not git('status','--short')
     inputs=means_root/f'scan{scan}';meta=json.loads((inputs/'metadata.json').read_text())
     assert meta['status']=='complete' and meta['original_model_unchanged']
+    if meta.get('model_group') is not None:
+        assert meta['model_group']==model_group,(meta['model_group'],model_group)
     out.mkdir(parents=True,exist_ok=True)
-    dataset,pipe,g,cameras,ply,digest=load_scene(scan,out)
+    dataset,pipe,g,cameras,ply,digest=load_scene(scan,out,model_root,source_root)
     assert digest==meta['model_sha256'] and [c.image_name for c in cameras]==meta['camera_names']
+    cfg_path=Path(dataset.model_path)/'cfg_args'
+    cfg_node=ast.parse(cfg_path.read_text(),mode='eval').body
+    assert isinstance(cfg_node,ast.Call) and isinstance(cfg_node.func,ast.Name) and cfg_node.func.id=='Namespace' and not cfg_node.args
+    cfg={k.arg:ast.literal_eval(k.value) for k in cfg_node.keywords}
+    assert 'depth_ratio' in cfg
+    actual_model_path=str(Path(dataset.model_path).resolve())
     transform,alignment=coordinate_check(dataset,cameras)
     np.testing.assert_allclose(transform,meta['alignment']['transform'],rtol=0,atol=1e-6)
     state_path=out/'metadata.json'
     state=json.loads(state_path.read_text()) if state_path.exists() else dict(methods={})
     assert not state.get('git_commit') or state['git_commit']==git('rev-parse','HEAD')
+    assert not state.get('model_sha256') or state['model_sha256']==digest
+    assert not state.get('model_group') or state['model_group']==model_group
+    assert not state.get('model_path') or state['model_path']==actual_model_path
     state.update(status='running',scan=scan,git_commit=git('rev-parse','HEAD'),mean_run_commit=meta['git_commit'],
-        model_sha256=digest,alignment=alignment,methods=state['methods'],
+        model_sha256=digest,model_path=actual_model_path,model_group=model_group,
+        cfg_sha256=sha256(cfg_path),depth_ratio=cfg['depth_ratio'],alignment=alignment,methods=state['methods'],
         protocol='Host TSDF voxel .002/block16/count50000/depth_scale1/depth_max8/cluster1; original masks; shared finite-positive four-map coverage. Full means baseline recomputed, not historical score.',
+        cached_depth_protocol='Cached maps contain only the four saved means; for each method cached expected_depth and median_depth are both exactly that saved map. The model cfg depth_ratio is recorded but is not applied to cached means.',
         evaluator='Existing DTU evaluator, fixed default_rng seed20261022, eight workers; no visualization PLY; original ObsMask/Plane/.2mm sampling/20mm cutoff retained; extra untruncated means and excluded-tail counts.',
         host_mesh_source_sha256=sha256(ROOT/'mesh_extract.py'),evaluator_source_sha256=sha256(ROOT/'dtu_eval/eval.py'),
         camera_names=meta['camera_names'])
@@ -91,6 +105,7 @@ def fuse(scan,means_root,out):
                 view=by_name[cam.image_name];assert sha256(inputs/view['file'])==view['sha256']
                 with np.load(inputs/view['file']) as a:
                     index=a['pixel_index'];means=a['weighted_mean_depth']
+                    np.testing.assert_array_equal(a['image_size'],[cam.image_height,cam.image_width])
                 keep=retained_mask(cam.gt_mask.cpu().numpy(),(cam.image_height,cam.image_width))
                 np.testing.assert_array_equal(index,np.flatnonzero(keep.ravel()))
                 finite=np.isfinite(means).all(1)&(means>0).all(1);excluded+=int((~finite).sum())
@@ -144,7 +159,10 @@ def fuse(scan,means_root,out):
 if __name__=='__main__':
     p=argparse.ArgumentParser(description=__doc__);p.add_argument('--scan',type=int,choices=SCANS)
     p.add_argument('--all-scans',action='store_true');p.add_argument('--means-root',type=Path,required=True)
-    p.add_argument('--output',type=Path,required=True);a=p.parse_args()
+    p.add_argument('--output',type=Path,required=True)
+    p.add_argument('--model-root',type=Path,default=Path('/root/autodl-tmp/GauDepth/outtest'))
+    p.add_argument('--source-root',type=Path,default=Path('/root/autodl-tmp/DTU'))
+    p.add_argument('--model-group',choices=['G1_MV','G2_noMV'],default='G1_MV');a=p.parse_args()
     if bool(a.scan)==bool(a.all_scans):p.error('choose scan or all-scans')
     if a.all_scans:
         a.output.mkdir(parents=True,exist_ok=True)
@@ -152,7 +170,8 @@ if __name__=='__main__':
             d=a.output/f'scan{scan}';d.mkdir(exist_ok=True)
             with (d/'run.log').open('a') as log:
                 subprocess.run([sys.executable,str(Path(__file__).resolve()),'--scan',str(scan),'--means-root',str(a.means_root),
-                    '--output',str(d)],stdout=log,stderr=subprocess.STDOUT,check=True,timeout=2400,cwd=ROOT)
+                    '--output',str(d),'--model-root',str(a.model_root),'--source-root',str(a.source_root),
+                    '--model-group',a.model_group],stdout=log,stderr=subprocess.STDOUT,check=True,timeout=2400,cwd=ROOT)
             rows=[]
             for done in SCANS:
                 m=a.output/f'scan{done}/metadata.json'
@@ -161,4 +180,4 @@ if __name__=='__main__':
                     rows += [dict(scan=done,method=k,**{s:v[s] for s in ('mean_d2s','mean_s2d','overall','seconds')}) for k,v in state['methods'].items()]
             write_csv(a.output/'全部scan重建精度.csv',rows)
             if (a.output/'stop_after_stage').exists():break
-    else:fuse(a.scan,a.means_root,a.output)
+    else:fuse(a.scan,a.means_root,a.output,a.model_root,a.source_root,a.model_group)
