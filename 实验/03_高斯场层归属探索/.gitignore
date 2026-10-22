@@ -1,4 +1,5 @@
 构建/
+构建_pixel_stats/
 结果/
 __pycache__/
 *.npz

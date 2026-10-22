@@ -136,10 +136,10 @@ def sample(args):
     selected = [int(i) for i in args.views.split(',')]
     if len(set(selected)) != len(selected) or any(i < 0 or i >= len(cameras) for i in selected):
         raise ValueError(f'Invalid/duplicate view indices for {len(cameras)} {args.split} cameras')
-    build = HERE / '构建'
+    build = HERE / ('构建_pixel_stats' if args.pixel_stats else '构建')
     build.mkdir(exist_ok=True)
     os.environ.setdefault('MAX_JOBS', '2')
-    extension = load(name='gaudepth_layers03_reader_v1', sources=[str(HERE / 'reader.cu')],
+    extension = load(name='gaudepth_pixel_stats_reader_v2' if args.pixel_stats else 'gaudepth_layers03_reader_v1', sources=[str(HERE / 'reader.cu')],
                      build_directory=str(build), extra_cuda_cflags=['-O3', '--use_fast_math'], verbose=True)
     background = torch.tensor([1, 1, 1] if dataset.white_background else [0, 0, 0],
                               dtype=torch.float32, device='cuda')
@@ -272,6 +272,34 @@ def sample(args):
                       normal_nonfinite_host_rays=int((~np.isfinite(normal_target).all(axis=1)).sum()),
                       normal_min_accumulated_length=float(finite_lengths.min()) if len(finite_lengths) else None,
                       npz_sha256=sha256(output / name))
+            if args.pixel_stats:
+                dense_counts,dense_weights=extension.read_pixel_stats(geom,binning,image,gaussians.get_xyz.shape[0],W,H)
+                # Full-frame host opacity and last-accepted-position agreement, not just sampled pixels.
+                torch.testing.assert_close(dense_weights[:,:,2],alpha.reshape(H,W),rtol=2e-5,atol=2e-6)
+                torch.testing.assert_close(1.-dense_weights[:,:,3],alpha.reshape(H,W),rtol=2e-5,atol=2e-6)
+                assert torch.equal(dense_counts[:,:,6],dense_counts[:,:,7]), 'Host last-contributor replay mismatch'
+                assert torch.equal(dense_counts[:,:,1],dense_counts[:,:,2:6].sum(dim=2).to(torch.int32)), 'Stage accounting mismatch'
+                assert bool((dense_counts[:,:,0]>=dense_counts[:,:,1]).all())
+                cc=dense_counts.cpu().numpy();ww=dense_weights.cpu().numpy()
+                np.testing.assert_array_equal(cc.reshape(-1,8)[pixels,5],counts_np)
+                for ri,pixel in enumerate(pixels):
+                    w=records[offsets[ri]:offsets[ri+1],1]
+                    expected_extrema=[float(w.min()),float(w.max())] if len(w) else [np.nan,np.nan]
+                    np.testing.assert_allclose(ww.reshape(-1,4)[pixel,:2],expected_extrema,atol=2e-6,rtol=2e-5,equal_nan=True)
+                dense_name=f'pixel_stats_{vi:03d}.npz';temporary=output/(dense_name+'.tmp')
+                eligible_map=np.zeros(H*W,dtype=bool);eligible_map[eligible]=True
+                with temporary.open('wb') as f:
+                    np.savez_compressed(f,counts=cc,weights=ww,host_opacity=alpha.cpu().numpy(),rgb=rgb.cpu().numpy(),
+                                        eligible_mask=eligible_map.reshape(H,W),image_size=np.array([H,W]))
+                    f.flush();os.fsync(f.fileno())
+                os.replace(temporary,output/dense_name)
+                vm['pixel_stats']=dict(file=dense_name,sha256=sha256(output/dense_name),pixels=H*W,
+                    count_fields=['tile_candidates','evaluated','power_rejected','alpha_rejected','early_stop_triggered','accepted','last_accepted_position','host_last_accepted_position'],
+                    weight_fields=['min_positive_accepted_weight','max_accepted_weight','accepted_weight_sum','background_transmittance'],
+                    evidence='All image pixels, including background. Buffer replay, not timing/FLOP or shared tile-prefetch count. '
+                    'Evaluated includes early-stop trigger; later candidates are not evaluated. Empty extrema NaN. '
+                    'Full host opacity/last accepted position and sampled accepted/extrema replay checked; original source/binary provenance still required.')
+                del dense_counts,dense_weights
             metadata['views'].append(vm)
             atomic_json(output / 'metadata.json', metadata)
             print(json.dumps(vm, ensure_ascii=False), flush=True)
@@ -295,6 +323,7 @@ if __name__ == '__main__':
     p.add_argument('--opacity-threshold', type=float, default=.5)
     p.add_argument('--extra-pixel', action='append', default=[], help='view:x:y; qualitative only')
     p.add_argument('--capacity', type=int, default=256)
+    p.add_argument('--pixel-stats', action='store_true', help='Also aggregate every image pixel; isolated v2 reader build, requires GPU validation')
     p.add_argument('--host-build-provenance', required=True,
                    help='Operator-verified installed extension source/build origin; commit alone is insufficient')
     a = p.parse_args()
