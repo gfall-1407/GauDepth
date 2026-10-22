@@ -120,10 +120,13 @@ def ensure_ninja():
     import os
     import shutil
     if shutil.which('ninja'):return
-    tools=Path('/root/autodl-tools/ninja');binary=tools/'ninja/data/bin/ninja'
-    if not binary.is_file():
+    tools=Path('/root/autodl-tools/ninja')
+    candidates=[tools/'bin/ninja',tools/'ninja/data/bin/ninja']
+    binary=next((p for p in candidates if p.is_file()),None)
+    if binary is None:
         subprocess.run([sys.executable,'-m','pip','install','--disable-pip-version-check','--no-deps','--target',str(tools),'ninja'],check=True,timeout=120)
-    if not binary.is_file():raise FileNotFoundError('Isolated Ninja binary missing after installation')
+        binary=next((p for p in candidates if p.is_file()),None)
+    if binary is None:raise FileNotFoundError('Isolated Ninja binary missing after installation')
     os.environ['PATH']=str(binary.parent)+os.pathsep+os.environ.get('PATH','')
     print('isolated Ninja',subprocess.check_output([str(binary),'--version'],text=True).strip(),flush=True)
 
