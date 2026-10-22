@@ -37,6 +37,10 @@ def self_check():
     try:describe([0.])
     except ValueError:pass
     else:raise AssertionError('Invalid accepted weight not rejected')
+    np.testing.assert_array_equal(retained_mask(np.array([[0.,.499,.5,1.]]),(1,4)),[[False,False,True,True]])
+    empty_summary=column_summary(dict(accepted=np.array([0]),min_weight=np.array([np.nan])))
+    assert empty_summary['accepted']['mean']==0 and empty_summary['min_weight']['valid_pixels']==0
+    assert empty_summary['min_weight']['median'] is None
     print('pixel contribution empty/dominant/uniform/permutation/invalid self-check passed',flush=True)
 
 
@@ -53,6 +57,97 @@ def summarize(rows):
         result['metrics'][key]=dict(valid_pixels=len(values),mean=float(values.mean()) if len(values) else None,
             **{name:float(np.quantile(values,q)) if len(values) else None for name,q in (('min',0.),('p05',.05),('median',.5),('p95',.95),('max',1.))})
     return result
+
+
+def retained_mask(mask,shape):
+    mask=np.asarray(mask)
+    if mask.shape==(1,*shape):mask=mask[0]
+    if mask.shape!=shape or not np.isfinite(mask).all():raise ValueError('Missing, nonfinite or incorrectly sized GT mask')
+    return mask>=.5 # Exact boundary used by mesh_extract.py: discard mask < .5.
+
+
+def column_summary(columns):
+    result={}
+    for name,column in columns.items():
+        values=np.asarray(column,float);values=values[np.isfinite(values)]
+        result[name]=dict(valid_pixels=len(values),mean=float(values.mean()) if len(values) else None,
+            **{stat:float(np.quantile(values,q)) if len(values) else None for stat,q in (('min',0.),('p05',.05),('median',.5),('p95',.95),('max',1.))})
+    return result
+
+
+def concentration_torch(weights,counts):
+    import torch
+    w=weights.double();valid=torch.arange(w.shape[1],device=w.device)[None,:]<counts[:,None]
+    w=torch.where(valid,w,0.)
+    assert bool(torch.isfinite(w).all()) and bool((w[valid]>0).all())
+    ranked=torch.sort(w,dim=1,descending=True).values;total=ranked.sum(dim=1);cumulative=ranked.cumsum(dim=1)
+    columns=[]
+    for k in (1,3,5,10,20,50,100):columns.append(torch.where(total>0,ranked[:,:k].sum(dim=1)/total,float('nan')))
+    for percent in (50,90,95,99):
+        n=(cumulative<(percent/100*total-1e-12*total)[:,None]).sum(dim=1)+1
+        columns.append(torch.where(total>0,n.double(),float('nan')))
+    return torch.stack(columns,dim=1),total,w
+
+
+def masked_frame(extension,geom,binning,image,P,W,H,fx,fy,expected,median,alpha,mask,output,view_index):
+    """Every retained pixel, exact ranked concentration in bounded chunks; no raw-member archive."""
+    import os
+    import torch
+    keep=retained_mask(mask,(H,W));pixels=np.flatnonzero(keep.ravel()).astype(np.int32)
+    dense_counts,dense_weights=extension.read_pixel_stats(geom,binning,image,P,W,H)
+    torch.testing.assert_close(dense_weights[:,:,2],alpha.reshape(H,W),rtol=2e-5,atol=2e-6)
+    torch.testing.assert_close(1.-dense_weights[:,:,3],alpha.reshape(H,W),rtol=2e-5,atol=2e-6)
+    assert torch.equal(dense_counts[:,:,6],dense_counts[:,:,7]),'Host last-position mismatch'
+    assert torch.equal(dense_counts[:,:,1],dense_counts[:,:,2:6].sum(dim=2).to(torch.int32)),'Stage count mismatch'
+    assert bool((dense_counts[:,:,0]>=dense_counts[:,:,1]).all())
+    pixel_gpu=torch.from_numpy(pixels).to(device=geom.device).long()
+    counts=dense_counts.reshape(-1,8)[pixel_gpu].cpu().numpy()
+    weights=dense_weights.reshape(-1,4)[pixel_gpu].cpu().numpy()
+    del dense_counts,dense_weights
+    # GPU numerical-path check against independently defined CPU examples before scanning a frame.
+    example=np.array([[.9,.1,0.],[.1,.1,.1],[0.,0.,0.]],np.float32);lengths=np.array([2,3,0],np.int32)
+    got,_,_=concentration_torch(torch.from_numpy(example).to(geom.device),torch.from_numpy(lengths).to(geom.device))
+    concentration_names=[f'top{k}_fraction' for k in (1,3,5,10,20,50,100)]+[f'n{p}' for p in (50,90,95,99)]
+    reference=np.array([[describe(row[:length])[name] for name in concentration_names] for row,length in zip(example,lengths)],dtype=float)
+    np.testing.assert_allclose(got.cpu().numpy(),reference,atol=1e-10,rtol=1e-10,equal_nan=True)
+    concentration=np.empty((len(pixels),11),np.float32)
+    maximum_replay_error=np.zeros(3,float)
+    for start in range(0,len(pixels),512):
+        stop=min(start+512,len(pixels));local=pixel_gpu[start:stop].to(torch.int32)
+        capacity=max(1,int(counts[start:stop,5].max()))
+        rec,gids,number,replay=extension.read_rays(geom,binning,image,P,W,H,fx,fy,local,capacity)
+        np.testing.assert_array_equal(number.cpu().numpy(),counts[start:stop,5])
+        target=torch.stack([expected.flatten(),median.flatten(),alpha.flatten()],dim=1)[local.long()]
+        torch.testing.assert_close(replay,target,rtol=2e-5,atol=2e-6)
+        maximum_replay_error=np.maximum(maximum_replay_error,(replay-target).abs().amax(dim=0).cpu().numpy())
+        values,total,w=concentration_torch(rec[:,:,1],number)
+        torch.testing.assert_close(total,alpha.flatten()[local.long()].double(),rtol=2e-5,atol=2e-6)
+        wmax=w.max(dim=1).values;wmin=torch.where(torch.arange(capacity,device=w.device)[None,:]<number[:,None],w,float('inf')).min(dim=1).values
+        wmax=torch.where(number>0,wmax,float('nan'));wmin=torch.where(number>0,wmin,float('nan'))
+        np.testing.assert_allclose(wmin.cpu().numpy(),weights[start:stop,0],atol=1e-10,rtol=2e-5,equal_nan=True)
+        np.testing.assert_allclose(wmax.cpu().numpy(),weights[start:stop,1],atol=1e-10,rtol=2e-5,equal_nan=True)
+        concentration[start:stop]=values.cpu().numpy().astype(np.float32)
+        del rec,gids,number,replay,values,total,w
+    count_names=['tile_candidates','evaluated','power_rejected','alpha_rejected','early_stop_triggered','accepted','last_accepted_position','host_last_accepted_position']
+    weight_names=['min_weight','max_weight','weight_sum','background_weight']
+    columns={name:counts[:,i] for i,name in enumerate(count_names)}
+    columns.update({name:weights[:,i] for i,name in enumerate(weight_names)})
+    columns.update({name:concentration[:,i] for i,name in enumerate(concentration_names)})
+    summary=dict(retained_pixels=len(pixels),image_pixels=H*W,masked_out_pixels=H*W-len(pixels),
+                 empty_contribution_pixels=int((counts[:,5]==0).sum()),metrics=column_summary(columns))
+    name=f'masked_pixel_stats_{view_index:03d}.npz';temporary=output/(name+'.tmp')
+    with temporary.open('wb') as f:
+        np.savez_compressed(f,pixel_index=pixels,counts=counts,weights=weights,concentration=concentration,image_size=np.array([H,W]))
+        f.flush();os.fsync(f.fileno())
+    os.replace(temporary,output/name)
+    return dict(file=name,npz_sha256=sha(output/name),count_fields=count_names,weight_fields=weight_names,
+                concentration_fields=concentration_names,mask_threshold='keep >= 0.5, identical to mesh_extract.py',
+                retained_mask_sha256=hashlib.sha256(np.packbits(keep.ravel()).tobytes()).hexdigest(),
+                summary=summary,replay_max_abs=maximum_replay_error.tolist(),
+                evidence='Every GT-mask retained pixel; empty-contribution pixels remain. Not opacity-filtered. '
+                'Exact ranked weights computed in float64 chunks, saved as float32; nXX stores integer counts or NaN. '
+                'Only retained-pixel aggregates archived, no RGB/depth/full Gaussian lists. '
+                'All retained rays expected/median/opacity, extrema and accepted counts replayed; full-frame opacity/last-position/stage accounting checked.')
 
 
 def run(root,out):

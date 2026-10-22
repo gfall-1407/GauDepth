@@ -132,19 +132,25 @@ def sample(args):
     gaussians = GaussianModel(dataset.sh_degree)
     with protect_scene(output):
         scene = Scene(dataset, gaussians, load_iteration=args.iteration, shuffle=False)
-    cameras = scene.getTrainCameras() if args.split == 'train' else scene.getTestCameras()
-    selected = [int(i) for i in args.views.split(',')]
-    if len(set(selected)) != len(selected) or any(i < 0 or i >= len(cameras) for i in selected):
+    if args.split=='all':
+        camera_items=[('train',i,c) for i,c in enumerate(scene.getTrainCameras())]+[('test',i,c) for i,c in enumerate(scene.getTestCameras())]
+        if len({c.image_name for _,_,c in camera_items})!=len(camera_items):
+            raise ValueError('Duplicate image names across train/test; verify source paths/poses rather than merge ambiguously')
+    else:
+        camera_items=[(args.split,i,c) for i,c in enumerate(scene.getTrainCameras() if args.split=='train' else scene.getTestCameras())]
+    cameras=[c for _,_,c in camera_items]
+    selected = list(range(len(cameras))) if args.views=='all' else [int(i) for i in args.views.split(',')]
+    if not selected or len(set(selected)) != len(selected) or any(i < 0 or i >= len(cameras) for i in selected):
         raise ValueError(f'Invalid/duplicate view indices for {len(cameras)} {args.split} cameras')
-    build = HERE / ('构建_pixel_stats' if args.pixel_stats else '构建')
+    build = HERE / ('构建_pixel_stats' if args.pixel_stats or args.mask_statistics else '构建')
     build.mkdir(exist_ok=True)
     os.environ.setdefault('MAX_JOBS', '2')
-    extension = load(name='gaudepth_pixel_stats_reader_v2' if args.pixel_stats else 'gaudepth_layers03_reader_v1', sources=[str(HERE / 'reader.cu')],
+    extension = load(name='gaudepth_pixel_stats_reader_v2' if args.pixel_stats or args.mask_statistics else 'gaudepth_layers03_reader_v1', sources=[str(HERE / 'reader.cu')],
                      build_directory=str(build), extra_cuda_cflags=['-O3', '--use_fast_math'], verbose=True)
     background = torch.tensor([1, 1, 1] if dataset.white_background else [0, 0, 0],
                               dtype=torch.float32, device='cuda')
     rng = np.random.default_rng(args.seed)
-    source_files = ['reader.cu', 'sample.py', 'analyze.py']
+    source_files = ['reader.cu', 'sample.py', 'analyze.py','pixel_contribution.py']
     host_files = ['cuda_rasterizer/rasterizer_impl.cu', 'cuda_rasterizer/render_forward.cu',
                   'cuda_rasterizer/config.h']
     metadata = dict(schema=1, git_commit=git('rev-parse', 'HEAD'), git_status=git('status', '--short'),
@@ -164,7 +170,8 @@ def sample(args):
                     host_build_provenance=args.host_build_provenance,
                     replay_tolerance=dict(rtol=2e-5, atol=2e-6),
                     normal_replay_tolerance=dict(rtol=2e-4, atol=2e-5, normalize_eps=1e-12,
-                        reduction='original acceptance order, CPU float32 multiply/add; host CUDA may fuse FMA'), views=[])
+                        reduction='original acceptance order, CPU float32 multiply/add; host CUDA may fuse FMA'),
+                    selected_cameras=[dict(view_index=i,split=camera_items[i][0],source_index=camera_items[i][1],image_name=cameras[i].image_name) for i in selected],views=[])
     atomic_json(output / 'metadata.json', metadata)
     extra = {}
     for spec in args.extra_pixel:
@@ -190,11 +197,40 @@ def sample(args):
                 mask = torch.from_numpy(arr > 127)
                 mask_source = dict(path=str(path.resolve()), sha256=sha256(path), resize='nearest')
             if mask is not None:
-                eligible = np.flatnonzero(mask.detach().cpu().numpy().reshape(-1) > .5)
+                mask_array=mask.detach().cpu().numpy()
+                if args.mask_statistics:
+                    from pixel_contribution import retained_mask
+                    eligible=np.flatnonzero(retained_mask(mask_array,(H,W)).ravel())
+                else:eligible = np.flatnonzero(mask_array.reshape(-1) > .5)
                 sampling = 'GT mask > .5, uniform without replacement; includes empty render rays'
             else:
+                if args.mask_statistics:raise ValueError(f'View {vi}: explicit DTU mask required; opacity is not a substitute')
                 eligible = np.flatnonzero(alpha.detach().cpu().numpy().reshape(-1) > args.opacity_threshold)
                 sampling = f'No GT mask: rendered opacity > {args.opacity_threshold}, NOT verified foreground'
+            if args.mask_statistics:
+                from pixel_contribution import masked_frame
+                vm=masked_frame(extension,geom,binning,image,gaussians.get_xyz.shape[0],W,H,fx,fy,expected,median,alpha,mask_array,output,vi)
+                vm.update(view_index=vi,image_name=camera.image_name,split=camera_items[vi][0],source_index=camera_items[vi][1],
+                          image_size=[H,W],focal=[fx,fy],mask_source=mask_source,
+                          mask_values_sha256=hashlib.sha256(np.asarray(mask_array,np.float32).tobytes()).hexdigest(),
+                          world_view_transform=camera.world_view_transform.cpu().tolist(),camera_center=camera.camera_center.cpu().tolist())
+                metadata['views'].append(vm)
+                metrics={}
+                # Pixel-weighted means, never an average of per-view medians/percentiles.
+                for frame in metadata['views']:
+                    for key,stats in frame['summary']['metrics'].items():
+                        acc=metrics.setdefault(key,dict(valid_pixels=0,total=0.))
+                        acc['valid_pixels']+=stats['valid_pixels']
+                        acc['total']+=(stats['mean'] or 0.)*stats['valid_pixels']
+                metadata['masked_summary']=dict(completed_views=len(metadata['views']),expected_views=len(selected),
+                    retained_pixels=sum(v['summary']['retained_pixels'] for v in metadata['views']),
+                    empty_contribution_pixels=sum(v['summary']['empty_contribution_pixels'] for v in metadata['views']),
+                    metrics={k:dict(valid_pixels=v['valid_pixels'],pixel_weighted_mean=v['total']/v['valid_pixels'] if v['valid_pixels'] else None) for k,v in metrics.items()},
+                    note='Per-view exact quantiles in views; pooled quantiles are not inferred by averaging them.')
+                atomic_json(output/'metadata.json',metadata)
+                print(json.dumps(dict(view_index=vi,image_name=camera.image_name,summary=vm['summary']),ensure_ascii=False),flush=True)
+                del result,geom,binning,image,rgb,normal,expected,median,alpha
+                continue
             count = min(args.samples, len(eligible))
             if not count:
                 raise RuntimeError(f'View {vi}: no eligible rays')
@@ -306,6 +342,9 @@ def sample(args):
             del result, rec, ids, counts, replay, target, geom, binning, image, rgb, normal
     if sha256(ply) != model_hash:
         raise RuntimeError('Original PLY hash changed during sampling')
+    metadata['status']='complete'
+    metadata['original_model_unchanged']=True
+    atomic_json(output/'metadata.json',metadata)
 
 
 if __name__ == '__main__':
@@ -313,8 +352,8 @@ if __name__ == '__main__':
     p.add_argument('-m', '--model-path', required=True)
     p.add_argument('-s', '--source-path', help='Override stale cfg_args source_path')
     p.add_argument('--iteration', type=int, default=30000)
-    p.add_argument('--views', default='0', help='Comma-separated camera-list indices')
-    p.add_argument('--split', choices=['train', 'test'], default='train')
+    p.add_argument('--views', default='0', help='Comma-separated camera-list indices, or all')
+    p.add_argument('--split', choices=['train', 'test','all'], default='train')
     p.add_argument('--samples', type=int, default=256)
     p.add_argument('--seed', type=int, default=20261022)
     p.add_argument('--output', required=True)
@@ -324,9 +363,11 @@ if __name__ == '__main__':
     p.add_argument('--extra-pixel', action='append', default=[], help='view:x:y; qualitative only')
     p.add_argument('--capacity', type=int, default=256)
     p.add_argument('--pixel-stats', action='store_true', help='Also aggregate every image pixel; isolated v2 reader build, requires GPU validation')
+    p.add_argument('--mask-statistics', action='store_true', help='Every GT-mask retained pixel, exact ranked contribution, compact per-view output; mask required')
     p.add_argument('--host-build-provenance', required=True,
                    help='Operator-verified installed extension source/build origin; commit alone is insufficient')
     a = p.parse_args()
     if a.samples <= 0 or a.capacity <= 0:
         p.error('samples and capacity must be positive')
+    if a.mask_statistics and (a.pixel_stats or a.extra_pixel):p.error('mask-statistics is a separate mode; no extra pixels/pixel-stats')
     sample(a)
