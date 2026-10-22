@@ -311,9 +311,85 @@ def run_masked_scans(out,provenance):
         batch.update(status='failed',error=str(exc),finished_at=time.time());atomic_json(out/'batch.json',batch);raise
 
 
+def summarize_masked(root,out):
+    """Read completed archives; independently verify hashes and pool pixel statistics."""
+    if out.exists() and any(out.iterdir()):raise FileExistsError(out)
+    batch=json.loads((root/'batch.json').read_text(encoding='utf-8'))
+    assert batch['status']=='complete' and set(batch['scans'])=={'scan24','scan105','scan65','scan110'}
+    result=dict(run_commit=batch['git_commit'],analysis_commit=subprocess.check_output(
+        ['git','-C',str(Path(__file__).resolve().parent.parent.parent),'rev-parse','HEAD'],text=True).strip(),scans={})
+    rows=[]
+    for scene,record in batch['scans'].items():
+        sums={};hist={k:np.zeros(1,dtype=np.int64) for k in ('evaluated','accepted','n90')}
+        names=[];pixels=empty=0;thresholds={str(k):0 for k in (5,10,20,50,100)};dominant=0
+        for stage in batch['stages']:
+            if stage['scene']!=scene:continue
+            assert stage['status']=='complete'
+            part=root/(scene+'_'+stage['label']);meta=json.loads((part/'metadata.json').read_text(encoding='utf-8'))
+            assert meta['status']=='complete' and meta['original_model_unchanged']
+            assert meta['git_commit']==batch['git_commit'] and meta['model_sha256']==record['model_sha256']
+            expected={x['image_name'] for x in meta['camera_inventory']}
+            for view in meta['views']:
+                assert view['mask_source']=='camera.gt_mask' and '>= 0.5' in view['mask_threshold']
+                path=part/view['file'];assert sha(path)==view['npz_sha256'],path
+                with np.load(path,allow_pickle=False) as a:
+                    c=a['counts'];w=a['weights'];r=a['concentration'];idx=a['pixel_index'];n=len(idx)
+                    assert c.shape==(n,8) and w.shape==(n,4) and r.shape==(n,11)
+                    assert n==view['summary']['retained_pixels'] and len(np.unique(idx))==n
+                    assert np.all((idx>=0)&(idx<np.prod(a['image_size'])))
+                    assert np.array_equal(c[:,1],c[:,2:6].sum(axis=1)) and np.all(c[:,0]>=c[:,1])
+                    assert np.array_equal(c[:,6],c[:,7]) and np.all(c>=0)
+                    active=c[:,5]>0;empty+=int((~active).sum());pixels+=n;names.append(view['image_name'])
+                    assert np.isfinite(w[:,2:]).all() and np.allclose(w[:,2]+w[:,3],1,atol=2e-6)
+                    assert np.isfinite(w[active]).all() and np.isfinite(r[active]).all()
+                    assert np.isnan(w[~active,:2]).all() and np.isnan(r[~active]).all()
+                    assert np.all(w[active,0]>0) and np.all(w[active,0]<=w[active,1])
+                    assert np.all((r[active,:7]>=0)&(r[active,:7]<=1+1e-7))
+                    assert np.all(np.diff(r[active,:7],axis=1)>=-1e-7)
+                    assert np.all(np.diff(r[active,7:],axis=1)>=0)
+                    assert np.all(r[active,7:]<=c[active,5,None]) and np.all(r[active,7:]==np.floor(r[active,7:]))
+                    for k in thresholds:thresholds[k]+=int((r[active,8]<=int(k)).sum())
+                    dominant+=int((r[active,0]>=.5).sum())
+                    fields=view['count_fields']+view['weight_fields']+view['concentration_fields']
+                    for j,name in enumerate(fields):
+                        values=c[:,j] if j<8 else w[:,j-8] if j<12 else r[:,j-12]
+                        values=values[np.isfinite(values)].astype(np.float64);v=view['summary']['metrics'][name]
+                        assert len(values)==v['valid_pixels']
+                        if len(values):assert np.isclose(values.mean(),v['mean'],rtol=1e-6,atol=1e-12)
+                        acc=sums.setdefault(name,dict(valid_pixels=0,total=0.,min=None,max=None))
+                        acc['valid_pixels']+=len(values);acc['total']+=float(values.sum())
+                        if len(values):
+                            acc['min']=float(values.min()) if acc['min'] is None else min(acc['min'],float(values.min()))
+                            acc['max']=float(values.max()) if acc['max'] is None else max(acc['max'],float(values.max()))
+                        if name in hist and len(values):
+                            h=np.bincount(values.astype(np.int64));old=hist[name]
+                            if len(old)<len(h):old=np.pad(old,(0,len(h)-len(old)))
+                            old[:len(h)]+=h;hist[name]=old
+                        rows.append(dict(scan=scene,view=view['view_index'],image_name=view['image_name'],metric=name,**v))
+        assert len(names)==len(set(names))==record['views'] and set(names)==expected==set(record['image_names'])
+        assert pixels==record['retained_pixels'] and empty==record['empty_contribution_pixels']
+        for name,acc in sums.items():
+            acc['mean']=acc.pop('total')/acc['valid_pixels'] if acc['valid_pixels'] else None
+            target=record['metrics'][name];assert acc['valid_pixels']==target['valid_pixels']
+            if acc['mean'] is not None:assert np.isclose(acc['mean'],target['pixel_weighted_mean'],rtol=1e-6,atol=1e-12)
+        medians={}
+        for name,h in hist.items():
+            total=int(h.sum());cum=h.cumsum();ranks=((total-1)//2,total//2)
+            medians[name]=float(sum(np.searchsorted(cum,q,side='right') for q in ranks)/2) if total else None
+        result['scans'][scene]=dict(views=len(names),retained_pixels=pixels,empty_pixels=empty,metrics=sums,
+            pooled_medians=medians,n90_le_counts=thresholds,top1_ge_half_pixels=dominant,
+            integer_histograms={k:v.tolist() for k,v in hist.items()})
+    out.mkdir(parents=True,exist_ok=True)
+    (out/'summary.json').write_text(json.dumps(result,ensure_ascii=False,indent=2),encoding='utf-8')
+    with (out/'逐视角统计.csv').open('w',encoding='utf-8-sig',newline='') as f:
+        writer=csv.DictWriter(f,fieldnames=list(rows[0]));writer.writeheader();writer.writerows(rows)
+    print(json.dumps({k:{x:v[x] for x in ('views','retained_pixels','empty_pixels','pooled_medians','n90_le_counts')}
+        for k,v in result['scans'].items()},ensure_ascii=False),flush=True)
+
+
 if __name__=='__main__':
     p=argparse.ArgumentParser(description=__doc__);p.add_argument('--root',type=Path);p.add_argument('--output',type=Path);p.add_argument('--self-check',action='store_true')
-    p.add_argument('--run-masked-scans',action='store_true');p.add_argument('--prepare-reader',action='store_true');p.add_argument('--host-build-provenance');args=p.parse_args()
+    p.add_argument('--run-masked-scans',action='store_true');p.add_argument('--prepare-reader',action='store_true');p.add_argument('--summarize-masked',action='store_true');p.add_argument('--host-build-provenance');args=p.parse_args()
     if args.self_check:self_check()
     elif args.prepare_reader:
         if args.output is None:p.error('output required')
@@ -321,6 +397,9 @@ if __name__=='__main__':
     elif args.run_masked_scans:
         if args.output is None or not args.host_build_provenance:p.error('output/provenance required')
         run_masked_scans(args.output,args.host_build_provenance)
+    elif args.summarize_masked:
+        if args.root is None or args.output is None:p.error('root/output required')
+        summarize_masked(args.root,args.output)
     else:
         if args.root is None or args.output is None:p.error('root/output required')
         run(args.root,args.output)
