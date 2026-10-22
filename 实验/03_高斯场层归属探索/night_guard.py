@@ -16,8 +16,12 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 
-EXPECTED_HOSTNAME = "autodl-container-d6a7459179-693ab6ee"
-EXPECTED_INSTANCE_ID = "d6a7459179-693ab6ee"
+ALLOWED_IDENTITIES = {
+    "d6a7459179-693ab6ee": "autodl-container-d6a7459179-693ab6ee",
+    # Expected hostname from the console-verified instance ID; Linux hostname
+    # must still be verified on that instance before deploying this guard.
+    "8209458d70-897b4075": "autodl-container-8209458d70-897b4075",
+}
 POLL_SECONDS = 2
 CHILD_EXIT_LINGER = 120
 SHUTDOWN_RESERVE = 15
@@ -51,10 +55,8 @@ def read_json(path):
 
 
 def validate_identity(expected_hostname, instance_id, dry_run=False, observed=None):
-    if expected_hostname != EXPECTED_HOSTNAME or instance_id != EXPECTED_INSTANCE_ID:
-        raise ValueError("仅允许指定的 GauDepth1 hostname 与完整实例 ID")
-    if "gaudepth2" in expected_hostname.lower() or "gaudepth2" in instance_id.lower():
-        raise ValueError("GauDepth2 被禁止")
+    if ALLOWED_IDENTITIES.get(instance_id) != expected_hostname:
+        raise ValueError("实例 ID 与 hostname 不属于允许的配对")
     actual = socket.gethostname() if observed is None else observed
     if not dry_run and not sys.platform.startswith("linux"):
         raise ValueError("真实模式仅支持 Linux")
@@ -311,8 +313,8 @@ def build_parser():
     run.add_argument("--minutes", type=int, default=30)
     run.add_argument("--max-minutes",type=int,default=60,help="本批最长计算分钟数；硬截止含保存宽限与停机余量")
     run.add_argument("--grace", type=int, default=120)
-    run.add_argument("--expected-hostname", required=True)
-    run.add_argument("--instance-id", required=True)
+    run.add_argument("--expected-hostname", "--hostname", dest="expected_hostname", required=True)
+    run.add_argument("--instance-id", "--expected-instance-id", dest="instance_id", required=True)
     run.add_argument("--shutdown-command", nargs="+", help=argparse.SUPPRESS)
     run.add_argument("--dry-run", action="store_true")
     run.add_argument("--simulate-hostname", help="仅供本地 dry-run 的身份模拟")
@@ -322,8 +324,8 @@ def build_parser():
     renew = sub.add_parser("renew", help="原子更新期限，受硬截止限制")
     renew.add_argument("--state-dir", required=True)
     renew.add_argument("--minutes", type=int, default=60)
-    renew.add_argument("--expected-hostname", required=True)
-    renew.add_argument("--instance-id", required=True)
+    renew.add_argument("--expected-hostname", "--hostname", dest="expected_hostname", required=True)
+    renew.add_argument("--instance-id", "--expected-instance-id", dest="instance_id", required=True)
     renew.add_argument("--dry-run", action="store_true")
     renew.set_defaults(func=command_renew)
     status = sub.add_parser("status", help="读取期限和最近动作")
