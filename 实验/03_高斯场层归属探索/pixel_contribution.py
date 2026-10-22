@@ -91,6 +91,29 @@ def concentration_torch(weights,counts):
     return torch.stack(columns,dim=1),total,w
 
 
+def prepare_reader(out):
+    """Compile only, plus CPU tensor arithmetic checks; never claims a CUDA kernel test."""
+    import os
+    import torch
+    from torch.utils.cpp_extension import load
+    here=Path(__file__).resolve().parent;build=here/'构建_pixel_stats';build.mkdir(exist_ok=True)
+    os.environ['MAX_JOBS']='1';os.environ['TORCH_CUDA_ARCH_LIST']='8.9'
+    examples=np.full((4,100),np.nan,np.float32);lengths=np.array([2,100,0,3],np.int32)
+    examples[0,:2]=[.9,.1];examples[1]=.01;examples[3,:3]=[.1,.7,.2]
+    got,_,_=concentration_torch(torch.from_numpy(examples),torch.from_numpy(lengths))
+    names=[f'top{k}_fraction' for k in (1,3,5,10,20,50,100)]+[f'n{p}' for p in (50,90,95,99)]
+    expected=np.array([[describe(row[:n])[key] for key in names] for row,n in zip(examples,lengths)],float)
+    np.testing.assert_allclose(got.numpy(),expected,rtol=1e-10,atol=1e-10,equal_nan=True)
+    print('CPU torch concentration agrees with independent NumPy cases; compiling reader for sm89',flush=True)
+    extension=load(name='gaudepth_pixel_stats_reader_v2',sources=[str(here/'reader.cu')],build_directory=str(build),
+                   extra_cuda_cflags=['-O3','--use_fast_math'],verbose=True)
+    out.mkdir(parents=True,exist_ok=True)
+    payload=dict(status='compiled_cpu_arithmetic_checked',git_commit=subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(),
+                 binary=extension.__file__,binary_sha256=sha(extension.__file__),reader_source_sha256=sha(here/'reader.cu'),
+                 torch=torch.__version__,target_arch='8.9',gpu_available=torch.cuda.is_available(),cuda_kernel_executed=False)
+    (out/'prepare.json').write_text(json.dumps(payload,indent=2),encoding='utf-8');print(json.dumps(payload),flush=True)
+
+
 def masked_frame(extension,geom,binning,image,P,W,H,fx,fy,expected,median,alpha,mask,output,view_index):
     """Every retained pixel, exact ranked concentration in bounded chunks; no raw-member archive."""
     import os
@@ -272,8 +295,11 @@ def run_masked_scans(out,provenance):
 
 if __name__=='__main__':
     p=argparse.ArgumentParser(description=__doc__);p.add_argument('--root',type=Path);p.add_argument('--output',type=Path);p.add_argument('--self-check',action='store_true')
-    p.add_argument('--run-masked-scans',action='store_true');p.add_argument('--host-build-provenance');args=p.parse_args()
+    p.add_argument('--run-masked-scans',action='store_true');p.add_argument('--prepare-reader',action='store_true');p.add_argument('--host-build-provenance');args=p.parse_args()
     if args.self_check:self_check()
+    elif args.prepare_reader:
+        if args.output is None:p.error('output required')
+        prepare_reader(args.output)
     elif args.run_masked_scans:
         if args.output is None or not args.host_build_provenance:p.error('output/provenance required')
         run_masked_scans(args.output,args.host_build_provenance)
