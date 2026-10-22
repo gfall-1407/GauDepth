@@ -271,11 +271,89 @@ def run_shared_curve(root,out,case=6):
         'Related member splits, not independent scenes; no original 3DGS training, automatic K or host GPU evidence.'),indent=2),encoding='utf-8')
 
 
+def nominal_midpoint_labels(points,cfg):
+    assert len(cfg['theta_deg'])==2 and cfg['theta_deg'][0]==cfg['theta_deg'][1] and cfg['gap']>0
+    midpoint=1.+cfg['gap']/2-np.tan(np.deg2rad(cfg['theta_deg'][0]))*points[:,0]+float(cfg.get('curvature',0.))*(points[:,:2]**2).sum(axis=1)
+    delta=points[:,2]-midpoint;labels=(delta>0).astype(int);labels[np.abs(delta)<=1e-12]=-1
+    return labels
+
+
+def geometry_oracle_self_check():
+    cfg=dict(theta_deg=[0.,0.],gap=.01,curvature=20.)
+    p=np.array([[.01,.02,1.],[.01,.02,1.01],[.01,.02,1.005]])
+    p[:,2]+=20*(p[:,:2]**2).sum(axis=1)
+    n=np.tile([.2,.3,1.],(3,1));coeff=np.array([[1.,0.,0.],[1.01,0.,0.]])
+    for scale,lam in itertools.product((.002,.005),(0.,1.)):
+        pred=curve_labels(curve_energy(p,n,coeff,20.,scale,lam))
+        np.testing.assert_array_equal(pred,nominal_midpoint_labels(p,cfg))
+        assert pred.tolist()==[0,1,-1]
+    print('known-geometry energy/midpoint/unknown self-check passed',flush=True)
+
+
+def run_geometry_oracle(root,out):
+    if out.exists() and any(out.iterdir()):raise FileExistsError(out)
+    out.mkdir(parents=True,exist_ok=True);rows=[];inputs=[];seen=set();details=[]
+    for case in range(6,12):
+        folder=root/'shared_curve_case6' if case==6 else root/f'shared_curve_noise/case{case}'
+        meta=json.loads((folder/'metadata.json').read_text(encoding='utf-8'));assert meta['status']=='complete'
+        for item in meta['inputs']:assert sha(Path(item['path']))==item['sha256']
+        inputs.append(dict(path=str(folder/'models.json'),sha256=sha(folder/'models.json'),metadata_sha256=sha(folder/'metadata.json')))
+        models=json.loads((folder/'models.json').read_text(encoding='utf-8'))
+        with (folder/'replicates.csv').open(encoding='utf-8-sig',newline='') as f:
+            prior={(int(r['seed_offset']),int(r['curvature']),float(r['scale']),float(r['normal_weight']),int(r['repeat'])):r for r in csv.DictReader(f)}
+        for m in models:
+            seed=m['seed_offset'];curvature=m['curvature'];scale=m['scale'];lam=m['normal_weight'];repeat=m['repeat']
+            key=(case,seed,curvature,scale,lam,repeat);assert key not in seen;seen.add(key)
+            data_folder=root/f'independent_c{curvature}_s{seed}';data_meta=json.loads((data_folder/'metadata.json').read_text(encoding='utf-8'))
+            item=data_meta['cases'][case];cfg=item['config'];assert cfg['case_index']==case and cfg['seed']==20261022+case+seed
+            path=data_folder/item['file'];assert sha(path)==item['npz_sha256']
+            assert any(str(path)==entry['path'] and sha(path)==entry['sha256'] for entry in meta['inputs'])
+            with np.load(path,allow_pickle=False) as z:
+                ids=np.array(m['heldout_ids'],int);p=z['means'][ids].astype(float);n=z['generated_normal'][ids].astype(float);truth=z['source_origin'][ids]
+                fit_origins=len(np.unique(z['source_origin'][m['fit_ids']]))
+            assert not set(ids)&set(m['fit_ids']) and len(ids)==len(set(ids))
+            coeff=np.array([[1.+origin*cfg['gap'],-np.tan(np.deg2rad(cfg['theta_deg'][origin])),0.] for origin in range(2)])
+            pred=curve_labels(curve_energy(p,n,coeff,curvature,scale,lam))
+            independent=nominal_midpoint_labels(p,cfg);np.testing.assert_array_equal(pred,independent)
+            score=pair_metrics(truth,pred);curve_pred=np.array(m['heldout_labels'],int);curve_score=pair_metrics(truth,curve_pred)
+            np.testing.assert_allclose(curve_score['f1'],float(prior[(seed,curvature,scale,lam,repeat)]['curve_pair_f1']),atol=1e-12,rtol=0)
+            upper=np.triu(np.ones((len(ids),len(ids)),bool),1)
+            known=(pred[:,None]>=0)&(pred[None,:]>=0)&(curve_pred[:,None]>=0)&(curve_pred[None,:]>=0)&upper
+            relation_diff=(pred[:,None]==pred[None,:])!=(curve_pred[:,None]==curve_pred[None,:])
+            row=dict(case_index=case,seed_offset=seed,curvature=curvature,scale=scale,normal_weight=lam,repeat=repeat,
+                center_noise=cfg['center_noise'],normal_noise_deg=cfg['normal_noise_deg'],heldout_members=len(ids),
+                heldout_origins=len(np.unique(truth)),fit_origins=fit_origins,origin0_members=int((truth==0).sum()),origin1_members=int((truth==1).sum()),
+                nominal_known_members=int((pred>=0).sum()),nominal_unknown_members=int((pred<0).sum()),
+                origin0_crossed_midpoint=int(((truth==0)&(pred==1)).sum()),origin1_crossed_midpoint=int(((truth==1)&(pred==0)).sum()),
+                nominal_origin_disagreements=int(((pred>=0)&(pred!=truth)).sum()),
+                nominal_pair_f1=score['f1'],nominal_false_merge_pairs=score['fp'],nominal_false_split_pairs=score['fn'],
+                curve_pair_f1=curve_score['f1'],curve_false_merge_pairs=curve_score['fp'],curve_false_split_pairs=curve_score['fn'],curve_unknown_members=int((curve_pred<0).sum()),
+                curve_minus_nominal_f1=curve_score['f1']-score['f1'],both_known_pairs=int(known.sum()),
+                curve_nominal_relation_disagreements=int((known&relation_diff).sum()))
+            rows.append(row);details.append(dict(**{k:row[k] for k in ('case_index','seed_offset','curvature','scale','normal_weight','repeat')},
+                heldout_ids=ids.tolist(),nominal_labels=pred.tolist(),source_origin=truth.tolist(),curve_labels=curve_pred.tolist()))
+        csv_write(out/'replicates.csv',rows);print('known geometry case',case,'finished',flush=True)
+    assert len(rows)==720
+    (out/'labels.json').write_text(json.dumps(details),encoding='utf-8')
+    (out/'metadata.json').write_text(json.dumps(dict(status='complete',inputs=inputs,git_commit=subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(),
+        source_sha256=sha(__file__),dependency_sha256={'analyze.py':sha(Path(__file__).parent/'analyze.py')},
+        evidence='True construction curvature/gap/angles supply nominal graphs: explicit geometric oracle, no fitting or selection. '
+        'Same saved heldout IDs and same four energies; energy labels independently checked against parallel height midpoint. '
+        'Normalized graph residual is not closest Euclidean curved-surface distance. Same graph gradients make axis costs equal between the two parallel sources. '
+        'Construction-origin labels and closest-nominal assignment can differ after center perturbation; neither is trained-scene physical support truth. '
+        'No pair-F1 upper bound, irreducibility, automatic method or original 3DGS training claimed. '
+        'Repeated splits and energy configurations reuse members; counts must not be summed as unique Gaussians.'),indent=2),encoding='utf-8')
+
+
 if __name__=='__main__':
     p=argparse.ArgumentParser(description=__doc__);p.add_argument('--input',type=Path);p.add_argument('--baseline',type=Path)
     p.add_argument('--output',type=Path);p.add_argument('--self-check',action='store_true');p.add_argument('--shared-curve-case6','--shared-curve',dest='shared_curve_case6',action='store_true');p.add_argument('--root',type=Path)
-    p.add_argument('--curve-case',type=int,choices=range(6,12),default=6);args=p.parse_args()
-    if args.self_check:curve_self_check() if args.shared_curve_case6 else self_check()
+    p.add_argument('--curve-case',type=int,choices=range(6,12),default=6);p.add_argument('--geometry-oracle',action='store_true');args=p.parse_args()
+    if args.geometry_oracle and args.shared_curve_case6:p.error('choose a single probe mode')
+    if args.self_check:geometry_oracle_self_check() if args.geometry_oracle else curve_self_check() if args.shared_curve_case6 else self_check()
+    elif args.geometry_oracle:
+        if args.root is None or args.output is None:p.error('root and output required')
+        run_geometry_oracle(args.root,args.output)
     elif args.shared_curve_case6:
         if args.root is None or args.output is None:p.error('root and output required')
         run_shared_curve(args.root,args.output,args.curve_case)
