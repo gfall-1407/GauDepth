@@ -91,6 +91,58 @@ def concentration_torch(weights,counts):
     return torch.stack(columns,dim=1),total,w
 
 
+DEPTH_SETS=['all','top10pct_count','top50pct_count','cover90pct_weight']
+
+
+def depth_variance_numpy(depth,weight):
+    """Independent ordinary population variance; contribution ties keep acceptance order."""
+    depth=np.asarray(depth,np.float64);weight=np.asarray(weight,np.float64);n=len(depth)
+    if not n:return np.full(4,np.nan),np.zeros(4,np.int32),np.zeros(4,np.int32)
+    assert len(weight)==n and np.isfinite(weight).all() and (weight>0).all()
+    order=np.argsort(-weight,kind='stable');d=depth[order];w=weight[order]
+    k90=int(np.searchsorted(w.cumsum(),(.9-1e-12)*w.sum())+1)
+    sizes=np.array([n,(n+9)//10,(n+1)//2,k90],np.int32)
+    invalid=np.array([np.count_nonzero(~np.isfinite(d[:k])) for k in sizes],np.int32)
+    variance=np.array([np.var(d[:k]-d[0],ddof=0) if not bad else np.nan for k,bad in zip(sizes,invalid)])
+    return variance,sizes,invalid
+
+
+def depth_variance_torch(depth,weight,counts):
+    import torch
+    axis=torch.arange(depth.shape[1],device=depth.device)[None,:]
+    valid=axis<counts[:,None];w=torch.where(valid,weight.double(),0.)
+    assert bool(torch.isfinite(w).all()) and bool((w[valid]>0).all())
+    order=torch.argsort(w,dim=1,descending=True,stable=True)
+    ranked=w.gather(1,order);d=depth.double().gather(1,order);total=ranked.sum(dim=1)
+    k90=(ranked.cumsum(dim=1)<((.9-1e-12)*total)[:,None]).sum(dim=1)+1
+    k90=torch.where(counts>0,k90,0)
+    sizes=torch.stack([counts,(counts+9)//10,(counts+1)//2,k90],dim=1).long()
+    selected=axis[:,None,:]<sizes[:,:,None]
+    finite=torch.isfinite(d);invalid=(selected&~finite[:,None,:]).sum(dim=2)
+    # Shift before a two-pass calculation; avoid subtracting two large squared means.
+    origin=torch.where(torch.isfinite(d[:,0]),d[:,0],0.)
+    x=torch.where(finite,d-origin[:,None],0.)[:,None,:]
+    denominator=sizes.clamp(min=1).double()
+    mean=torch.where(selected,x,0.).sum(dim=2)/denominator
+    variance=torch.where(selected,(x-mean[:,:,None]).square(),0.).sum(dim=2)/denominator
+    variance=torch.where((sizes>0)&(invalid==0),variance,float('nan'))
+    return variance,sizes.to(torch.int32),invalid.to(torch.int32)
+
+
+def depth_variance_check(device='cpu'):
+    import torch
+    depths=np.array([[1,3,9,99],[1e8+1,1e8+3,1e8+5,1e8+7],[4,np.nan,np.nan,np.nan],
+                     [np.nan,2,5,np.nan],[1,4,7,10],[np.nan]*4],float)
+    weights=np.array([[.6,.3,.1,np.nan],[.25]*4,[1,np.nan,np.nan,np.nan],[.01,.8,.19,np.nan],[.25]*4,[np.nan]*4],float)
+    counts=np.array([3,4,1,3,4,0],np.int32)
+    got=depth_variance_torch(torch.tensor(depths,device=device),torch.tensor(weights,device=device),torch.tensor(counts,device=device))
+    refs=[depth_variance_numpy(d[:n],w[:n]) for d,w,n in zip(depths,weights,counts)]
+    for j in range(3):np.testing.assert_allclose(got[j].cpu().numpy(),np.stack([x[j] for x in refs]),atol=1e-12,rtol=1e-12,equal_nan=True)
+    np.testing.assert_allclose(refs[0][0],[104/9,0,1,1],atol=1e-12)
+    assert refs[3][2].tolist()==[1,0,0,0] and refs[-1][1].tolist()==[0]*4
+    print('Depth population variance/count rounding/ties/empty/singleton/large offset/nonfinite checks passed',flush=True)
+
+
 def prepare_reader(out):
     """Compile only, plus CPU tensor arithmetic checks; never claims a CUDA kernel test."""
     import os
@@ -131,7 +183,7 @@ def ensure_ninja():
     print('isolated Ninja',subprocess.check_output([str(binary),'--version'],text=True).strip(),flush=True)
 
 
-def masked_frame(extension,geom,binning,image,P,W,H,fx,fy,expected,median,alpha,mask,output,view_index):
+def masked_frame(extension,geom,binning,image,P,W,H,fx,fy,expected,median,alpha,mask,output,view_index,depth_variance=False):
     """Every retained pixel, exact ranked concentration in bounded chunks; no raw-member archive."""
     import os
     import torch
@@ -153,6 +205,10 @@ def masked_frame(extension,geom,binning,image,P,W,H,fx,fy,expected,median,alpha,
     reference=np.array([[describe(row[:length])[name] for name in concentration_names] for row,length in zip(example,lengths)],dtype=float)
     np.testing.assert_allclose(got.cpu().numpy(),reference,atol=1e-10,rtol=1e-10,equal_nan=True)
     concentration=np.empty((len(pixels),11),np.float32)
+    if depth_variance:
+        depth_variance_check(geom.device)
+        variances=np.empty((len(pixels),4),np.float64)
+        selected_counts=np.empty((len(pixels),4),np.int32);invalid_counts=np.empty_like(selected_counts)
     maximum_replay_error=np.zeros(3,float)
     for start in range(0,len(pixels),512):
         stop=min(start+512,len(pixels));local=pixel_gpu[start:stop].to(torch.int32)
@@ -169,27 +225,41 @@ def masked_frame(extension,geom,binning,image,P,W,H,fx,fy,expected,median,alpha,
         np.testing.assert_allclose(wmin.cpu().numpy(),weights[start:stop,0],atol=1e-10,rtol=2e-5,equal_nan=True)
         np.testing.assert_allclose(wmax.cpu().numpy(),weights[start:stop,1],atol=1e-10,rtol=2e-5,equal_nan=True)
         concentration[start:stop]=values.cpu().numpy().astype(np.float32)
+        if depth_variance:
+            dv,sc,ic=depth_variance_torch(rec[:,:,0],rec[:,:,1],number)
+            variances[start:stop]=dv.cpu().numpy();selected_counts[start:stop]=sc.cpu().numpy();invalid_counts[start:stop]=ic.cpu().numpy()
         del rec,gids,number,replay,values,total,w
     count_names=['tile_candidates','evaluated','power_rejected','alpha_rejected','early_stop_triggered','accepted','last_accepted_position','host_last_accepted_position']
     weight_names=['min_weight','max_weight','weight_sum','background_weight']
     columns={name:counts[:,i] for i,name in enumerate(count_names)}
     columns.update({name:weights[:,i] for i,name in enumerate(weight_names)})
     columns.update({name:concentration[:,i] for i,name in enumerate(concentration_names)})
+    if depth_variance:
+        columns={f'depth_variance_{name}':variances[:,i] for i,name in enumerate(DEPTH_SETS)}
     summary=dict(retained_pixels=len(pixels),image_pixels=H*W,masked_out_pixels=H*W-len(pixels),
                  empty_contribution_pixels=int((counts[:,5]==0).sum()),metrics=column_summary(columns))
     name=f'masked_pixel_stats_{view_index:03d}.npz';temporary=output/(name+'.tmp')
     with temporary.open('wb') as f:
-        np.savez_compressed(f,pixel_index=pixels,counts=counts,weights=weights,concentration=concentration,image_size=np.array([H,W]))
+        if depth_variance:
+            np.savez_compressed(f,pixel_index=pixels,accepted_count=counts[:,5],depth_variance=variances,
+                selected_counts=selected_counts,nonfinite_depth_counts=invalid_counts,image_size=np.array([H,W]))
+        else:
+            np.savez_compressed(f,pixel_index=pixels,counts=counts,weights=weights,concentration=concentration,image_size=np.array([H,W]))
         f.flush();os.fsync(f.fileno())
     os.replace(temporary,output/name)
-    return dict(file=name,npz_sha256=sha(output/name),count_fields=count_names,weight_fields=weight_names,
+    extra=dict(depth_sets=DEPTH_SETS,depth_variance_definition='Unweighted population variance (ddof=0), camera-z, scene-coordinate units squared. Count fractions use ceil(N*p), min 1 for nonempty rays; stable descending w ties retain acceptance order; cover90 uses sum accepted w, tolerance 1e-12 relative. Empty or any nonfinite selected depth gives NaN; singleton finite depth gives zero.',
+        nonfinite_selected_depth_pixels={name:int((invalid_counts[:,i]>0).sum()) for i,name in enumerate(DEPTH_SETS)}) if depth_variance else {}
+    return dict(file=name,npz_sha256=sha(output/name),count_fields=count_names,weight_fields=weight_names,**extra,
                 concentration_fields=concentration_names,mask_threshold='keep >= 0.5, identical to mesh_extract.py',
                 retained_mask_sha256=hashlib.sha256(np.packbits(keep.ravel()).tobytes()).hexdigest(),
                 summary=summary,replay_max_abs=maximum_replay_error.tolist(),
-                evidence='Every GT-mask retained pixel; empty-contribution pixels remain. Not opacity-filtered. '
+                evidence=('Every GT-mask retained pixel; compact float64 depth variances, selection counts and nonfinite-depth counts saved. '
+                'No raw Gaussian lists saved; same full-frame and every retained-ray replay/count/extrema checks as contribution mode. '
+                'Unweighted population variance, not a weighted variance or physical surface thickness.' if depth_variance else
+                'Every GT-mask retained pixel; empty-contribution pixels remain. Not opacity-filtered. '
                 'Exact ranked weights computed in float64 chunks, saved as float32; nXX stores integer counts or NaN. '
                 'Only retained-pixel aggregates archived, no RGB/depth/full Gaussian lists. '
-                'All retained rays expected/median/opacity, extrema and accepted counts replayed; full-frame opacity/last-position/stage accounting checked.')
+                'All retained rays expected/median/opacity, extrema and accepted counts replayed; full-frame opacity/last-position/stage accounting checked.'))
 
 
 def run(root,out):
@@ -247,7 +317,7 @@ def run(root,out):
     print(json.dumps(summary['all_sampled_pixels'],indent=2),flush=True)
 
 
-def run_masked_scans(out,provenance):
+def run_masked_scans(out,provenance,depth_variance=False):
     import socket
     from sample import atomic_json
     if socket.gethostname()!='autodl-container-d6a7459179-693ab6ee':raise ValueError('Only authorized G1')
@@ -265,6 +335,7 @@ def run_masked_scans(out,provenance):
         command=[sys.executable,str(here/'sample.py'),'-m',f'/root/autodl-tmp/GauDepth/outtest/{scene}',
                  '-s',f'/root/autodl-tmp/DTU/{scene}','--iteration','30000','--split','all','--views',views,
                  '--mask-statistics','--host-build-provenance',provenance,'--output',str(target)]
+        if depth_variance:command.append('--depth-variance')
         record=dict(scene=scene,label=label,command=command,maximum_seconds=seconds,started_at=time.time())
         batch['stages'].append(record);atomic_json(out/'batch.json',batch)
         with (out/(scene+'_'+label+'.log')).open('w',encoding='utf-8') as log:
@@ -389,14 +460,14 @@ def summarize_masked(root,out):
 
 if __name__=='__main__':
     p=argparse.ArgumentParser(description=__doc__);p.add_argument('--root',type=Path);p.add_argument('--output',type=Path);p.add_argument('--self-check',action='store_true')
-    p.add_argument('--run-masked-scans',action='store_true');p.add_argument('--prepare-reader',action='store_true');p.add_argument('--summarize-masked',action='store_true');p.add_argument('--host-build-provenance');args=p.parse_args()
+    p.add_argument('--run-masked-scans',action='store_true');p.add_argument('--prepare-reader',action='store_true');p.add_argument('--summarize-masked',action='store_true');p.add_argument('--depth-variance',action='store_true');p.add_argument('--host-build-provenance');args=p.parse_args()
     if args.self_check:self_check()
     elif args.prepare_reader:
         if args.output is None:p.error('output required')
         prepare_reader(args.output)
     elif args.run_masked_scans:
         if args.output is None or not args.host_build_provenance:p.error('output/provenance required')
-        run_masked_scans(args.output,args.host_build_provenance)
+        run_masked_scans(args.output,args.host_build_provenance,args.depth_variance)
     elif args.summarize_masked:
         if args.root is None or args.output is None:p.error('root/output required')
         summarize_masked(args.root,args.output)
