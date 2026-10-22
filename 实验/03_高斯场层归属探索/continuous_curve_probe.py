@@ -205,11 +205,89 @@ def run(root,out,protocol='random_half'):
     (out/'metadata.json').write_text(json.dumps(metadata,indent=2),encoding='utf-8')
 
 
+def relation_changes(first,second,truth):
+    first=np.asarray(first);second=np.asarray(second);truth=np.asarray(truth)
+    upper=np.triu(np.ones((len(first),len(first)),bool),1)
+    known=upper&(first[:,None]>=0)&(first[None,:]>=0)&(second[:,None]>=0)&(second[None,:]>=0)
+    before=first[:,None]==first[None,:];after=second[:,None]==second[None,:]
+    actual=truth[:,None]==truth[None,:];changed=known&(before!=after)
+    return dict(both_known_pairs=int(known.sum()),changed_pairs=int(changed.sum()),
+                different_to_same=int((changed&after).sum()),same_to_different=int((changed&before).sum()),
+                correct_to_incorrect=int((changed&(before==actual)).sum()),
+                incorrect_to_correct=int((changed&(after==actual)).sum()))
+
+
+def audit_self_check():
+    result=relation_changes([0,0,1,-1],[7,8,8,8],[0,0,1,1])
+    assert result==dict(both_known_pairs=3,changed_pairs=2,different_to_same=1,
+                       same_to_different=1,correct_to_incorrect=2,incorrect_to_correct=0)
+    assert relation_changes([4,4,9,-1],[2,2,1,-1],[0,0,1,1])['changed_pairs']==0
+    print('saved relation audit unknown/permutation/direction self-check passed',flush=True)
+
+
+def audit_saved(root,out):
+    if out.exists() and any(out.iterdir()):raise FileExistsError(out)
+    out.mkdir(parents=True,exist_ok=True);records={};inputs=[]
+    for protocol,folder in (('random_half','continuous_shared_curve_verified'),('spatial_left_right','continuous_shared_curve_spatial')):
+        directory=root/folder/'data';meta=json.loads((directory/'metadata.json').read_text(encoding='utf-8'))
+        assert meta['status']=='complete'
+        for item in meta['inputs']:assert sha(item['path'])==item['sha256']
+        for name in ('metadata.json','models.jsonl','replicates.csv'):
+            inputs.append(dict(path=str(directory/name),sha256=sha(directory/name)))
+        for line in (directory/'models.jsonl').read_text(encoding='utf-8').splitlines():
+            model=json.loads(line)
+            if model['curvature']!=0:continue
+            case=model['case_index'];seed=model['seed_offset'];folder=root/f'independent_c0_s{seed}'
+            item=json.loads((folder/'metadata.json').read_text(encoding='utf-8'))['cases'][case]
+            assert sha(folder/item['file'])==item['npz_sha256']
+            with np.load(folder/item['file'],allow_pickle=False) as z:
+                learn=np.array(model['fit_ids']);test=np.array(model['heldout_ids'])
+                assert not np.intersect1d(learn,test).size
+                p=z['means'].astype(float);n=z['generated_normal'].astype(float);truth=z['source_origin']
+            result=dict(protocol=protocol,case_index=case,seed_offset=seed,repeat=model['repeat'],
+                        fit_members=len(learn),heldout_members=len(test),fit_origins=len(np.unique(truth[learn])),heldout_origins=len(np.unique(truth[test])))
+            predictions={}
+            for name in ('plane','curve'):
+                saved=model['models'][name];assert saved['status']=='finite_candidate'
+                coeff=np.array(saved['coefficients']);d=saved['d']
+                train=curve_energy(p[learn],n[learn],coeff,d,SCALE,LAMBDA)
+                costs=curve_energy(p[test],n[test],coeff,d,SCALE,LAMBDA);pred=curve_labels(costs)
+                np.testing.assert_allclose(train.min(axis=1).mean(),saved['objective'],atol=1e-12,rtol=0)
+                np.testing.assert_array_equal(pred,saved['heldout_labels']);predictions[name]=pred
+                score=pair_metrics(truth[test],pred)
+                result.update({name+'_fit_objective':saved['objective'],name+'_heldout_energy':float(costs.min(axis=1).mean()),
+                               name+'_f1':score['f1'],name+'_fp':score['fp'],name+'_fn':score['fn'],name+'_unknown':int((pred<0).sum()),
+                               name+'_d':d,name+'_origin_tilt_deg':np.rad2deg(np.arctan(np.linalg.norm(coeff[:,1:],axis=1))).tolist()})
+            result.update(relation_changes(predictions['plane'],predictions['curve'],truth[test]))
+            for field in ('fit_objective','heldout_energy','f1','fp','fn'):
+                result['delta_'+field]=result['curve_'+field]-result['plane_'+field]
+            records[(protocol,case,seed,model['repeat'])]=result
+    assert len(records)==36
+    rows=[]
+    for case in (9,10,11):
+        for seed in (1000,2000):
+            row=records[('spatial_left_right',case,seed,0)].copy()
+            reference=[records[('random_half',case,seed,repeat)] for repeat in range(5)]
+            for field in ('delta_fit_objective','delta_heldout_energy','delta_f1'):
+                row['random_half_mean_'+field]=float(np.mean([r[field] for r in reference]))
+            rows.append(row)
+    csv_write(out/'summary.csv',rows)
+    (out/'details.json').write_text(json.dumps(list(records.values())),encoding='utf-8')
+    (out/'metadata.json').write_text(json.dumps(dict(status='complete',git_commit=subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(),
+        source_sha256=sha(__file__),inputs=inputs,
+        evidence='Read-only saved planar-curvature0 models; six spatial conditions, thirty random-half references. No fitting/generation/selection. '
+        'Pair changes compare same heldout IDs within a condition, independent of component numbers; unknown excluded from relation denominator but retained in scores/counts. '
+        'Random and spatial heldout sets differ: random means are context, not same-pair comparisons or independent scenes. '
+        'Origin tilt is arctan(norm(b,c)) at patch coordinate x=y=0, not constant curved-surface tilt. '
+        'Fit and heldout energies replayed from saved coefficients. Parameter associations are not causal effects; origins not physical truth.'),indent=2),encoding='utf-8')
+    print('saved-model audit complete:',len(rows),'spatial conditions and 30 random references',flush=True)
+
+
 if __name__=='__main__':
     parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('--self-check',action='store_true')
     parser.add_argument('--root',type=Path);parser.add_argument('--output',type=Path)
-    parser.add_argument('--protocol',choices=('random_half','spatial_left_right'),default='random_half');args=parser.parse_args()
-    if args.self_check:self_check()
+    parser.add_argument('--protocol',choices=('random_half','spatial_left_right'),default='random_half');parser.add_argument('--audit-saved',action='store_true');args=parser.parse_args()
+    if args.self_check:audit_self_check() if args.audit_saved else self_check()
     else:
         if args.root is None or args.output is None:parser.error('root and output required')
-        run(args.root,args.output,args.protocol)
+        audit_saved(args.root,args.output) if args.audit_saved else run(args.root,args.output,args.protocol)
