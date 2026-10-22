@@ -558,9 +558,67 @@ def summarize_depth(root,baseline,out,standard_deviation=False):
     print(json.dumps(result,ensure_ascii=False),flush=True)
 
 
+def summarize_depth_ratios(weighted,uniform,out):
+    """Scale-free paired ratios from saved variances; no rendering or new selection."""
+    if out.exists() and any(out.iterdir()):raise FileExistsError(out)
+    wb=json.loads((weighted/'batch.json').read_text(encoding='utf-8'))
+    ub=json.loads((uniform/'batch.json').read_text(encoding='utf-8'))
+    assert wb['status']==ub['status']=='complete' and wb['depth_weighting']=='contribution'
+    assert ub.get('depth_weighting','uniform')=='uniform' and set(wb['scans'])==set(ub['scans'])
+    rows=[]
+    for scene,record in wb['scans'].items():
+        wp=[];up=[];counts=[];names=[]
+        for stage in wb['stages']:
+            if stage['scene']!=scene:continue
+            part=scene+'_'+stage['label'];wdir=weighted/part;udir=uniform/part
+            wm=json.loads((wdir/'metadata.json').read_text(encoding='utf-8'))
+            um=json.loads((udir/'metadata.json').read_text(encoding='utf-8'))
+            assert wm['status']==um['status']=='complete' and wm['camera_inventory']==um['camera_inventory']
+            assert wm['model_sha256']==um['model_sha256']==record['model_sha256']
+            uv={v['image_name']:v for v in um['views']}
+            assert set(uv)=={v['image_name'] for v in wm['views']}
+            for v in wm['views']:
+                old=uv[v['image_name']]
+                for key in ('retained_mask_sha256','mask_values_sha256','world_view_transform','image_size','depth_sets'):
+                    assert v[key]==old[key]
+                assert v['depth_sets']==DEPTH_SETS
+                assert sha(wdir/v['file'])==v['npz_sha256'] and sha(udir/old['file'])==old['npz_sha256']
+                with np.load(wdir/v['file']) as w,np.load(udir/old['file']) as u:
+                    for key in ('pixel_index','accepted_count','selected_counts','nonfinite_depth_counts'):
+                        np.testing.assert_array_equal(w[key],u[key])
+                    assert np.array_equal(np.isfinite(w['depth_variance']),np.isfinite(u['depth_variance']))
+                    wp.append(w['depth_variance']);up.append(u['depth_variance']);counts.append(w['selected_counts'])
+                names.append(v['image_name'])
+        assert len(names)==len(set(names))==record['views'] and set(names)==set(record['image_names'])
+        w=np.concatenate(wp);u=np.concatenate(up);c=np.concatenate(counts);del wp,up,counts
+        assert len(w)==len(u)==len(c)==record['retained_pixels']
+        def emit(comparison,subset,numerator,denominator,quantities):
+            pair=np.isfinite(numerator)&np.isfinite(denominator)&(denominator>0)
+            ratio=numerator[pair]/denominator[pair]
+            for quantity in quantities:
+                values=np.sqrt(ratio) if quantity=='standard_deviation' else ratio
+                stats=column_summary({'ratio':values})['ratio']
+                rows.append(dict(scan=scene,views=len(names),retained_pixels=len(w),comparison=comparison,
+                    subset=subset,quantity=quantity,**stats,excluded_pixels=int((~pair).sum()),
+                    zero_denominator_pixels=int((np.isfinite(denominator)&(denominator==0)).sum()),
+                    numerator_larger_pixels=int((numerator[pair]>denominator[pair]).sum())))
+        for j,subset in enumerate(DEPTH_SETS):
+            emit('uniform_subset_over_all',subset,u[:,j],u[:,0],('population_variance','standard_deviation'))
+            emit('weighted_subset_over_all',subset,w[:,j],w[:,0],('population_variance','standard_deviation'))
+            emit('weighted_over_uniform',subset,w[:,j],u[:,j],('population_variance','standard_deviation'))
+            emit('selected_count_over_all',subset,c[:,j],c[:,0],('count',))
+        print(json.dumps(dict(scan=scene,views=len(names),pixels=len(w),status='complete')),flush=True)
+        del w,u,c
+    result=dict(analysis_commit=subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(),
+        weighted_root=str(weighted),uniform_root=str(uniform),weighted_run_commit=wb['git_commit'],
+        uniform_run_commit=ub['git_commit'],definition='Per-ray numerator/positive denominator, then pool ratios; fractions, not percentages. SD ratio is sqrt of variance ratio.',rows=rows)
+    out.mkdir(parents=True,exist_ok=True);write_csv(out/'逐射线深度无量纲比例.csv',rows)
+    (out/'summary.json').write_text(json.dumps(result,ensure_ascii=False,indent=2),encoding='utf-8')
+
+
 if __name__=='__main__':
     p=argparse.ArgumentParser(description=__doc__);p.add_argument('--root',type=Path);p.add_argument('--output',type=Path);p.add_argument('--self-check',action='store_true')
-    p.add_argument('--run-masked-scans',action='store_true');p.add_argument('--prepare-reader',action='store_true');p.add_argument('--summarize-masked',action='store_true');p.add_argument('--summarize-depth',action='store_true');p.add_argument('--standard-deviation',action='store_true');p.add_argument('--baseline',type=Path);p.add_argument('--depth-variance',action='store_true');p.add_argument('--weighted-depth-variance',action='store_true');p.add_argument('--host-build-provenance');args=p.parse_args()
+    p.add_argument('--run-masked-scans',action='store_true');p.add_argument('--prepare-reader',action='store_true');p.add_argument('--summarize-masked',action='store_true');p.add_argument('--summarize-depth',action='store_true');p.add_argument('--summarize-depth-ratios',action='store_true');p.add_argument('--standard-deviation',action='store_true');p.add_argument('--baseline',type=Path);p.add_argument('--depth-variance',action='store_true');p.add_argument('--weighted-depth-variance',action='store_true');p.add_argument('--host-build-provenance');args=p.parse_args()
     if args.weighted_depth_variance and not args.depth_variance:p.error('weighted-depth-variance requires depth-variance')
     if args.self_check:self_check()
     elif args.prepare_reader:
@@ -569,6 +627,9 @@ if __name__=='__main__':
     elif args.run_masked_scans:
         if args.output is None or not args.host_build_provenance:p.error('output/provenance required')
         run_masked_scans(args.output,args.host_build_provenance,args.depth_variance,args.weighted_depth_variance)
+    elif args.summarize_depth_ratios:
+        if args.root is None or args.output is None or args.baseline is None:p.error('weighted root/uniform baseline/output required')
+        summarize_depth_ratios(args.root,args.baseline,args.output)
     elif args.summarize_depth:
         if args.root is None or args.output is None or args.baseline is None:p.error('root/output/baseline required')
         summarize_depth(args.root,args.baseline,args.output,args.standard_deviation)
