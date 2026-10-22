@@ -351,6 +351,24 @@ def run_masked_scans(out,provenance,depth_variance=False):
         if code:raise RuntimeError(f'{scene}/{label} failed: inspect preserved log')
         meta=json.loads((target/'metadata.json').read_text(encoding='utf-8'))
         assert meta['status']=='complete' and meta['original_model_unchanged'] and meta['git_commit']==commit
+        if depth_variance:
+            baseline=here/'结果/20261022_像素贡献全视角/batch_v2/data'/target.name
+            old=json.loads((baseline/'metadata.json').read_text(encoding='utf-8'))
+            assert old['status']=='complete' and old['model_sha256']==meta['model_sha256']
+            assert old['camera_inventory']==meta['camera_inventory']
+            by_name={v['image_name']:v for v in old['views']}
+            assert set(by_name)=={v['image_name'] for v in meta['views']}
+            for v in meta['views']:
+                ov=by_name[v['image_name']]
+                for key in ('retained_mask_sha256','mask_values_sha256','world_view_transform','image_size'):
+                    assert v[key]==ov[key],(v['image_name'],key)
+                assert sha(baseline/ov['file'])==ov['npz_sha256']
+                with np.load(target/v['file']) as new,np.load(baseline/ov['file']) as saved:
+                    np.testing.assert_array_equal(new['pixel_index'],saved['pixel_index'])
+                    np.testing.assert_array_equal(new['accepted_count'],saved['counts'][:,5])
+                    np.testing.assert_array_equal(new['selected_counts'][:,3],saved['concentration'][:,8])
+            record['baseline_membership_check']='same model/cameras/masks/pixel IDs/accepted counts/n90 counts'
+            atomic_json(out/'batch.json',batch)
         print('stage complete',scene,label,len(meta['views']),'views',flush=True)
         return meta
 
