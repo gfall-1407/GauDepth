@@ -476,12 +476,12 @@ def summarize_masked(root,out):
         for k,v in result['scans'].items()},ensure_ascii=False),flush=True)
 
 
-def summarize_depth(root,baseline,out):
+def summarize_depth(root,baseline,out,standard_deviation=False):
     """Validate every new ray against the frozen previous batch; pool actual variances."""
     if out.exists() and any(out.iterdir()):raise FileExistsError(out)
     batch=json.loads((root/'batch.json').read_text(encoding='utf-8'))
     assert batch['status']=='complete' and len(batch['scans'])==4
-    result=dict(run_commit=batch['git_commit'],analysis_commit=subprocess.check_output(
+    result=dict(quantity='standard_deviation' if standard_deviation else 'population_variance',run_commit=batch['git_commit'],analysis_commit=subprocess.check_output(
         ['git','-C',str(Path(__file__).resolve().parent.parent.parent),'rev-parse','HEAD'],text=True).strip(),scans={})
     rows=[];viewrows=[]
     for scene,record in batch['scans'].items():
@@ -514,9 +514,10 @@ def summarize_depth(root,baseline,out):
                         vals=d[finite[:,j],j];stats=v['summary']['metrics']['depth_variance_'+key]
                         assert len(vals)==stats['valid_pixels']
                         if len(vals):assert np.isclose(vals.mean(),stats['mean'],rtol=1e-10,atol=1e-15)
-                        viewrows.append(dict(scan=scene,view=v['view_index'],image_name=v['image_name'],subset=key,**stats))
+                        report=column_summary({'std':np.sqrt(d[:,j])})['std'] if standard_deviation else stats
+                        viewrows.append(dict(scan=scene,view=v['view_index'],image_name=v['image_name'],subset=key,**report))
                     sizes+=sc.sum(axis=0,dtype=np.int64);bad+=(ic>0).sum(axis=0);single+=(sc==1).sum(axis=0)
-                    parts.append(d.copy());names.append(v['image_name'])
+                    parts.append(np.sqrt(d) if standard_deviation else d.copy());names.append(v['image_name'])
         assert len(names)==len(set(names))==record['views'] and set(names)==expected==set(record['image_names'])
         all_values=np.concatenate(parts);assert len(all_values)==record['retained_pixels']
         metrics=column_summary({k:all_values[:,j] for j,k in enumerate(DEPTH_SETS)})
@@ -524,23 +525,27 @@ def summarize_depth(root,baseline,out):
         for j,k in enumerate(DEPTH_SETS):
             stats=metrics[k];target=record['metrics']['depth_variance_'+k]
             assert stats['valid_pixels']==target['valid_pixels']
-            if stats['mean'] is not None:assert np.isclose(stats['mean'],target['pixel_weighted_mean'],rtol=1e-10,atol=1e-15)
+            if stats['mean'] is not None:
+                if standard_deviation:assert stats['mean']**2<=target['pixel_weighted_mean']+1e-15
+                else:assert np.isclose(stats['mean'],target['pixel_weighted_mean'],rtol=1e-10,atol=1e-15)
             pair=np.isfinite(all_values[:,0])&np.isfinite(all_values[:,j])&(all_values[:,0]>0)
             ratio=all_values[pair,j]/all_values[pair,0]
             ratios[k]=dict(paired_positive_all_variance_pixels=int(pair.sum()),median_subset_over_all=float(np.median(ratio)) if len(ratio) else None,
                 subset_larger_pixels=int((all_values[pair,j]>all_values[pair,0]).sum()))
             rows.append(dict(scan=scene,views=len(names),retained_pixels=len(all_values),subset=k,**stats,
+                **({'sqrt_mean_variance':float(np.sqrt(target['pixel_weighted_mean']))} if standard_deviation else {}),
                 mean_selected_count=float(sizes[j]/len(all_values)),nonfinite_selected_depth_pixels=int(bad[j]),singleton_pixels=int(single[j]),**ratios[k]))
         result['scans'][scene]=dict(views=len(names),retained_pixels=len(all_values),metrics=metrics,paired_ratios=ratios)
         del parts,all_values
-    out.mkdir(parents=True,exist_ok=True);write_csv(out/'逐射线深度方差汇总.csv',rows);write_csv(out/'深度方差逐视角统计.csv',viewrows)
+    label='标准差' if standard_deviation else '方差'
+    out.mkdir(parents=True,exist_ok=True);write_csv(out/f'逐射线深度{label}汇总.csv',rows);write_csv(out/f'深度{label}逐视角统计.csv',viewrows)
     (out/'summary.json').write_text(json.dumps(result,ensure_ascii=False,indent=2),encoding='utf-8')
     print(json.dumps(result,ensure_ascii=False),flush=True)
 
 
 if __name__=='__main__':
     p=argparse.ArgumentParser(description=__doc__);p.add_argument('--root',type=Path);p.add_argument('--output',type=Path);p.add_argument('--self-check',action='store_true')
-    p.add_argument('--run-masked-scans',action='store_true');p.add_argument('--prepare-reader',action='store_true');p.add_argument('--summarize-masked',action='store_true');p.add_argument('--summarize-depth',action='store_true');p.add_argument('--baseline',type=Path);p.add_argument('--depth-variance',action='store_true');p.add_argument('--host-build-provenance');args=p.parse_args()
+    p.add_argument('--run-masked-scans',action='store_true');p.add_argument('--prepare-reader',action='store_true');p.add_argument('--summarize-masked',action='store_true');p.add_argument('--summarize-depth',action='store_true');p.add_argument('--standard-deviation',action='store_true');p.add_argument('--baseline',type=Path);p.add_argument('--depth-variance',action='store_true');p.add_argument('--host-build-provenance');args=p.parse_args()
     if args.self_check:self_check()
     elif args.prepare_reader:
         if args.output is None:p.error('output required')
@@ -550,7 +555,7 @@ if __name__=='__main__':
         run_masked_scans(args.output,args.host_build_provenance,args.depth_variance)
     elif args.summarize_depth:
         if args.root is None or args.output is None or args.baseline is None:p.error('root/output/baseline required')
-        summarize_depth(args.root,args.baseline,args.output)
+        summarize_depth(args.root,args.baseline,args.output,args.standard_deviation)
     elif args.summarize_masked:
         if args.root is None or args.output is None:p.error('root/output required')
         summarize_masked(args.root,args.output)
