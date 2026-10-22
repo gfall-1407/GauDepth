@@ -222,7 +222,7 @@ def diagnostics_torch(depth, weight, counts):
         stat[key] = torch.where(empty,nan,stat[key])
     stat["tail_shift"] = torch.where(empty,nan,stat["tail_shift"])
     stat["far_high_shift"] = torch.where(empty,nan,stat["far_high_shift"])
-    means4 = torch.where(empty[:,None],nan,means4)
+    means4 = torch.where(empty[:,None],nan[:,None],means4)
     nofar = torch.where(empty,nan,nofar)
     meansout = torch.cat((means4,nofar[:,None],nosingle[:,None]),1)
     meansout[:,5] = torch.where(empty,nan,meansout[:,5])
