@@ -210,7 +210,7 @@ def sample(args):
                 sampling = f'No GT mask: rendered opacity > {args.opacity_threshold}, NOT verified foreground'
             if args.mask_statistics:
                 from pixel_contribution import masked_frame
-                vm=masked_frame(extension,geom,binning,image,gaussians.get_xyz.shape[0],W,H,fx,fy,expected,median,alpha,mask_array,output,vi,args.depth_variance)
+                vm=masked_frame(extension,geom,binning,image,gaussians.get_xyz.shape[0],W,H,fx,fy,expected,median,alpha,mask_array,output,vi,args.depth_variance,args.weighted_depth_variance)
                 vm.update(view_index=vi,image_name=camera.image_name,split=camera_items[vi][0],source_index=camera_items[vi][1],
                           image_size=[H,W],focal=[fx,fy],mask_source=mask_source,
                           mask_values_sha256=hashlib.sha256(np.asarray(mask_array,np.float32).tobytes()).hexdigest(),
@@ -366,6 +366,7 @@ if __name__ == '__main__':
     p.add_argument('--pixel-stats', action='store_true', help='Also aggregate every image pixel; isolated v2 reader build, requires GPU validation')
     p.add_argument('--mask-statistics', action='store_true', help='Every GT-mask retained pixel, exact ranked contribution, compact per-view output; mask required')
     p.add_argument('--depth-variance', action='store_true', help='With mask-statistics: four unweighted camera-z depth variances per ray')
+    p.add_argument('--weighted-depth-variance', action='store_true', help='Normalize original compositing w within each subset for weighted population variance')
     p.add_argument('--host-build-provenance', required=True,
                    help='Operator-verified installed extension source/build origin; commit alone is insufficient')
     a = p.parse_args()
@@ -373,4 +374,5 @@ if __name__ == '__main__':
         p.error('samples and capacity must be positive')
     if a.mask_statistics and (a.pixel_stats or a.extra_pixel):p.error('mask-statistics is a separate mode; no extra pixels/pixel-stats')
     if a.depth_variance and not a.mask_statistics:p.error('depth-variance requires mask-statistics')
+    if a.weighted_depth_variance and not a.depth_variance:p.error('weighted-depth-variance requires depth-variance')
     sample(a)
