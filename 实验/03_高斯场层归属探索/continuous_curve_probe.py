@@ -148,7 +148,7 @@ def run(root,out):
                     meta=json.loads((folder/'metadata.json').read_text(encoding='utf-8'));item=meta['cases'][case]
                     assert meta['status']=='complete' and meta['backend']=='analytic_ray_peak_gaussian_CPU'
                     path=folder/item['file'];digest=sha(path)
-                    assert digest==item['npz_sha256'] and any(v['path']==str(path) and v['sha256']==digest for v in oldmeta['inputs'])
+                    assert digest==item['npz_sha256'] and any(Path(v['path']).resolve()==path.resolve() and v['sha256']==digest for v in oldmeta['inputs'])
                     inputs.append(dict(path=str(path),sha256=digest))
                     with np.load(path,allow_pickle=False) as z:
                         ids=np.unique(z['gaussian_id']);common=ids if common is None else np.intersect1d(common,ids)
