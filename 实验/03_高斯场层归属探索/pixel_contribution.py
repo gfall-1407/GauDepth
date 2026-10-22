@@ -96,6 +96,7 @@ def prepare_reader(out):
     import os
     import torch
     from torch.utils.cpp_extension import load
+    ensure_ninja()
     here=Path(__file__).resolve().parent;build=here/'构建_pixel_stats';build.mkdir(exist_ok=True)
     os.environ['MAX_JOBS']='1';os.environ['TORCH_CUDA_ARCH_LIST']='8.9'
     examples=np.full((4,100),np.nan,np.float32);lengths=np.array([2,100,0,3],np.int32)
@@ -112,6 +113,19 @@ def prepare_reader(out):
                  binary=extension.__file__,binary_sha256=sha(extension.__file__),reader_source_sha256=sha(here/'reader.cu'),
                  torch=torch.__version__,target_arch='8.9',gpu_available=torch.cuda.is_available(),cuda_kernel_executed=False)
     (out/'prepare.json').write_text(json.dumps(payload,indent=2),encoding='utf-8');print(json.dumps(payload),flush=True)
+
+
+def ensure_ninja():
+    """One required build tool, isolated from the original model's conda environment."""
+    import os
+    import shutil
+    if shutil.which('ninja'):return
+    tools=Path('/root/autodl-tools/ninja');binary=tools/'ninja/data/bin/ninja'
+    if not binary.is_file():
+        subprocess.run([sys.executable,'-m','pip','install','--disable-pip-version-check','--no-deps','--target',str(tools),'ninja'],check=True,timeout=120)
+    if not binary.is_file():raise FileNotFoundError('Isolated Ninja binary missing after installation')
+    os.environ['PATH']=str(binary.parent)+os.pathsep+os.environ.get('PATH','')
+    print('isolated Ninja',subprocess.check_output([str(binary),'--version'],text=True).strip(),flush=True)
 
 
 def masked_frame(extension,geom,binning,image,P,W,H,fx,fy,expected,median,alpha,mask,output,view_index):
@@ -238,6 +252,7 @@ def run_masked_scans(out,provenance):
     out.mkdir(parents=True,exist_ok=True);here=Path(__file__).resolve().parent;repo=here.parent.parent
     commit=subprocess.check_output(['git','-C',str(repo),'rev-parse','HEAD'],text=True).strip()
     assert not subprocess.check_output(['git','-C',str(repo),'status','--porcelain'],text=True).strip()
+    ensure_ninja()
     batch=dict(status='running',git_commit=commit,stages=[],scans={},started_at=time.time())
     atomic_json(out/'batch.json',batch)
 
