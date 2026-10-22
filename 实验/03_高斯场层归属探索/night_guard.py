@@ -18,8 +18,8 @@ from zoneinfo import ZoneInfo
 
 ALLOWED_IDENTITIES = {
     "d6a7459179-693ab6ee": "autodl-container-d6a7459179-693ab6ee",
-    # Expected hostname from the console-verified instance ID; Linux hostname
-    # must still be verified on that instance before deploying this guard.
+    # Console and SSH hostname both verified on 2026-10-23; deployment still
+    # requires an independent Linux shutdown test on each host.
     "8209458d70-897b4075": "autodl-container-8209458d70-897b4075",
 }
 POLL_SECONDS = 2
@@ -313,8 +313,8 @@ def build_parser():
     run.add_argument("--minutes", type=int, default=30)
     run.add_argument("--max-minutes",type=int,default=60,help="本批最长计算分钟数；硬截止含保存宽限与停机余量")
     run.add_argument("--grace", type=int, default=120)
-    run.add_argument("--expected-hostname", "--hostname", dest="expected_hostname", required=True)
-    run.add_argument("--instance-id", "--expected-instance-id", dest="instance_id", required=True)
+    run.add_argument("--expected-hostname", required=True)
+    run.add_argument("--instance-id", required=True)
     run.add_argument("--shutdown-command", nargs="+", help=argparse.SUPPRESS)
     run.add_argument("--dry-run", action="store_true")
     run.add_argument("--simulate-hostname", help="仅供本地 dry-run 的身份模拟")
@@ -324,8 +324,8 @@ def build_parser():
     renew = sub.add_parser("renew", help="原子更新期限，受硬截止限制")
     renew.add_argument("--state-dir", required=True)
     renew.add_argument("--minutes", type=int, default=60)
-    renew.add_argument("--expected-hostname", "--hostname", dest="expected_hostname", required=True)
-    renew.add_argument("--instance-id", "--expected-instance-id", dest="instance_id", required=True)
+    renew.add_argument("--expected-hostname", required=True)
+    renew.add_argument("--instance-id", required=True)
     renew.add_argument("--dry-run", action="store_true")
     renew.set_defaults(func=command_renew)
     status = sub.add_parser("status", help="读取期限和最近动作")
