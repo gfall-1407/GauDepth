@@ -476,9 +476,71 @@ def summarize_masked(root,out):
         for k,v in result['scans'].items()},ensure_ascii=False),flush=True)
 
 
+def summarize_depth(root,baseline,out):
+    """Validate every new ray against the frozen previous batch; pool actual variances."""
+    if out.exists() and any(out.iterdir()):raise FileExistsError(out)
+    batch=json.loads((root/'batch.json').read_text(encoding='utf-8'))
+    assert batch['status']=='complete' and len(batch['scans'])==4
+    result=dict(run_commit=batch['git_commit'],analysis_commit=subprocess.check_output(
+        ['git','-C',str(Path(__file__).resolve().parent.parent.parent),'rev-parse','HEAD'],text=True).strip(),scans={})
+    rows=[];viewrows=[]
+    for scene,record in batch['scans'].items():
+        parts=[];names=[];sizes=np.zeros(4,np.int64);bad=np.zeros(4,np.int64);single=np.zeros(4,np.int64)
+        for stage in batch['stages']:
+            if stage['scene']!=scene:continue
+            assert stage['status']=='complete' and 'baseline_membership_check' in stage
+            part=root/(scene+'_'+stage['label']);oldpart=baseline/part.name
+            meta=json.loads((part/'metadata.json').read_text(encoding='utf-8'))
+            old=json.loads((oldpart/'metadata.json').read_text(encoding='utf-8'));by_name={v['image_name']:v for v in old['views']}
+            assert meta['status']=='complete' and meta['original_model_unchanged'] and meta['git_commit']==batch['git_commit']
+            assert meta['model_sha256']==old['model_sha256']==record['model_sha256']
+            assert meta['camera_inventory']==old['camera_inventory'];expected={v['image_name'] for v in meta['camera_inventory']}
+            for v in meta['views']:
+                ov=by_name[v['image_name']];assert v['depth_sets']==DEPTH_SETS
+                assert v['mask_source']=='camera.gt_mask' and '>= 0.5' in v['mask_threshold']
+                for key in ('retained_mask_sha256','mask_values_sha256','world_view_transform','image_size'):assert v[key]==ov[key]
+                assert sha(part/v['file'])==v['npz_sha256'] and sha(oldpart/ov['file'])==ov['npz_sha256']
+                with np.load(part/v['file']) as a,np.load(oldpart/ov['file']) as olda:
+                    d=a['depth_variance'];sc=a['selected_counts'];ic=a['nonfinite_depth_counts'];n=a['accepted_count'];idx=a['pixel_index']
+                    assert d.dtype==np.float64 and d.shape==sc.shape==ic.shape==(len(n),4)
+                    assert len(np.unique(idx))==len(n)==v['summary']['retained_pixels']
+                    np.testing.assert_array_equal(idx,olda['pixel_index']);np.testing.assert_array_equal(n,olda['counts'][:,5])
+                    np.testing.assert_array_equal(sc[:,0],n);np.testing.assert_array_equal(sc[:,1],(n+9)//10)
+                    np.testing.assert_array_equal(sc[:,2],(n+1)//2);np.testing.assert_array_equal(sc[:,3],olda['concentration'][:,8])
+                    assert np.all((ic>=0)&(ic<=sc)) and np.all(sc>=0)
+                    finite=(sc>0)&(ic==0);assert np.array_equal(np.isfinite(d),finite)
+                    assert np.all(d[finite]>=0) and np.all(d[(sc==1)&finite]==0)
+                    for j,key in enumerate(DEPTH_SETS):
+                        vals=d[finite[:,j],j];stats=v['summary']['metrics']['depth_variance_'+key]
+                        assert len(vals)==stats['valid_pixels']
+                        if len(vals):assert np.isclose(vals.mean(),stats['mean'],rtol=1e-10,atol=1e-15)
+                        viewrows.append(dict(scan=scene,view=v['view_index'],image_name=v['image_name'],subset=key,**stats))
+                    sizes+=sc.sum(axis=0,dtype=np.int64);bad+=(ic>0).sum(axis=0);single+=(sc==1).sum(axis=0)
+                    parts.append(d.copy());names.append(v['image_name'])
+        assert len(names)==len(set(names))==record['views'] and set(names)==expected==set(record['image_names'])
+        all_values=np.concatenate(parts);assert len(all_values)==record['retained_pixels']
+        metrics=column_summary({k:all_values[:,j] for j,k in enumerate(DEPTH_SETS)})
+        ratios={}
+        for j,k in enumerate(DEPTH_SETS):
+            stats=metrics[k];target=record['metrics']['depth_variance_'+k]
+            assert stats['valid_pixels']==target['valid_pixels']
+            if stats['mean'] is not None:assert np.isclose(stats['mean'],target['pixel_weighted_mean'],rtol=1e-10,atol=1e-15)
+            pair=np.isfinite(all_values[:,0])&np.isfinite(all_values[:,j])&(all_values[:,0]>0)
+            ratio=all_values[pair,j]/all_values[pair,0]
+            ratios[k]=dict(paired_positive_all_variance_pixels=int(pair.sum()),median_subset_over_all=float(np.median(ratio)) if len(ratio) else None,
+                subset_larger_pixels=int((all_values[pair,j]>all_values[pair,0]).sum()))
+            rows.append(dict(scan=scene,views=len(names),retained_pixels=len(all_values),subset=k,**stats,
+                mean_selected_count=float(sizes[j]/len(all_values)),nonfinite_selected_depth_pixels=int(bad[j]),singleton_pixels=int(single[j]),**ratios[k]))
+        result['scans'][scene]=dict(views=len(names),retained_pixels=len(all_values),metrics=metrics,paired_ratios=ratios)
+        del parts,all_values
+    out.mkdir(parents=True,exist_ok=True);write_csv(out/'逐射线深度方差汇总.csv',rows);write_csv(out/'深度方差逐视角统计.csv',viewrows)
+    (out/'summary.json').write_text(json.dumps(result,ensure_ascii=False,indent=2),encoding='utf-8')
+    print(json.dumps(result,ensure_ascii=False),flush=True)
+
+
 if __name__=='__main__':
     p=argparse.ArgumentParser(description=__doc__);p.add_argument('--root',type=Path);p.add_argument('--output',type=Path);p.add_argument('--self-check',action='store_true')
-    p.add_argument('--run-masked-scans',action='store_true');p.add_argument('--prepare-reader',action='store_true');p.add_argument('--summarize-masked',action='store_true');p.add_argument('--depth-variance',action='store_true');p.add_argument('--host-build-provenance');args=p.parse_args()
+    p.add_argument('--run-masked-scans',action='store_true');p.add_argument('--prepare-reader',action='store_true');p.add_argument('--summarize-masked',action='store_true');p.add_argument('--summarize-depth',action='store_true');p.add_argument('--baseline',type=Path);p.add_argument('--depth-variance',action='store_true');p.add_argument('--host-build-provenance');args=p.parse_args()
     if args.self_check:self_check()
     elif args.prepare_reader:
         if args.output is None:p.error('output required')
@@ -486,6 +548,9 @@ if __name__=='__main__':
     elif args.run_masked_scans:
         if args.output is None or not args.host_build_provenance:p.error('output/provenance required')
         run_masked_scans(args.output,args.host_build_provenance,args.depth_variance)
+    elif args.summarize_depth:
+        if args.root is None or args.output is None or args.baseline is None:p.error('root/output/baseline required')
+        summarize_depth(args.root,args.baseline,args.output)
     elif args.summarize_masked:
         if args.root is None or args.output is None:p.error('root/output required')
         summarize_masked(args.root,args.output)
