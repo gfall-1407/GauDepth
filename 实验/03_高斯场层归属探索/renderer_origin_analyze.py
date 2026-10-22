@@ -254,16 +254,101 @@ def run_ray_profiles(root,out):
         'Source origins and nominal graphs are construction controls, not trained-scene truth or host 2D rasterization; no fitting/generation/training.'),indent=2),encoding='utf-8')
 
 
+def residual_components(mu,axes,rays,surface,peak,cfg,origins):
+    kappa=float(cfg.get('curvature',0.));mu=np.asarray(mu,float);axes=np.asarray(axes,float);rays=np.asarray(rays,float)
+    tangent=np.tan(np.deg2rad(np.asarray(cfg['theta_deg'])))[origins]
+    g=np.column_stack((-tangent+2*kappa*mu[:,0],2*kappa*mu[:,1]))
+    h=rays[:,2]-np.sum(g*rays[:,:2],axis=1);nd=np.sum(axes*rays,axis=1)
+    nominal_height=1.+origins*cfg['gap']-tangent*mu[:,0]+kappa*np.sum(mu[:,:2]**2,axis=1)
+    anchor_error=mu[:,2]-nominal_height
+    valid=np.isfinite(mu).all(axis=1)&np.isfinite(axes).all(axis=1)&np.isfinite(rays).all(axis=1)&np.isfinite(surface)&np.isfinite(peak)&(np.abs(h)>1e-8)&(np.abs(nd)>1e-8)
+    with np.errstate(invalid='ignore',divide='ignore'):
+        t_nom=(mu[:,2]-np.sum(g*mu[:,:2],axis=1))/h
+        t_cov=np.sum(axes*mu,axis=1)/nd
+        a=(kappa*np.sum((surface[:,None]*rays[:,:2]-mu[:,:2])**2,axis=1)-anchor_error)/h
+        components=np.column_stack((a,t_nom-t_cov,t_cov-peak));total=surface-peak;direct=surface-t_nom
+    valid&=np.isfinite(components).all(axis=1)
+    components[~valid]=np.nan;total[~valid]=np.nan
+    return components,total,valid,direct
+
+
+def decomposition_self_check():
+    for kappa in (0.,50.):
+        cfg=dict(theta_deg=[0.,0.],gap=.005,curvature=kappa)
+        mu=np.array([[.005,0.,1.+kappa*.005**2+1e-6]])
+        n=np.array([[-2*kappa*.005,0.,1.]]);n/=np.linalg.norm(n,axis=1)[:,None]
+        q=np.column_stack((1+n[:,2],-n[:,1],n[:,0],np.zeros(1)));q/=np.linalg.norm(q,axis=1)[:,None]
+        ray=np.array([[.001,0.,1.]])
+        peak,_,_=ray_profiles(dict(means=mu,scales=np.array([[.006,.006,.0005]]),rotations=q),ray)
+        surface=np.array(patch_intersections(ray[0],cfg,0)[0])
+        parts,total,valid,direct=residual_components(mu,n,ray,surface,peak[:,0],cfg,np.array([0]))
+        assert valid.all();np.testing.assert_allclose(parts.sum(axis=1),total,atol=1e-12);np.testing.assert_allclose(parts[:,0],direct,atol=1e-12)
+        flipped=residual_components(mu,-n,ray,surface,peak[:,0],cfg,np.array([0]))
+        np.testing.assert_allclose(flipped[0],parts,atol=1e-12)
+    bad=residual_components(np.array([[0.,0.,1.]]),np.array([[0.,0.,1.]]),np.array([[1.,0.,0.]]),np.array([1.]),np.array([1.]),dict(theta_deg=[0.,0.],gap=.005),np.array([0]))
+    assert not bad[2].any() and np.isnan(bad[0]).all()
+    print('residual decomposition identity/anchor/axis/degeneracy self-check passed',flush=True)
+
+
+def run_decomposition(root,out):
+    if out.exists() and any(out.iterdir()):raise FileExistsError(out)
+    profile_root=root/'ray_profile_compatibility';meta=json.loads((profile_root/'metadata.json').read_text(encoding='utf-8'))
+    assert meta['status']=='complete';input_sha={item['path']:item['sha256'] for item in meta['inputs']}
+    out.mkdir(parents=True,exist_ok=True);summaries=[];inputs=[]
+    for kappa in (0,20,50):
+        folder=root/f'independent_c{kappa}_s1000';manifest=json.loads((folder/'metadata.json').read_text(encoding='utf-8'))
+        record=manifest['cases'][6];cfg=record['config'];path=folder/record['file']
+        assert cfg['case_index']==6 and cfg['center_noise']==0 and cfg['normal_noise_deg']==0 and float(cfg.get('curvature',0.))==kappa
+        assert sha(path)==record['npz_sha256']==input_sha[str(path)]
+        saved=profile_root/f'profile_s1000_c{kappa}_case6.npz';inputs.append(dict(path=str(path),sha256=sha(path),profile_path=str(saved),profile_sha256=sha(saved)))
+        with np.load(path,allow_pickle=False) as z:data={name:z[name].copy() for name in z.files}
+        with np.load(saved,allow_pickle=False) as z:profile={name:z[name].copy() for name in z.files}
+        ids=data['gaussian_id'];ri=np.repeat(np.arange(81),np.diff(data['offsets']))
+        np.testing.assert_array_equal(ids,profile['gaussian_id']);np.testing.assert_array_equal(ri,profile['ray_index'])
+        np.testing.assert_allclose(profile['peak'][profile['profile_valid']],data['depth'][profile['profile_valid']],rtol=1e-10,atol=1e-10)
+        source=data['source_origin'][ids];np.testing.assert_array_equal(source,profile['source_origin'])
+        xy=data['pixel_xy'];focal=64/(2*np.tan(.04));rays=np.column_stack(((xy[:,0]-31.5)/focal,(xy[:,1]-31.5)/focal,np.ones(81)))[ri]
+        q=data['rotations'].astype(float);q/=np.linalg.norm(q,axis=1)[:,None];w,x,y,z=q.T
+        axes=np.column_stack((2*(x*z+w*y),2*(y*z-w*x),1-2*(x*x+y*y)))[ids]
+        surface=profile['root_depths'][ri,source]
+        components,total,valid,direct=residual_components(data['means'][ids],axes,rays,surface,profile['peak'],cfg,source)
+        valid&=profile['profile_valid']&np.isfinite(profile['sigma_z'])&(profile['sigma_z']>0)
+        a_error=float(np.max(np.abs(components[valid,0]-direct[valid]))) if valid.any() else None
+        closure=float(np.max(np.abs(components[valid].sum(axis=1)-total[valid]))) if valid.any() else None
+        if valid.any():np.testing.assert_allclose(components[valid,0],direct[valid],atol=1e-10,rtol=0);np.testing.assert_allclose(components[valid].sum(axis=1),total[valid],atol=1e-10,rtol=0)
+        normalized=np.full_like(components,np.nan);normalized[valid]=components[valid]/profile['sigma_z'][valid,None]
+        row=dict(case_index=6,seed_offset=1000,curvature=kappa,records=len(ids),valid_records=int(valid.sum()),unknown_records=int((~valid).sum()),analytic_first_term_max_abs_error=a_error,closure_max_abs_error=closure)
+        for j,name in enumerate(('curvature_anchor','axis_representation','finite_tangent_precision')):
+            for quantile in (.5,.95):row[name+('_median_abs_sigma' if quantile==.5 else '_p95_abs_sigma')]=float(np.quantile(np.abs(normalized[valid,j]),quantile)) if valid.any() else None
+        row['total_median_abs_sigma']=float(np.median(np.abs(total[valid]/profile['sigma_z'][valid]))) if valid.any() else None
+        row['total_p95_abs_sigma']=float(np.quantile(np.abs(total[valid]/profile['sigma_z'][valid]),.95)) if valid.any() else None
+        summaries.append(row)
+        np.savez_compressed(out/f'decomposition_c{kappa}.npz',gaussian_id=ids,ray_index=ri,source_origin=source,valid=valid,components=components,total=total,normalized_components=normalized,sigma_z=profile['sigma_z'])
+        write_csv(out/'summary.csv',summaries);print('residual decomposition',kappa,'finished',flush=True)
+    (out/'metadata.json').write_text(json.dumps(dict(status='complete',inputs=inputs,profile_metadata_sha256=sha(profile_root/'metadata.json'),
+        git_commit=subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(),source_sha256=sha(__file__),
+        interpretation='Existing noiseless case6 seed1000 only; repeated identical second seed omitted. No fitting/generation/new bands. '
+        'Known nominal curve is oracle. A=curvature Taylor remainder minus float32 center-anchor error; B=nominal vs stored covariance-axis tangent-plane intersection; C=finite tangential precision peak offset. '
+        'Both first-term formula and A+B+C identity checked per valid accepted record. Grazing denominators or invalid records remain unknown. '
+        'Camera-z units normalized by original ray-profile sigma; component magnitudes are not independent causal variance shares. '
+        'This explains a controlled geometry discrepancy, not a new assignment/correction algorithm or physical support truth.'),indent=2),encoding='utf-8')
+
+
 if __name__=='__main__':
     p=argparse.ArgumentParser(description=__doc__)
     p.add_argument('--input',action='append');p.add_argument('--output');p.add_argument('--root',type=Path)
-    p.add_argument('--ray-profile',action='store_true');p.add_argument('--self-check',action='store_true')
+    p.add_argument('--ray-profile',action='store_true');p.add_argument('--profile-decomposition',action='store_true');p.add_argument('--self-check',action='store_true')
     p.add_argument('--member-measures',default='uniform',help='comma-separated uniform,tau,w')
     p.add_argument('--objective',choices=('soft_uniform','hard_min'),default='soft_uniform')
     args=p.parse_args();measures=tuple(args.member_measures.split(','))
+    if args.ray_profile and args.profile_decomposition:p.error('choose a single mode')
     if args.self_check:
-        if not args.ray_profile:p.error('self-check requires ray-profile mode')
-        profile_self_check()
+        if args.profile_decomposition:decomposition_self_check()
+        elif args.ray_profile:profile_self_check()
+        else:p.error('self-check requires a geometry diagnostic mode')
+    elif args.profile_decomposition:
+        if args.root is None or args.output is None:p.error('root and output required')
+        run_decomposition(args.root,Path(args.output))
     elif args.ray_profile:
         if args.root is None or args.output is None:p.error('root and output required')
         run_ray_profiles(args.root,Path(args.output))
