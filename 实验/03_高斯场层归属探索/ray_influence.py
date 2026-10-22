@@ -86,7 +86,7 @@ def _one_ray(z, w):
         tail_shift=means[3]-means[0],
         far_high_mass=float(w[far].sum()/total), far_high_count=len(far),
         far_high_mean=avg(far), has_far_high=int(bool(len(far))),
-        far_high_shift=(nofar-means[0]) if len(far) and np.isfinite(nofar) and np.isfinite(means[0]) else (0. if not len(far) else nan),
+        far_high_shift=(nofar-means[0]) if len(far) and np.isfinite(nofar) and np.isfinite(means[0]) else (0. if not len(far) and np.isfinite(means[0]) else nan),
         far_single_p=p, far_single_depth=float(z[j]) if j is not None else nan,
         far_single_loo=loo, has_far_single=int(j is not None),
         far_single_shift=(nosingle-means[0]) if j is not None and np.isfinite(nosingle) and np.isfinite(means[0]) else (0. if j is None and np.isfinite(means[0]) else nan))

@@ -4,6 +4,7 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import signal
 import sys
 import time
 
@@ -68,7 +69,7 @@ def run_scan(a,scan,out):
     from plyfile import PlyData
     from sample import forward
     from pixel_contribution import retained_mask,ensure_ninja,concentration_torch
-    from ray_influence import diagnostics_torch,_numpy_reference
+    from ray_influence import diagnostics_torch,_numpy_reference,_STAT_NAMES
     assert ALLOWED_IDENTITIES[a.instance_id]==os.uname().nodename
     assert not git('status','--short')
     commit=git('rev-parse','HEAD');out.mkdir(parents=True,exist_ok=True)
@@ -121,7 +122,7 @@ def run_scan(a,scan,out):
             weights=dw.reshape(-1,4)[torch.from_numpy(index).cuda().long()].cpu().numpy()
             del dense,dw
             mean=np.full((len(index),6),np.nan,np.float64);sizes=np.zeros((len(index),4),np.int32)
-            stats={};concentration=np.full((len(index),11),np.nan)
+            stats={k:np.full(len(index),np.nan) for k in _STAT_NAMES};concentration=np.full((len(index),11),np.nan)
             audited=0;replay_error=0.
             for first in range(0,len(index),512):
                 last=min(first+512,len(index));local=torch.from_numpy(index[first:last]).cuda()
@@ -191,6 +192,7 @@ def run_scan(a,scan,out):
             files.append(mapfile)
         state['views'].append(dict(name=cam.image_name,index=vi,pixels=len(index),summary=summary_file.name,
             file=f'view_{vi:03d}.npz' if not a.reference_means_root else None,
+            sha256=sha256(mapfile) if not a.reference_means_root else None,
             files=[dict(name=f.name,sha256=sha256(f)) for f in files]))
         atomic_json(statepath,state);print('VIEW',a.model_group,scan,vi+1,len(cameras),time.time()-t,flush=True)
         if (out.parent/'stop_after_stage').exists():break
@@ -210,6 +212,11 @@ def main():
     p.add_argument('--max-views',type=int,default=0);a=p.parse_args()
     if bool(a.scan)==bool(a.all_scans):p.error('choose scan or all-scans')
     assert ALLOWED_IDENTITIES[a.instance_id]==os.uname().nodename
+    stop_root=a.output if a.all_scans else a.output.parent
+    def request_save(signum,frame):
+        stop_root.mkdir(parents=True,exist_ok=True)
+        (stop_root/'stop_after_stage').touch()
+    signal.signal(signal.SIGTERM,request_save)
     if a.all_scans:
         a.output.mkdir(parents=True,exist_ok=True)
         state=dict(status='running',git_commit=git('rev-parse','HEAD'),completed=[],scans=SCANS,started_at=time.time())
