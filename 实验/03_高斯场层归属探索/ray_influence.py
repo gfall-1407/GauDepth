@@ -157,7 +157,7 @@ def diagnostics_torch(depth, weight, counts):
     nofar = weighted_mean(keepfar)
     nofar = torch.where(far_count==0, means4[:,0], nofar)
     farflag = far_count>0
-    farshift = torch.where(farflag, nofar-means4[:,0], zero)
+    farshift = nofar-means4[:,0]
     # Per-member LOO influence. argmax chooses first acceptance index on ties.
     p = ww / total[:,None].clamp_min(torch.finfo(z.dtype).tiny)
     loo = p*(z-means4[:,0,None])/(1-p).clamp_min(torch.finfo(z.dtype).tiny)
@@ -176,7 +176,7 @@ def diagnostics_torch(depth, weight, counts):
     nosingle = torch.where(has_single & (singlesumw>0), singlesumz/singlesumw.clamp_min(torch.finfo(z.dtype).tiny), means4[:,0])
     singlep = torch.where(has_single,singlep,nan); singlez = torch.where(has_single,singlez,nan)
     singleloo = torch.where(has_single,maxloo,nan)
-    singleshift = torch.where(has_single,nosingle-means4[:,0],zero)
+    singleshift = nosingle-means4[:,0]
     # Tail is the complement of the smallest prefix covering 90% contribution.
     tail = valid & ~subsets[:,3]
     tail_mass = torch.where(tail,ww,0.).sum(1)
