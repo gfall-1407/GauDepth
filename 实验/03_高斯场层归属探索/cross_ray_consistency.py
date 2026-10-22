@@ -161,12 +161,89 @@ def csv_write(path, rows):
         writer = csv.DictWriter(f, fieldnames=list(rows[0])); writer.writeheader(); writer.writerows(rows)
 
 
+def camera_to_world_normals(normal,view):
+    matrix=np.asarray(view['world_view_transform'],float);rotation=matrix[:3,:3]
+    np.testing.assert_allclose(rotation@rotation.T,np.eye(3),atol=2e-6,rtol=0)
+    np.testing.assert_allclose((np.array([0.,0.,0.,1.])@np.linalg.inv(matrix))[:3],view['camera_center'],atol=2e-6,rtol=2e-6)
+    # Stored transposed camera matrix maps row world points to camera points.
+    # For rigid rotation, row camera normals map back by its transpose.
+    return np.asarray(normal,float)@rotation.T
+
+
+def world_normal_self_check():
+    angle=.7;rotation=np.array([[np.cos(angle),-np.sin(angle),0.],[np.sin(angle),np.cos(angle),0.],[0.,0.,1.]])
+    matrix=np.eye(4);matrix[:3,:3]=rotation;matrix[3,:3]=[.3,-.4,.2]
+    view=dict(world_view_transform=matrix.tolist(),camera_center=(np.array([0.,0.,0.,1.])@np.linalg.inv(matrix))[:3].tolist())
+    normal=np.array([[1.,2.,3.]])/np.sqrt(14.)
+    np.testing.assert_allclose(camera_to_world_normals(normal@rotation,view),normal,atol=1e-14)
+    assert np.isclose(np.rad2deg(np.arccos(np.clip(np.abs(normal@(-normal).T),0.,1.)))[0,0],0.,atol=1e-6)
+    print('world normal rigid-transform/translation/axis-sign self-check passed',flush=True)
+
+
+def world_normal_audit(root,out):
+    if out.exists() and any(out.iterdir()):raise FileExistsError(out)
+    out.mkdir(parents=True,exist_ok=True);rows=[];inputs=[];view_rows=[]
+    for scene in ('scan24','scan105','scan65','scan110'):
+        folders=[scene,scene+'_more'] if scene in ('scan24','scan105') else [scene]
+        views=[];model_sha=None
+        for folder in folders:
+            directory=root/folder;meta=json.loads((directory/'metadata.json').read_text(encoding='utf-8'))
+            if model_sha is None:model_sha=meta['model_sha256']
+            assert meta['model_sha256']==model_sha
+            inputs.append(dict(path=str(directory/'metadata.json'),sha256=sha(directory/'metadata.json')))
+            for view in meta['views']:
+                path=directory/view['file'];assert sha(path)==view['npz_sha256'];inputs.append(dict(path=str(path),sha256=sha(path)))
+                with np.load(path,allow_pickle=False) as z:
+                    ids=z['gaussian_id'];normal=z['normal'].astype(float);valid=z['normal_valid'].astype(bool)
+                    unique,first,inverse=np.unique(ids,return_index=True,return_inverse=True)
+                    lengths=np.linalg.norm(normal,axis=1);valid&=np.isfinite(normal).all(axis=1)&(lengths>1e-8)
+                    all_valid=np.ones(len(unique),bool);np.logical_and.at(all_valid,inverse,valid)
+                    difference=np.max(np.abs(normal-normal[first[inverse]]),axis=1)
+                    spread=np.zeros(len(unique));np.maximum.at(spread,inverse,np.where(np.isfinite(difference),difference,0.))
+                    consistent=spread<=1e-6;usable=all_valid&consistent
+                    world=camera_to_world_normals(normal[first],view)
+                    unit=np.zeros_like(world);unit[usable]=world[usable]/np.linalg.norm(world[usable],axis=1)[:,None]
+                    vrow=dict(scene=scene,view=view['view_index'],accepted_records=len(ids),unique_gaussians=len(unique),
+                              invalid_records=int((~valid).sum()),invalid_gaussians=int((~all_valid).sum()),
+                              inconsistent_gaussians=int((~consistent).sum()),max_finite_repeat_abs_difference=float(spread.max(initial=0.)))
+                    view_rows.append(vrow);views.append(dict(view=view['view_index'],ids=unique,normal=unit,usable=usable))
+        assert len(views)==3 and len({v['view'] for v in views})==3
+        for i in range(3):
+            for j in range(i+1,3):
+                left,right=views[i],views[j];common,ia,ib=np.intersect1d(left['ids'],right['ids'],return_indices=True)
+                known=left['usable'][ia]&right['usable'][ib];dot=np.sum(left['normal'][ia[known]]*right['normal'][ib[known]],axis=1)
+                oriented=np.rad2deg(np.arccos(np.clip(dot,-1.,1.)));unsigned=np.rad2deg(np.arccos(np.clip(np.abs(dot),0.,1.)))
+                row=dict(scene=scene,view_a=left['view'],view_b=right['view'],unique_a=len(left['ids']),unique_b=len(right['ids']),
+                         common_gaussians=len(common),known_common_gaussians=int(known.sum()),unknown_common_gaussians=int((~known).sum()),
+                         common_over_union=len(common)/(len(left['ids'])+len(right['ids'])-len(common)))
+                for label,values in (('oriented',oriented),('unsigned',unsigned)):
+                    for stat,q in (('median',.5),('p95',.95),('max',1.)):
+                        row[label+'_'+stat+'_deg']=float(np.quantile(values,q)) if len(values) else None
+                rows.append(row)
+                np.savez_compressed(out/f'{scene}_{left["view"]}_{right["view"]}.npz',common_ids=common,known=known,oriented_deg=oriented,unsigned_deg=unsigned)
+        csv_write(out/'summary.csv',rows);csv_write(out/'views.csv',view_rows)
+        print('saved world-normal audit',scene,'finished',flush=True)
+    assert len(rows)==len(view_rows)==12
+    (out/'metadata.json').write_text(json.dumps(dict(status='complete',git_commit=subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(),
+        source_sha256=sha(__file__),inputs=inputs,
+        evidence='Read-only 12 saved original-host views, four identical-model-SHA groups. Camera normals rigidly transformed to world coordinates. '
+        'One normal per Gaussian per view only if all its accepted records valid and repeat spread <=1e-6; failures retain unknown coverage. '
+        'Across-view angles count each common Gaussian once per view pair, not every ray observation. Related pairs are not independent. '
+        'Oriented and unsigned angles both retained; no layer threshold or physical accuracy. No 3D means/covariance axes recovered. '
+        'Host source/binary provenance gap remains: this characterizes saved normals, not a proof of installed implementation. No fitting or new GPU readout.'),indent=2),encoding='utf-8')
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--root', type=Path)
     parser.add_argument('--output', type=Path)
     parser.add_argument('--self-check', action='store_true')
+    parser.add_argument('--world-normal-audit', action='store_true')
     args = parser.parse_args()
+    if args.world_normal_audit:
+        if args.self_check:world_normal_self_check();return
+        if args.root is None or args.output is None:parser.error('--root and --output required')
+        world_normal_audit(args.root,args.output);return
     if args.self_check:
         self_check(); return
     root, out = args.root, args.output
