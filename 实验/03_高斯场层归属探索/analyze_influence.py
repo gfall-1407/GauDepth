@@ -9,6 +9,7 @@ from pathlib import Path
 
 METHODS = ("all", "top10pct_count", "top50pct_count", "cover90pct_weight",
            "without_far_high_group", "without_far_high_single")
+EXPECTED_SCANS = {24,37,40,55,63,65,69,83,97,105,106,110,114,118,122}
 SCOPES = ("all_mask", "common_observation")
 MASS_EDGES = (0.05, 0.1, 0.25, 0.5)
 SEPARATION_EDGES = (0.5, 1.0, 2.0, 4.0)
@@ -55,6 +56,8 @@ def _read_json(path):
 
 def discover(root, verify_all=False):
     scans, skipped = [], []
+    existing={d.name for d in Path(root).glob("scan*") if d.is_dir()}
+    skipped.extend(dict(scan=f"scan{n}",status="absent") for n in sorted(EXPECTED_SCANS) if f"scan{n}" not in existing)
     for scan_dir in sorted(Path(root).glob("scan*")):
         meta_path = scan_dir / "metadata.json"
         if not meta_path.is_file():
@@ -97,6 +100,8 @@ def discover(root, verify_all=False):
                 raise ValueError(f"{summary_path}: camera name mismatch")
             loaded.append(summary)
         scans.append(dict(name=scan_dir.name, metadata=meta, views=loaded))
+    if len({(s["metadata"]["git_commit"],s["metadata"]["model_group"]) for s in scans})>1:
+        raise ValueError("Mixed code or model groups in one aggregation")
     if not scans:
         raise ValueError("No scan with metadata status=complete was found")
     return scans, skipped
