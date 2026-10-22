@@ -1,4 +1,4 @@
-"""Per-ray influence diagnostics for already accepted Gaussian contributions."""
+"""Vectorized diagnostics on already accepted ray contributions."""
 from __future__ import annotations
 
 import math
@@ -6,245 +6,248 @@ import sys
 
 import numpy as np
 
-_STAT_NAMES = ("accepted", "total_w", "min_w", "max_w", "top1_fraction", "top10_count_mass",
-    "n90_count_fraction", "weighted_median", "tail_mass", "tail_mean", "tail_shift",
-    "far_high_mass", "far_high_count", "far_high_mean", "has_far_high", "far_high_shift",
-    "far_single_p", "far_single_depth", "far_single_loo", "has_far_single", "far_single_shift") + tuple(
-    f"{name}_{suffix}" for name in ("all", "top10", "top50", "cover90")
-    for suffix in ("unweighted_sd", "weighted_sd", "sd_ratio"))
+_SD_NAMES = ("all", "top10", "top50", "cover90")
+_STAT_NAMES = ("accepted", "total_w", "min_w", "max_w", "top1_fraction",
+    "top10_count_mass", "n90_count_fraction", "weighted_median", "tail_mass",
+    "tail_mean", "tail_shift", "far_high_mass", "far_high_count", "far_high_mean",
+    "has_far_high", "far_high_shift", "far_single_p", "far_single_depth",
+    "far_single_loo", "has_far_single", "far_single_shift") + tuple(
+    f"{name}_{suffix}" for name in _SD_NAMES
+    for suffix in ("unweighted_sd", "weighted_sd", "sd_ratio",
+                   "unweighted_sub_all", "weighted_sub_all"))
 
 
 def _numpy_reference(depth, weight, counts):
-    """Independent scalar reference used by --check (one row at a time)."""
-    result = []
-    for b, n in enumerate(counts):
-        z, w = depth[b, :n].astype(float), weight[b, :n].astype(float)
-        result.append(_one_ray(z, w))
-    return result
+    """Independent scalar per-ray reference, used only by --check."""
+    return [_one_ray(depth[b, :int(n)].astype(np.float64),
+                     weight[b, :int(n)].astype(np.float64))
+            for b, n in enumerate(counts)]
 
 
 def _one_ray(z, w):
+    """Readable NumPy oracle for a single ray."""
     n = len(z)
     nan = float("nan")
-    result = {"mean": [nan] * 6, "sizes": [0, 0, 0, 0], "stats": {}}
     if not n:
-        return result
+        return dict(mean=[nan] * 6, sizes=[0] * 4,
+                    uniform_variance4=[nan] * 4, weighted_variance4=[nan] * 4,
+                    stats={k: (0. if k in {"accepted", "total_w", "min_w", "max_w",
+                          "top1_fraction", "top10_count_mass", "n90_count_fraction",
+                          "tail_mass", "far_high_mass", "far_high_count",
+                          "has_far_high", "has_far_single"} else nan)
+                           for k in _STAT_NAMES})
     if not np.isfinite(w).all() or np.any(w <= 0):
         raise ValueError("accepted weights must be finite and > 0")
     total = math.fsum(w.tolist())
     order = np.argsort(-w, kind="stable")
-    c10, c50 = math.ceil(.1 * n), math.ceil(.5 * n)
-    c90 = int(np.searchsorted(np.cumsum(w[order]), .9 * total, side="left") + 1)
-    sets = [np.arange(n), order[:c10], order[:c50], order[:c90]]
-    result["sizes"] = [len(s) for s in sets]
-    finite_all = np.isfinite(z).all()
-
+    k10, k50 = math.ceil(.1*n), math.ceil(.5*n)
+    k90 = int(np.searchsorted(np.cumsum(w[order]), (.9-1e-12)*total, side="left") + 1)
+    sets = [np.arange(n), order[:k10], order[:k50], order[:k90]]
     def avg(ix):
-        if not len(ix) or not np.isfinite(z[ix]).all():
-            return nan
-        sw = math.fsum(w[ix].tolist())
-        return math.fsum((w[ix] * z[ix]).tolist()) / sw
-
-    means = [avg(s) for s in sets]
-    result["mean"][:4] = means
-    med = nan
-    if finite_all:
-        ix = np.argsort(z, kind="stable")
-        med = float(z[ix[np.searchsorted(np.cumsum(w[ix]), .5 * total, side="left")]])
-    top10 = sets[1]
-    far = top10[z[top10] > med] if np.isfinite(med) else np.array([], dtype=int)
-    far_mask = np.zeros(n, dtype=bool)
-    far_mask[far] = True
-    far_mass = math.fsum(w[far].tolist()) if len(far) else 0.
-    base = means[0]
-    result["mean"][4] = avg(np.flatnonzero(~far_mask)) if len(far) else base
+        if len(ix) == 0 or not np.isfinite(z[ix]).all(): return nan
+        return math.fsum((w[ix]*z[ix]).tolist()) / math.fsum(w[ix].tolist())
+    means = [avg(ix) for ix in sets]
+    median = nan
+    if np.isfinite(z).all():
+        zi = np.argsort(z, kind="stable")
+        median = float(z[zi[np.searchsorted(np.cumsum(w[zi]), .5*total, side="left")]])
+    far = sets[1][z[sets[1]] > median] if np.isfinite(median) else np.array([], dtype=int)
+    remain = np.setdiff1d(np.arange(n), far, assume_unique=True)
+    nofar = avg(remain) if len(far) else means[0]
+    tail = np.setdiff1d(np.arange(n), sets[3], assume_unique=True)
     candidates = []
-    if len(far) and np.isfinite(base):
-        for j in far:
-            p = w[j] / total
-            if p < 1:
-                loo = p * (z[j] - base) / (1 - p)
-                if loo > 0:
-                    candidates.append((loo, -int(j), int(j), p))
+    for j in sorted(far.tolist()):  # stable tie resolution follows acceptance order
+        p = w[j]/total
+        loo = p*(z[j]-means[0])/(1-p) if p < 1 and np.isfinite(means[0]) else nan
+        if np.isfinite(loo) and loo > 0: candidates.append((loo, int(j), p))
     if candidates:
-        _, _, j, p = max(candidates)
-        result["mean"][5] = avg(np.array([k for k in range(n) if k != j]))
-        single = (j, p, float(z[j]), float(candidates[0][0]))
-        # retrieve the selected member's LOO exactly
-        loo = p * (z[j] - base) / (1 - p)
+        max_loo = max(x[0] for x in candidates)
+        loo, j, p = next(x for x in candidates if x[0] == max_loo)
+        nosingle = avg(np.delete(np.arange(n), j))
     else:
-        single, loo = None, nan
-        result["mean"][5] = base
-
-    def variance(ix, weighted):
-        if not len(ix) or not np.isfinite(z[ix]).all():
-            return nan
-        m = avg(ix) if weighted else float(np.mean(z[ix]))
-        q = np.sum(w[ix] * (z[ix] - m) ** 2) / np.sum(w[ix]) if weighted else np.mean((z[ix] - m) ** 2)
-        return float(q)
-
-    uw, ww, uvars, wvars = [], [], [], []
+        j, p, loo, nosingle = None, nan, nan, means[0]
+    uvar, wvar, usd, wsd = [], [], [], []
     for ix in sets:
-        uw.append(float(np.std(z[ix])) if len(ix) and np.isfinite(z[ix]).all() else (0. if len(ix) == 1 and np.isfinite(z[ix]).all() else nan))
-        wvars.append(variance(ix, True))
-        uvars.append(variance(ix, False))
-        ww.append(math.sqrt(wvars[-1]) if np.isfinite(wvars[-1]) else nan)
-    ratios = [a / b if np.isfinite(a) and np.isfinite(b) and b != 0 else nan for a, b in zip(ww, uw)]
-    stats = dict(accepted=n, total_w=total, min_w=float(np.min(w)), max_w=float(np.max(w)),
-                 top1_fraction=float(np.max(w) / total), top10_count_mass=float(np.sum(w[top10]) / total),
-                 n90_count_fraction=float(c90 / n), weighted_median=med,
-                 tail_mass=float(np.sum(w[sets[3]]) / total), tail_mean=means[3],
-                 tail_shift=means[3] - base if np.isfinite(means[3]) and np.isfinite(base) else nan,
-                 far_high_mass=float(far_mass / total), far_high_count=len(far),
-                 far_high_mean=avg(far), has_far_high=int(bool(len(far))),
-                 far_high_shift=result["mean"][4] - base if len(far) and np.isfinite(result["mean"][4]) and np.isfinite(base) else nan,
-                 far_single_p=single[1] if single else nan, far_single_depth=single[2] if single else nan,
-                 far_single_loo=loo, far_single_shift=result["mean"][5] - base if single and np.isfinite(result["mean"][5]) and np.isfinite(base) else nan,
-                 has_far_single=int(single is not None))
-    for i, name in enumerate(("all", "top10", "top50", "cover90")):
-        stats[f"{name}_unweighted_sd"] = uw[i]
-        stats[f"{name}_weighted_sd"] = ww[i]
-        stats[f"{name}_sd_ratio"] = ratios[i]
-    result["stats"] = stats
-    result["uniform_variance4"] = uvars
-    result["weighted_variance4"] = wvars
-    return result
+        if not len(ix) or not np.isfinite(z[ix]).all():
+            uv = wv = nan
+        elif len(ix) == 1:
+            uv = wv = 0.
+        else:
+            mu, uwmu = avg(ix), float(np.mean(z[ix]))
+            uv = float(np.mean((z[ix]-uwmu)**2))
+            wv = float(np.sum(w[ix]*(z[ix]-mu)**2)/np.sum(w[ix]))
+        uvar.append(uv); wvar.append(wv)
+        usd.append(math.sqrt(uv) if np.isfinite(uv) else nan)
+        wsd.append(math.sqrt(wv) if np.isfinite(wv) else nan)
+    stats = dict(accepted=n, total_w=total, min_w=float(w.min()), max_w=float(w.max()),
+        top1_fraction=float(w.max()/total), top10_count_mass=float(w[sets[1]].sum()/total),
+        n90_count_fraction=k90/n, weighted_median=median,
+        tail_mass=float(w[tail].sum()/total), tail_mean=avg(tail),
+        tail_shift=(avg(tail)-means[0]) if len(tail) and np.isfinite(avg(tail)) and np.isfinite(means[0]) else (0. if not len(tail) else nan),
+        far_high_mass=float(w[far].sum()/total), far_high_count=len(far),
+        far_high_mean=avg(far), has_far_high=int(bool(len(far))),
+        far_high_shift=(nofar-means[0]) if len(far) and np.isfinite(nofar) and np.isfinite(means[0]) else (0. if not len(far) else nan),
+        far_single_p=p, far_single_depth=float(z[j]) if j is not None else nan,
+        far_single_loo=loo, has_far_single=int(j is not None),
+        far_single_shift=(nosingle-means[0]) if j is not None and np.isfinite(nosingle) and np.isfinite(means[0]) else nan)
+    for i, name in enumerate(_SD_NAMES):
+        stats[f"{name}_unweighted_sd"], stats[f"{name}_weighted_sd"] = usd[i], wsd[i]
+        stats[f"{name}_sd_ratio"] = wsd[i]/usd[i] if np.isfinite(usd[i]) and usd[i] != 0 and np.isfinite(wsd[i]) else nan
+        stats[f"{name}_unweighted_sub_all"] = usd[i]/usd[0] if np.isfinite(usd[i]) and np.isfinite(usd[0]) and usd[0] != 0 else nan
+        stats[f"{name}_weighted_sub_all"] = wsd[i]/wsd[0] if np.isfinite(wsd[i]) and np.isfinite(wsd[0]) and wsd[0] != 0 else nan
+    return dict(mean=means+[nofar,nosingle], sizes=[len(x) for x in sets],
+                uniform_variance4=uvar, weighted_variance4=wvar, stats=stats)
 
 
 def diagnostics_torch(depth, weight, counts):
-    """Compute accepted-ray diagnostics. Inputs are [B,cap], counts is [B].
-
-    Results are tensors on the input device: mean [B,6], sizes [B,4],
-    variance arrays [B,4], and a dict of [B] tensors.
-    """
+    """Vectorized [B,cap] accepted ray diagnostics; calculations use float64."""
     import torch
-
     if depth.ndim != 2 or weight.shape != depth.shape:
         raise ValueError("depth and weight must have matching [B,cap] shapes")
-    counts = torch.as_tensor(counts, device=depth.device, dtype=torch.long)
-    if counts.shape != (depth.shape[0],) or torch.any(counts < 0) or torch.any(counts > depth.shape[1]):
-        raise ValueError("counts must be [B] and within [0,cap]")
-    rows = []
-    stat_names = None
-    for b in range(depth.shape[0]):
-        n = int(counts[b].item())
-        d = depth[b, :n]
-        w = weight[b, :n]
-        if n and (not bool(torch.isfinite(w).all()) or bool(torch.any(w <= 0))):
-            raise ValueError("accepted weights must be finite and > 0")
-        # Preserve the input precision for the public calculation.
-        rows.append(_torch_one(d, w))
-        if rows[-1]["stats"]:
-            stat_names = rows[-1]["stats"].keys()
-    device, dtype = depth.device, depth.dtype
-    mean = torch.stack([r["mean"] for r in rows]) if rows else depth.new_empty((0, 6))
-    sizes = torch.stack([r["sizes"] for r in rows]) if rows else torch.empty((0, 4), device=device, dtype=torch.long)
-    uv = torch.stack([r["uniform_variance4"] for r in rows]) if rows else depth.new_empty((0, 4))
-    wv = torch.stack([r["weighted_variance4"] for r in rows]) if rows else depth.new_empty((0, 4))
-    zero_keys = {"accepted", "total_w", "min_w", "max_w", "top1_fraction", "top10_count_mass", "n90_count_fraction", "tail_mass", "far_high_mass", "far_high_count", "has_far_high", "has_far_single"}
-    stats = {k: torch.stack([r["stats"].get(k, depth.new_tensor(0.) if k in zero_keys else depth.new_tensor(float("nan"))) for r in rows]) for k in _STAT_NAMES}
-    return {"mean": mean, "sizes": sizes, "stats": stats,
-            "uniform_variance4": uv, "weighted_variance4": wv}
-
-
-def _torch_one(z, w):
-    import torch
-    nan = z.new_tensor(float("nan"))
-    zero = z.new_tensor(0.)
-    n = z.numel()
-    if n == 0:
-        empty_stats = {k: z.new_tensor(0.) for k in ("accepted", "total_w", "min_w", "max_w", "top1_fraction", "top10_count_mass", "n90_count_fraction", "tail_mass", "far_high_mass", "far_high_count", "has_far_high", "has_far_single")}
-        empty_stats.update({k: nan for k in ("weighted_median", "tail_mean", "tail_shift", "far_high_mean", "far_high_shift", "far_single_p", "far_single_depth", "far_single_loo", "far_single_shift")})
-        for name in ("all", "top10", "top50", "cover90"):
-            empty_stats.update({f"{name}_unweighted_sd": nan, f"{name}_weighted_sd": nan, f"{name}_sd_ratio": nan})
-        return {"mean": torch.full((6,), float("nan"), device=z.device, dtype=z.dtype),
-                "sizes": torch.zeros(4, device=z.device, dtype=torch.long),
-                "uniform_variance4": torch.full((4,), float("nan"), device=z.device, dtype=z.dtype),
-                "weighted_variance4": torch.full((4,), float("nan"), device=z.device, dtype=z.dtype), "stats": empty_stats}
-    total = w.sum()
-    order = torch.argsort(w, descending=True, stable=True)
-    c10, c50 = math.ceil(.1*n), math.ceil(.5*n)
-    c90 = int(torch.searchsorted(torch.cumsum(w[order], 0), .9 * total, right=False).item()) + 1
-    sets = [torch.arange(n, device=z.device), order[:c10], order[:c50], order[:c90]]
-    finite = torch.isfinite(z)
-    def avg(ix):
-        if ix.numel() == 0 or not bool(finite[ix].all()): return nan
-        return (w[ix] * z[ix]).sum() / w[ix].sum()
-    means = [avg(ix) for ix in sets]
-    med = nan
-    if bool(finite.all()):
-        zo = torch.argsort(z, stable=True)
-        k = int(torch.searchsorted(torch.cumsum(w[zo], 0), .5 * total, right=False).item())
-        med = z[zo[k]]
-    far = sets[1][z[sets[1]] > med] if bool(torch.isfinite(med)) else torch.empty(0, device=z.device, dtype=torch.long)
-    mask = torch.ones(n, device=z.device, dtype=torch.bool); mask[far] = False
-    remaining = torch.arange(n, device=z.device)[mask]
-    nofar = avg(remaining) if far.numel() else means[0]
-    best_j, best_loo = None, nan
-    if far.numel() and bool(torch.isfinite(means[0])):
-        for j in far.tolist():
-            p = w[j] / total
-            loo = p * (z[j] - means[0]) / (1 - p) if bool(p < 1) else nan
-            if bool(torch.isfinite(loo)) and bool(loo > 0) and (best_j is None or bool(loo > best_loo)):
-                best_j, best_loo = j, loo
-    nosingle = avg(torch.cat((torch.arange(best_j, device=z.device), torch.arange(best_j+1, n, device=z.device)))) if best_j is not None else means[0]
-    variances, uniform = [], []
-    for ix in sets:
-        if ix.numel() == 0 or not bool(finite[ix].all()):
-            variances.append(nan); uniform.append(nan); continue
-        if ix.numel() == 1:
-            variances.append(zero); uniform.append(zero); continue
-        m = avg(ix); um = z[ix].mean()
-        variances.append((w[ix] * (z[ix]-m).square()).sum()/w[ix].sum())
-        uniform.append((z[ix]-um).square().mean())
-    u_sd = torch.stack([torch.sqrt(v) if bool(torch.isfinite(v)) else nan for v in uniform])
-    w_sd = torch.stack([torch.sqrt(v) if bool(torch.isfinite(v)) else nan for v in variances])
-    ratio = torch.where((u_sd != 0) & torch.isfinite(u_sd) & torch.isfinite(w_sd), w_sd/u_sd, nan)
-    far_mass = w[far].sum() if far.numel() else zero
-    values = dict(accepted=z.new_tensor(float(n)), total_w=total, min_w=w.min(), max_w=w.max(),
-        top1_fraction=w.max()/total, top10_count_mass=w[sets[1]].sum()/total,
-        n90_count_fraction=z.new_tensor(c90/n), weighted_median=med,
-        tail_mass=w[sets[3]].sum()/total, tail_mean=means[3],
-        tail_shift=means[3]-means[0], far_high_mass=far_mass/total,
-        far_high_count=z.new_tensor(float(far.numel())), far_high_mean=avg(far),
-        has_far_high=z.new_tensor(float(far.numel()>0)),
-        far_high_shift=nofar-means[0] if far.numel() else nan,
-        far_single_p=w[best_j]/total if best_j is not None else nan,
-        far_single_depth=z[best_j] if best_j is not None else nan, far_single_loo=best_loo,
-        far_single_shift=nosingle-means[0] if best_j is not None else nan,
-        has_far_single=z.new_tensor(float(best_j is not None)))
-    for i, name in enumerate(("all", "top10", "top50", "cover90")):
-        values[f"{name}_unweighted_sd"] = u_sd[i]
-        values[f"{name}_weighted_sd"] = w_sd[i]
-        values[f"{name}_sd_ratio"] = ratio[i]
-    return {"mean": torch.stack(means + [nofar, nosingle]),
-        "sizes": torch.tensor([len(x) for x in sets], device=z.device, dtype=torch.long),
-        "uniform_variance4": torch.stack(uniform), "weighted_variance4": torch.stack(variances), "stats": values}
+    device = depth.device
+    z, w = depth.to(torch.float64), weight.to(torch.float64)
+    counts = torch.as_tensor(counts, device=device, dtype=torch.long)
+    if counts.shape != (depth.shape[0],): raise ValueError("counts must have shape [B]")
+    cap = depth.shape[1]
+    pos = torch.arange(cap, device=device)[None, :]
+    valid = pos < counts[:, None]
+    # One batch-level synchronization only for input validation.
+    if bool(((~torch.isfinite(w) | (w <= 0)) & valid).any()):
+        raise ValueError("accepted weights must be finite and > 0")
+    B = depth.shape[0]
+    nan = torch.full((B,), float("nan"), device=device, dtype=torch.float64)
+    zero = torch.zeros((B,), device=device, dtype=torch.float64)
+    countf = counts.to(torch.float64)
+    ww = torch.where(valid, w, torch.zeros_like(w))
+    total = ww.sum(1)
+    order = torch.argsort(torch.where(valid, w, -torch.inf), dim=1, descending=True, stable=True)
+    rank = torch.empty_like(order)
+    rank.scatter_(1, order, torch.arange(cap, device=device).expand(B, cap))
+    k10 = torch.ceil(.1*countf).long(); k50 = torch.ceil(.5*countf).long()
+    sorted_w = torch.gather(ww, 1, order)
+    cumw = sorted_w.cumsum(1)
+    k90 = ((cumw < ((.9-1e-12)*total[:,None])).sum(1)+1).clamp(min=0)
+    # Empty rows have zero subsets; nonempty cover sets use threshold crossing.
+    k90 = torch.where(counts > 0, k90.clamp(max=counts), torch.zeros_like(k90))
+    subsets = torch.stack((valid, valid & (rank < k10[:,None]),
+                           valid & (rank < k50[:,None]), valid & (rank < k90[:,None])), dim=1)
+    sizes = subsets.sum(2)
+    finite_z = torch.isfinite(z) | ~valid
+    def weighted_mean(mask):
+        sw = torch.where(mask, ww, 0.).sum(1)
+        num = torch.where(mask, ww*z, 0.).sum(1)
+        ok = mask.sum(1)>0
+        finite_selected = (~(mask & ~torch.isfinite(z))).all(1)
+        return torch.where(ok & (sw>0) & finite_selected, num/sw.clamp_min(torch.finfo(z.dtype).tiny), nan)
+    means4 = torch.stack([weighted_mean(subsets[:,i]) for i in range(4)], 1)
+    # Stable weighted median by stable depth ordering; nonfinite accepted depth
+    # leaves the median undefined while preserving all other set NaN semantics.
+    zo = torch.argsort(torch.where(valid, z, torch.inf), dim=1, stable=True)
+    zw = torch.gather(ww, 1, zo)
+    zcum = zw.cumsum(1)
+    medidx = ((zcum < (.5*total[:,None])) & valid).sum(1).clamp(max=max(cap-1,0))
+    med = torch.gather(torch.gather(z,1,zo),1,medidx[:,None]).squeeze(1) if cap else nan
+    med = torch.where((counts>0)&finite_z.all(1), med, nan)
+    top10 = subsets[:,1]
+    far = top10 & (z > med[:,None]) & valid
+    far_count = far.sum(1)
+    far_mass = torch.where(far, ww, 0.).sum(1)
+    far_mean = weighted_mean(far)
+    keepfar = valid & ~far
+    nofar = weighted_mean(keepfar)
+    nofar = torch.where(far_count==0, means4[:,0], nofar)
+    farflag = far_count>0
+    farshift = torch.where(farflag, nofar-means4[:,0], zero)
+    # Per-member LOO influence. argmax chooses first acceptance index on ties.
+    p = ww / total[:,None].clamp_min(torch.finfo(z.dtype).tiny)
+    loo = p*(z-means4[:,0,None])/(1-p).clamp_min(torch.finfo(z.dtype).tiny)
+    eligible = far & (loo>0) & torch.isfinite(loo) & (p<1)
+    maxloo = torch.where(eligible, loo, -torch.inf).max(1).values
+    has_single = torch.isfinite(maxloo)
+    winner = eligible & (loo == maxloo[:,None])
+    # winner is unique because max selects same value ties; argmax over bool is first index.
+    winner_idx = winner.to(torch.int64).argmax(1)
+    onehot = torch.arange(cap, device=device)[None,:] == winner_idx[:,None]
+    singlep = (ww*onehot).sum(1)/total.clamp_min(torch.finfo(z.dtype).tiny)
+    singlez = (torch.where(onehot,z,0.)).sum(1)
+    keepsingle = valid & ~onehot & has_single[:,None]
+    singlesumw = torch.where(keepsingle,ww,0.).sum(1)
+    singlesumz = torch.where(keepsingle,ww*z,0.).sum(1)
+    nosingle = torch.where(has_single & (singlesumw>0), singlesumz/singlesumw.clamp_min(torch.finfo(z.dtype).tiny), means4[:,0])
+    singlep = torch.where(has_single,singlep,nan); singlez = torch.where(has_single,singlez,nan)
+    singleloo = torch.where(has_single,maxloo,nan)
+    singleshift = torch.where(has_single,nosingle-means4[:,0],nan)
+    # Tail is the complement of the smallest prefix covering 90% contribution.
+    tail = valid & ~subsets[:,3]
+    tail_mass = torch.where(tail,ww,0.).sum(1)
+    tail_mean = weighted_mean(tail)
+    tail_shift = torch.where(tail.any(1), tail_mean-means4[:,0], zero)
+    far_high_mass = far_mass/total.clamp_min(torch.finfo(z.dtype).tiny)
+    top1mass = torch.where(valid,w,-torch.inf).max(1).values
+    top1mass = torch.where(counts>0, top1mass/total.clamp_min(torch.finfo(z.dtype).tiny), zero)
+    stat = dict(accepted=countf, total_w=total, min_w=torch.where(valid,w,torch.inf).min(1).values,
+        max_w=torch.where(valid,w,-torch.inf).max(1).values, top1_fraction=top1mass,
+        top10_count_mass=torch.where(subsets[:,1],ww,0.).sum(1)/total.clamp_min(torch.finfo(z.dtype).tiny),
+        n90_count_fraction=k90.to(torch.float64)/countf.clamp_min(1), weighted_median=med,
+        tail_mass=tail_mass/total.clamp_min(torch.finfo(z.dtype).tiny), tail_mean=tail_mean,
+        tail_shift=tail_shift, far_high_mass=far_high_mass, far_high_count=far_count.to(torch.float64),
+        far_high_mean=far_mean, has_far_high=farflag.to(torch.float64), far_high_shift=farshift,
+        far_single_p=singlep, far_single_depth=singlez, far_single_loo=singleloo,
+        has_far_single=has_single.to(torch.float64), far_single_shift=singleshift)
+    stat["min_w"] = torch.where(counts>0, stat["min_w"], zero)
+    stat["max_w"] = torch.where(counts>0, stat["max_w"], zero)
+    var_u, var_w = [], []
+    for i,name in enumerate(_SD_NAMES):
+        mask = subsets[:,i]
+        nset = sizes[:,i]
+        muw = means4[:,i]
+        sw = torch.where(mask,ww,0.).sum(1)
+        muu = torch.where(mask,z,0.).sum(1)/nset.clamp_min(1)
+        du = torch.where(mask,z-muu[:,None],0.)
+        dw = torch.where(mask,z-muw[:,None],0.)
+        vu = (du.square().sum(1)/nset.clamp_min(1))
+        vw = torch.where(mask,ww*dw.square(),0.).sum(1)/sw.clamp_min(torch.finfo(z.dtype).tiny)
+        ok = (nset>0) & (~(mask & ~torch.isfinite(z))).all(1)
+        vu = torch.where(ok,vu,nan); vw = torch.where(ok,vw,nan)
+        vu = torch.where(ok & (nset==1),zero,vu); vw = torch.where(ok & (nset==1),zero,vw)
+        var_u.append(vu); var_w.append(vw)
+        su, swd = torch.sqrt(vu), torch.sqrt(vw)
+        stat[f"{name}_unweighted_sd"] = su; stat[f"{name}_weighted_sd"] = swd
+        stat[f"{name}_sd_ratio"] = torch.where((su!=0)&torch.isfinite(su)&torch.isfinite(swd),swd/su,nan)
+        stat[f"{name}_unweighted_sub_all"] = torch.where((su==su)&(torch.sqrt(var_u[0])!=0),su/torch.sqrt(var_u[0]),nan)
+        stat[f"{name}_weighted_sub_all"] = torch.where((swd==swd)&(torch.sqrt(var_w[0])!=0),swd/torch.sqrt(var_w[0]),nan)
+    # Empty rows use explicit empty-set conventions.
+    empty = counts==0
+    for key in ("weighted_median","tail_mean","far_high_mean","far_single_p","far_single_depth","far_single_loo","far_single_shift"):
+        stat[key] = torch.where(empty,nan,stat[key])
+    stat["tail_shift"] = torch.where(empty,zero,stat["tail_shift"])
+    means4 = torch.where(empty[:,None],nan,means4)
+    nofar = torch.where(empty,nan,nofar)
+    meansout = torch.cat((means4,nofar[:,None],nosingle[:,None]),1)
+    meansout[:,5] = torch.where(empty,nan,meansout[:,5])
+    return {"mean":meansout,"sizes":sizes,"stats":stat,
+            "uniform_variance4":torch.stack(var_u,1),"weighted_variance4":torch.stack(var_w,1)}
 
 
 def _check():
     import torch
-    z = np.array([[1., 2., 2., 8., 0.], [3., 3., 3., 0., 0.],
-                  [9., 0., 0., 0., 0.], [np.nan, 1., 0., 0., 0.],
-                  [1., 100., 101., 0., 0.], [0., 0., 0., 0., 0.]])
-    w = np.array([[.1, .2, .2, .4, .1], [.5, .25, .25, 0, 0],
-                  [1., 0, 0, 0, 0], [.5, .5, 0, 0, 0],
-                  [.01, .98, .01, 0, 0], [0, 0, 0, 0, 0]])
-    counts = np.array([5, 3, 1, 2, 3, 0])
-    ref = _numpy_reference(z, w, counts)
-    out = diagnostics_torch(torch.tensor(z, dtype=torch.float64), torch.tensor(w, dtype=torch.float64), counts)
-    for i, r in enumerate(ref):
-        assert np.allclose(out["mean"][i].numpy(), r["mean"], equal_nan=True, atol=1e-12, rtol=0)
-        assert np.array_equal(out["sizes"][i].numpy(), r["sizes"])
-        assert np.allclose(out["uniform_variance4"][i].numpy(), r["uniform_variance4"], equal_nan=True, atol=1e-12, rtol=0)
-        assert np.allclose(out["weighted_variance4"][i].numpy(), r["weighted_variance4"], equal_nan=True, atol=1e-12, rtol=0)
-        for k, v in r["stats"].items():
-            assert np.allclose(out["stats"][k][i].item(), v, equal_nan=True, atol=1e-12, rtol=0), (i, k, v, out["stats"][k][i])
-    # Deleting all members is undefined and must remain NaN.
-    all_far = diagnostics_torch(torch.tensor([[1., 9.]], dtype=torch.float64), torch.tensor([[.1, .9]], dtype=torch.float64), [2])
-    assert torch.isnan(all_far["mean"][0, 4])
+    z = np.array([[1.,2.,2.,8.,0.],[3.,3.,3.,0.,0.],[9.,0.,0.,0.,0.],
+                  [np.nan,1.,0.,0.,0.],[100.,1.,1.,1.,1.],[0.,0.,0.,0.,0.]])
+    w = np.array([[.1,.2,.2,.4,.1],[.5,.25,.25,0,0],[1.,0,0,0,0],
+                  [.5,.5,0,0,0],[.2,.2,.2,.2,.2],[0,0,0,0,0]])
+    counts=np.array([5,3,1,2,5,0])
+    ref=_numpy_reference(z,w,counts)
+    out=diagnostics_torch(torch.tensor(z,dtype=torch.float64),torch.tensor(w,dtype=torch.float64),counts)
+    for i,r in enumerate(ref):
+        for key, expected in (("mean",r["mean"]),("sizes",r["sizes"]),
+            ("uniform_variance4",r["uniform_variance4"]),("weighted_variance4",r["weighted_variance4"])):
+            assert np.allclose(out[key][i].cpu().numpy(),expected,equal_nan=True,atol=1e-12,rtol=0),(i,key)
+        for k,v in r["stats"].items():
+            assert np.allclose(out["stats"][k][i].item(),v,equal_nan=True,atol=1e-12,rtol=0),(i,k,v,out["stats"][k][i])
+    nofar=diagnostics_torch(torch.tensor([[1.,9.]],dtype=torch.float64),torch.tensor([[.1,.9]],dtype=torch.float64),[2])
+    assert nofar["stats"]["has_far_high"].item()==0 and nofar["stats"]["far_high_shift"].item()==0
     print("ray_influence --check passed")
 
 
-if __name__ == "__main__" and "--check" in sys.argv:
+if __name__=="__main__" and "--check" in sys.argv:
     _check()
