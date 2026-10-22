@@ -83,13 +83,13 @@ def _one_ray(z, w):
         top1_fraction=float(w.max()/total), top10_count_mass=float(w[sets[1]].sum()/total),
         n90_count_fraction=k90/n, weighted_median=median,
         tail_mass=float(w[tail].sum()/total), tail_mean=avg(tail),
-        tail_shift=(avg(tail)-means[0]) if len(tail) and np.isfinite(avg(tail)) and np.isfinite(means[0]) else (0. if not len(tail) else nan),
+        tail_shift=means[3]-means[0],
         far_high_mass=float(w[far].sum()/total), far_high_count=len(far),
         far_high_mean=avg(far), has_far_high=int(bool(len(far))),
         far_high_shift=(nofar-means[0]) if len(far) and np.isfinite(nofar) and np.isfinite(means[0]) else (0. if not len(far) else nan),
         far_single_p=p, far_single_depth=float(z[j]) if j is not None else nan,
         far_single_loo=loo, has_far_single=int(j is not None),
-        far_single_shift=(nosingle-means[0]) if j is not None and np.isfinite(nosingle) and np.isfinite(means[0]) else nan)
+        far_single_shift=(nosingle-means[0]) if j is not None and np.isfinite(nosingle) and np.isfinite(means[0]) else (0. if j is None and np.isfinite(means[0]) else nan))
     for i, name in enumerate(_SD_NAMES):
         stats[f"{name}_unweighted_sd"], stats[f"{name}_weighted_sd"] = usd[i], wsd[i]
         stats[f"{name}_sd_ratio"] = wsd[i]/usd[i] if np.isfinite(usd[i]) and usd[i] != 0 and np.isfinite(wsd[i]) else nan
@@ -176,12 +176,12 @@ def diagnostics_torch(depth, weight, counts):
     nosingle = torch.where(has_single & (singlesumw>0), singlesumz/singlesumw.clamp_min(torch.finfo(z.dtype).tiny), means4[:,0])
     singlep = torch.where(has_single,singlep,nan); singlez = torch.where(has_single,singlez,nan)
     singleloo = torch.where(has_single,maxloo,nan)
-    singleshift = torch.where(has_single,nosingle-means4[:,0],nan)
+    singleshift = torch.where(has_single,nosingle-means4[:,0],zero)
     # Tail is the complement of the smallest prefix covering 90% contribution.
     tail = valid & ~subsets[:,3]
     tail_mass = torch.where(tail,ww,0.).sum(1)
     tail_mean = weighted_mean(tail)
-    tail_shift = torch.where(tail.any(1), tail_mean-means4[:,0], zero)
+    tail_shift = means4[:,3]-means4[:,0]
     far_high_mass = far_mass/total.clamp_min(torch.finfo(z.dtype).tiny)
     top1mass = torch.where(valid,w,-torch.inf).max(1).values
     top1mass = torch.where(counts>0, top1mass/total.clamp_min(torch.finfo(z.dtype).tiny), zero)
@@ -220,7 +220,8 @@ def diagnostics_torch(depth, weight, counts):
     empty = counts==0
     for key in ("weighted_median","tail_mean","far_high_mean","far_single_p","far_single_depth","far_single_loo","far_single_shift"):
         stat[key] = torch.where(empty,nan,stat[key])
-    stat["tail_shift"] = torch.where(empty,zero,stat["tail_shift"])
+    stat["tail_shift"] = torch.where(empty,nan,stat["tail_shift"])
+    stat["far_high_shift"] = torch.where(empty,nan,stat["far_high_shift"])
     means4 = torch.where(empty[:,None],nan,means4)
     nofar = torch.where(empty,nan,nofar)
     meansout = torch.cat((means4,nofar[:,None],nosingle[:,None]),1)

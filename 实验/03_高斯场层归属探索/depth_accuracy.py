@@ -53,18 +53,18 @@ def check(device):
     print('weighted means independent NumPy/count/tie/empty/nonfinite checks passed',flush=True)
 
 
-def load_scene(scan,out):
+def load_scene(scan,out,model_root=None,source_root=None):
     import torch
     from arguments import ModelParams,PipelineParams
     from scene import Scene,GaussianModel
     from sample import protect_scene,sha256
-    model=Path('/root/autodl-tmp/GauDepth/outtest')/f'scan{scan}'
+    model=Path(model_root or '/root/autodl-tmp/GauDepth/outtest')/f'scan{scan}'
     node=ast.parse((model/'cfg_args').read_text(),mode='eval').body
     assert isinstance(node,ast.Call) and isinstance(node.func,ast.Name) and node.func.id=='Namespace' and not node.args
     cfg={k.arg:ast.literal_eval(k.value) for k in node.keywords}
     p=argparse.ArgumentParser();mp=ModelParams(p);pp=PipelineParams(p)
     values=vars(p.parse_args([]));values.update(cfg)
-    values.update(model_path=str(model),source_path=f'/root/autodl-tmp/DTU/scan{scan}')
+    values.update(model_path=str(model),source_path=str(Path(source_root or '/root/autodl-tmp/DTU')/f'scan{scan}'))
     args=argparse.Namespace(**values);dataset=mp.extract(args);pipe=pp.extract(args)
     ply=model/'point_cloud/iteration_30000/point_cloud.ply';digest=sha256(ply)
     g=GaussianModel(dataset.sh_degree)
