@@ -196,17 +196,17 @@ def curve_self_check():
     print('shared-curve d0/tangent/gauge/heldout/vertical self-check passed',flush=True)
 
 
-def run_shared_curve(root,out):
+def run_shared_curve(root,out,case=6):
     if out.exists() and any(out.iterdir()):raise FileExistsError(out)
     previous=root/'gaussian_member_holdout';oldmeta=json.loads((previous/'metadata.json').read_text(encoding='utf-8'))
     assert oldmeta['status']=='complete'
     cached={}
     for line in (previous/'models.jsonl').read_text(encoding='utf-8').splitlines():
         m=json.loads(line)
-        if m['case_index']==6 and m['protocol']=='random_half':cached[(m['seed_offset'],m['curvature'],m['scale'],m['normal_weight'],m['repeat'])]=m
+        if m['case_index']==case and m['protocol']=='random_half':cached[(m['seed_offset'],m['curvature'],m['scale'],m['normal_weight'],m['repeat'])]=m
     with (previous/'replicates.csv').open(encoding='utf-8-sig',newline='') as f:
         baseline={(int(r['seed_offset']),int(r['curvature']),float(r['scale']),float(r['normal_weight']),int(r['repeat'])):r
-                  for r in csv.DictReader(f) if int(r['case_index'])==6 and r['protocol']=='random_half'}
+                  for r in csv.DictReader(f) if int(r['case_index'])==case and r['protocol']=='random_half'}
     assert len(cached)==len(baseline)==120
     out.mkdir(parents=True,exist_ok=True);rows=[];inputs=[];details=[]
     for seed in (1000,2000):
@@ -214,11 +214,13 @@ def run_shared_curve(root,out):
         for curvature in (0,20,50):
             folder=root/f'independent_c{curvature}_s{seed}';meta=json.loads((folder/'metadata.json').read_text(encoding='utf-8'))
             assert meta['status']=='complete' and meta['backend']=='analytic_ray_peak_gaussian_CPU'
-            item=meta['cases'][6];cfg=item['config'];assert cfg['case_index']==6 and cfg['seed']==20261022+seed+6
+            item=meta['cases'][case];cfg=item['config'];assert cfg['case_index']==case and cfg['seed']==20261022+seed+case
             if curvature==0:reference=cfg
             for name in ('kind','gap','theta_deg','center_noise','normal_noise_deg'):assert cfg[name]==reference[name]
             assert float(cfg.get('curvature',0.))==curvature
-            path=folder/item['file'];assert sha(path)==item['npz_sha256'];inputs.append(dict(path=str(path),sha256=sha(path)))
+            path=folder/item['file'];assert sha(path)==item['npz_sha256']
+            assert sha(path)==next(item['sha256'] for item in oldmeta['inputs'] if item['path']==str(path))
+            inputs.append(dict(path=str(path),sha256=sha(path)))
             with np.load(path,allow_pickle=False) as z:
                 data[curvature]={name:z[name].copy() for name in ('means','generated_normal','source_origin')}
                 ids=np.unique(z['gaussian_id']);common=ids if common is None else np.intersect1d(common,ids)
@@ -227,7 +229,7 @@ def run_shared_curve(root,out):
             payload=data[curvature];p=payload['means'].astype(float);n=payload['generated_normal'].astype(float)
             np.testing.assert_array_equal(payload['source_origin'][common],truth)
             model=cached[(seed,curvature,scale,lam,repeat)];learn=np.array(model['fit_ids']);test=np.array(model['heldout_ids'])
-            order=np.random.default_rng(700000+seed*100+6*7+repeat).permutation(len(common))
+            order=np.random.default_rng(700000+seed*100+case*7+repeat).permutation(len(common))
             np.testing.assert_array_equal(learn,common[np.sort(order[:len(common)//2])]);np.testing.assert_array_equal(test,common[np.sort(order[len(common)//2:])])
             assert not np.intersect1d(learn,test).size
             centers=np.array(model['center_ids']);assert np.isin(centers,learn).all()
@@ -242,7 +244,7 @@ def run_shared_curve(root,out):
                 chosen_ids=learn[result['center_indices']].tolist();assert np.isin(chosen_ids,learn).all() and not np.isin(chosen_ids,test).any()
                 pred=curve_labels(curve_energy(p[test],n[test],result['coefficients'],result['d'],scale,lam))
             score=pair_metrics(payload['source_origin'][test],pred)
-            row=dict(seed_offset=seed,case_index=6,kind=reference['kind'],curvature=curvature,scale=scale,normal_weight=lam,repeat=repeat,
+            row=dict(seed_offset=seed,case_index=case,kind=reference['kind'],center_noise=reference['center_noise'],normal_noise_deg=reference['normal_noise_deg'],curvature=curvature,scale=scale,normal_weight=lam,repeat=repeat,
                 oracle_common_K=K,status=result['status'],selected_d=result.get('d'),fit_objective=result.get('objective'),
                 invalid_graph_candidates=result.get('invalid_candidates',len(learn)),fit_members=len(learn),heldout_members=len(test),
                 fit_origins=len(np.unique(payload['source_origin'][learn])),heldout_origins=len(np.unique(payload['source_origin'][test])),
@@ -251,14 +253,15 @@ def run_shared_curve(root,out):
             for choice in result['choices']:row['fit_objective_d'+str(int(choice['d']))]=choice['objective']
             for d in (0,20,50):row.setdefault('fit_objective_d'+str(d),None)
             rows.append(row);details.append(dict(**{name:row[name] for name in ('seed_offset','curvature','scale','normal_weight','repeat','status','selected_d')},
-                fit_ids=learn.tolist(),heldout_ids=test.tolist(),center_ids=chosen_ids,coefficients=result['coefficients'].tolist() if result['status']=='ok' else None,
+                case_index=case,fit_ids=learn.tolist(),heldout_ids=test.tolist(),center_ids=chosen_ids,coefficients=result['coefficients'].tolist() if result['status']=='ok' else None,
                 heldout_labels=pred.tolist(),baseline_labels=base_labels.tolist()))
-        csv_write(out/'replicates.csv',rows);print('shared curve case6 seed',seed,'finished',flush=True)
+        csv_write(out/'replicates.csv',rows);print('shared curve case',case,'seed',seed,'finished',flush=True)
     assert len(rows)==120
     (out/'models.json').write_text(json.dumps(details),encoding='utf-8')
-    (out/'metadata.json').write_text(json.dumps(dict(status='complete',inputs=inputs,git_commit=subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(),source_sha256=sha(__file__),
+    (out/'metadata.json').write_text(json.dumps(dict(status='complete',inputs=inputs,case_index=case,git_commit=subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(),source_sha256=sha(__file__),
+        dependency_sha256={'analyze.py':sha(Path(__file__).parent/'analyze.py')},
         cached_input_sha256={name:sha(previous/name) for name in ('metadata.json','models.jsonl','replicates.csv')},
-        evidence='Case6 only, existing two seeds/three curvature conditions/four energy settings/five predetermined random halves. '
+        evidence='One explicitly selected existing case, two seeds/three curvature conditions/four energy settings/five predetermined random halves. '
         'Finite shared curvature grid [0,20,50] intentionally includes construction truth: extra controlled prior, not general recovery or learned continuous curvature. '
         'Each candidate graph anchored by a fit member position/tangent; only fit members choose d and center tuple. K is common-set source-count oracle. '
         'Normalized graph residual is not exact closest-surface distance for curved graphs. Fixed scales, unsigned axis term. '
@@ -270,11 +273,12 @@ def run_shared_curve(root,out):
 
 if __name__=='__main__':
     p=argparse.ArgumentParser(description=__doc__);p.add_argument('--input',type=Path);p.add_argument('--baseline',type=Path)
-    p.add_argument('--output',type=Path);p.add_argument('--self-check',action='store_true');p.add_argument('--shared-curve-case6',action='store_true');p.add_argument('--root',type=Path);args=p.parse_args()
+    p.add_argument('--output',type=Path);p.add_argument('--self-check',action='store_true');p.add_argument('--shared-curve-case6','--shared-curve',dest='shared_curve_case6',action='store_true');p.add_argument('--root',type=Path)
+    p.add_argument('--curve-case',type=int,choices=range(6,12),default=6);args=p.parse_args()
     if args.self_check:curve_self_check() if args.shared_curve_case6 else self_check()
     elif args.shared_curve_case6:
         if args.root is None or args.output is None:p.error('root and output required')
-        run_shared_curve(args.root,args.output)
+        run_shared_curve(args.root,args.output,args.curve_case)
     else:
         if args.input is None or args.baseline is None or args.output is None:p.error('input, baseline, output required')
         run(args.input,args.baseline,args.output)
