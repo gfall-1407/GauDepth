@@ -171,6 +171,7 @@ def sample(args):
                     replay_tolerance=dict(rtol=2e-5, atol=2e-6),
                     normal_replay_tolerance=dict(rtol=2e-4, atol=2e-5, normalize_eps=1e-12,
                         reduction='original acceptance order, CPU float32 multiply/add; host CUDA may fuse FMA'),
+                    camera_inventory=[dict(view_index=i,split=s,source_index=j,image_name=c.image_name) for i,(s,j,c) in enumerate(camera_items)],
                     selected_cameras=[dict(view_index=i,split=camera_items[i][0],source_index=camera_items[i][1],image_name=cameras[i].image_name) for i in selected],views=[])
     atomic_json(output / 'metadata.json', metadata)
     extra = {}

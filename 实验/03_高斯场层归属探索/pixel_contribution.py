@@ -5,6 +5,8 @@ import hashlib
 import json
 from pathlib import Path
 import subprocess
+import sys
+import time
 
 import numpy as np
 
@@ -205,9 +207,76 @@ def run(root,out):
     print(json.dumps(summary['all_sampled_pixels'],indent=2),flush=True)
 
 
+def run_masked_scans(out,provenance):
+    import socket
+    from sample import atomic_json
+    if socket.gethostname()!='autodl-container-d6a7459179-693ab6ee':raise ValueError('Only authorized G1')
+    if out.exists() and any(out.iterdir()):raise FileExistsError(out)
+    out.mkdir(parents=True,exist_ok=True);here=Path(__file__).resolve().parent;repo=here.parent.parent
+    commit=subprocess.check_output(['git','-C',str(repo),'rev-parse','HEAD'],text=True).strip()
+    assert not subprocess.check_output(['git','-C',str(repo),'status','--porcelain'],text=True).strip()
+    batch=dict(status='running',git_commit=commit,stages=[],scans={},started_at=time.time())
+    atomic_json(out/'batch.json',batch)
+
+    def stage(scene,label,views,seconds):
+        if (out/'stop_after_stage').exists():raise RuntimeError('Controller requested no new stage')
+        target=out/(scene+'_'+label)
+        command=[sys.executable,str(here/'sample.py'),'-m',f'/root/autodl-tmp/GauDepth/outtest/{scene}',
+                 '-s',f'/root/autodl-tmp/DTU/{scene}','--iteration','30000','--split','all','--views',views,
+                 '--mask-statistics','--host-build-provenance',provenance,'--output',str(target)]
+        record=dict(scene=scene,label=label,command=command,maximum_seconds=seconds,started_at=time.time())
+        batch['stages'].append(record);atomic_json(out/'batch.json',batch)
+        with (out/(scene+'_'+label+'.log')).open('w',encoding='utf-8') as log:
+            child=subprocess.Popen(command,cwd=repo,stdout=log,stderr=subprocess.STDOUT)
+            try:code=child.wait(timeout=seconds)
+            except subprocess.TimeoutExpired:
+                child.terminate()
+                try:child.wait(timeout=10)
+                except subprocess.TimeoutExpired:child.kill();child.wait()
+                record.update(status='timeout',exit_code=child.returncode,finished_at=time.time());atomic_json(out/'batch.json',batch)
+                raise RuntimeError(f'{scene}/{label} timeout')
+        record.update(status='complete' if code==0 else 'failed',exit_code=code,finished_at=time.time());atomic_json(out/'batch.json',batch)
+        if code:raise RuntimeError(f'{scene}/{label} failed: inspect preserved log')
+        meta=json.loads((target/'metadata.json').read_text(encoding='utf-8'))
+        assert meta['status']=='complete' and meta['original_model_unchanged'] and meta['git_commit']==commit
+        print('stage complete',scene,label,len(meta['views']),'views',flush=True)
+        return meta
+
+    try:
+        for scene in ('scan24','scan105','scan65','scan110'):
+            parts=[]
+            if scene=='scan24':
+                pilot=stage(scene,'pilot','0',600);parts.append(pilot)
+                remaining=[str(c['view_index']) for c in pilot['camera_inventory'] if c['view_index']!=0]
+                if remaining:parts.append(stage(scene,'remaining',','.join(remaining),1800))
+            else:parts.append(stage(scene,'all','all',1800))
+            names=[v['image_name'] for part in parts for v in part['views']]
+            expected=[c['image_name'] for c in parts[0]['camera_inventory']]
+            assert len(names)==len(set(names)) and set(names)==set(expected),'Camera coverage incomplete or duplicate'
+            assert len({part['model_sha256'] for part in parts})==1
+            metrics={}
+            for part in parts:
+                for name,value in part['masked_summary']['metrics'].items():
+                    acc=metrics.setdefault(name,dict(valid_pixels=0,total=0.))
+                    acc['valid_pixels']+=value['valid_pixels'];acc['total']+=(value['pixel_weighted_mean'] or 0.)*value['valid_pixels']
+            batch['scans'][scene]=dict(views=len(names),expected_views=len(expected),image_names=names,model_sha256=parts[0]['model_sha256'],
+                retained_pixels=sum(p['masked_summary']['retained_pixels'] for p in parts),
+                empty_contribution_pixels=sum(p['masked_summary']['empty_contribution_pixels'] for p in parts),
+                metrics={k:dict(valid_pixels=v['valid_pixels'],pixel_weighted_mean=v['total']/v['valid_pixels'] if v['valid_pixels'] else None) for k,v in metrics.items()})
+            atomic_json(out/'batch.json',batch)
+            print('scan complete',scene,len(names),'views',flush=True)
+        batch.update(status='complete',finished_at=time.time());atomic_json(out/'batch.json',batch)
+    except BaseException as exc:
+        batch.update(status='failed',error=str(exc),finished_at=time.time());atomic_json(out/'batch.json',batch);raise
+
+
 if __name__=='__main__':
-    p=argparse.ArgumentParser(description=__doc__);p.add_argument('--root',type=Path);p.add_argument('--output',type=Path);p.add_argument('--self-check',action='store_true');args=p.parse_args()
+    p=argparse.ArgumentParser(description=__doc__);p.add_argument('--root',type=Path);p.add_argument('--output',type=Path);p.add_argument('--self-check',action='store_true')
+    p.add_argument('--run-masked-scans',action='store_true');p.add_argument('--host-build-provenance');args=p.parse_args()
     if args.self_check:self_check()
+    elif args.run_masked_scans:
+        if args.output is None or not args.host_build_provenance:p.error('output/provenance required')
+        run_masked_scans(args.output,args.host_build_provenance)
     else:
         if args.root is None or args.output is None:p.error('root/output required')
         run(args.root,args.output)
