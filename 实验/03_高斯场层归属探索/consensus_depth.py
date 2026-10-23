@@ -857,6 +857,8 @@ def audit_peak_composition(args):
                 second = _number(base, "mode_second_h1mm")
                 expected = _number(base, "expected")
                 weak = int(np.isfinite(_number(base, "support_ratio_R_h1mm")) and _number(base, "support_ratio_R_h1mm") < .5)
+                ratio_finite = bool(np.isfinite(_number(base, "support_ratio_R_h1mm")))
+                nonweak = int(ratio_finite and _number(base, "support_ratio_R_h1mm") >= .5)
                 candidate = int(geometry["two_position_scan_geometry_candidate_h1mm"] == "1")
                 # The fixed candidate is copied from the already completed geometry audit.
                 # This audit does not recompute that decision or select peaks.
@@ -872,6 +874,7 @@ def audit_peak_composition(args):
                     plane_degenerate_any=int(plane[first:last].any()),
                     source_status=base["ray_status"], mode_status_h1mm=base["mode_status_h1mm"],
                     weak_R_lt_0p5=weak, geometry_candidate_h1mm=candidate,
+                    R_finite=int(ratio_finite), R_unknown=int(not ratio_finite), nonweak_R_ge_0p5=nonweak,
                     support_ratio_R_h1mm=_number(base, "support_ratio_R_h1mm"), expected_mm=expected,
                     best_peak_mm=best, second_peak_mm=second, relative_second_support=_number(base, "mode_relative_second_h1mm"),
                     second_finite=int(np.isfinite(second)), peak_windows_member_overlap=overlap,
@@ -885,6 +888,8 @@ def audit_peak_composition(args):
                 scan_rows.append(row)
         weak_rows = [r for r in scan_rows if r["weak_R_lt_0p5"] == 1]
         summary = dict(scan=scan, all_rays=len(scan_rows), weak_rays=len(weak_rows),
+            R_finite=sum(r["R_finite"] for r in scan_rows), R_unknown=sum(r["R_unknown"] for r in scan_rows),
+            nonweak_R_ge_0p5=sum(r["nonweak_R_ge_0p5"] for r in scan_rows),
             weak_second_missing=sum(r["second_finite"] == 0 for r in weak_rows),
             weak_partial_mode=sum(r["mode_status_h1mm"] == "partial" for r in weak_rows),
             weak_unknown_mode=sum(r["mode_status_h1mm"] == "unknown" for r in weak_rows))
@@ -897,6 +902,8 @@ def audit_peak_composition(args):
         weak_summary.append(summary)
     weak_rows = [r for r in ray_rows if r["weak_R_lt_0p5"] == 1]
     pooled = dict(scan="pooled", all_rays=len(ray_rows), weak_rays=len(weak_rows),
+        R_finite=sum(r["R_finite"] for r in ray_rows), R_unknown=sum(r["R_unknown"] for r in ray_rows),
+        nonweak_R_ge_0p5=sum(r["nonweak_R_ge_0p5"] for r in ray_rows),
         weak_second_missing=sum(r["second_finite"] == 0 for r in weak_rows),
         weak_partial_mode=sum(r["mode_status_h1mm"] == "partial" for r in weak_rows),
         weak_unknown_mode=sum(r["mode_status_h1mm"] == "unknown" for r in weak_rows))
@@ -917,7 +924,9 @@ def audit_peak_composition(args):
     _write_csv(out / "weak_scan_summary.csv", weak_summary)
     _write_csv(out / "geometry_candidates.csv", candidate_rows or [dict(note="no fixed-threshold geometry candidates")])
     metadata = dict(status="complete", source=_source_provenance(), ray_count=len(ray_rows),
-        weak_R_lt_0p5_count=len(weak_rows), geometry_candidate_count=len(candidate_rows),
+        weak_R_lt_0p5_count=len(weak_rows), R_finite_count=sum(r["R_finite"] for r in ray_rows),
+        R_unknown_count=sum(r["R_unknown"] for r in ray_rows), nonweak_R_ge_0p5_count=sum(r["nonweak_R_ge_0p5"] for r in ray_rows),
+        geometry_candidate_count=len(candidate_rows),
         source_rays_csv=str(csv_path.resolve()), source_rays_sha256=sha256(csv_path),
         source_run_metadata_sha256=sha256(meta_path), source_geometry_csv=str(geometry_csv.resolve()),
         source_geometry_csv_sha256=sha256(geometry_csv), source_geometry_metadata_sha256=sha256(geometry_meta_path),
