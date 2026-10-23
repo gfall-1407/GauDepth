@@ -101,9 +101,11 @@ def _metadata_and_views(input_root: Path, retrieval: dict):
 def run(input_root: Path, output_root: Path) -> None:
     _self_check()
     retrieval_path = input_root / "retrieval_status.json"
+    validation_path = input_root / "local_validation_complete.json"
     retrieval = json.loads(retrieval_path.read_text(encoding="utf-8"))
+    validation = json.loads(validation_path.read_text(encoding="utf-8"))
+    retrieval.update(validation)
     assert not output_root.exists(), f"Refusing to overwrite existing output: {output_root}"
-    output_root.mkdir(parents=True)
 
     source_rows = []
     view_rows = []
@@ -347,6 +349,7 @@ def run(input_root: Path, output_root: Path) -> None:
                 agg[f"abs_shift_ge{threshold}_mean_delta_nn_mm"] = (
                     agg[f"abs_shift_ge{threshold}_delta_error_sum_mm"] / count if count else None)
             scan_rows.append(agg)
+    output_root.mkdir(parents=True)
     _write_csv(output_root / "prefix_pair_shift_bins.csv", bin_rows)
     _write_csv(output_root / "prefix_pair_scan_summary.csv", scan_rows)
     _write_csv(output_root / "input_provenance.csv", source_rows)
@@ -354,6 +357,7 @@ def run(input_root: Path, output_root: Path) -> None:
         "status": "complete", "run_commit": EXPECTED_COMMIT,
         "instance_id": EXPECTED_INSTANCE, "hostname": EXPECTED_HOST,
         "input_root": str(input_root), "retrieval_status_sha256": sha256(retrieval_path),
+        "local_validation_sha256": sha256(validation_path),
         "scan_count": len(source_rows), "view_count": sum(r["views"] for r in source_rows),
         "mask_pixels": total_pixels, "source_provenance": source_rows,
         "input_view_hashes": input_view_hashes,
