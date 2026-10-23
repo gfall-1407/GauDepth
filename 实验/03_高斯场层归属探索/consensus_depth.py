@@ -833,7 +833,7 @@ def audit_peak_composition(args):
                 xy = archive["pixel_xy"].astype(np.int32)
             if len(offsets) != 257 or offsets[0] != 0 or offsets[-1] != len(depth) or len(weight) != len(depth):
                 raise ValueError(f"Invalid ragged ray offsets in {ray_file}")
-            if len(plane) != 256 or targets.shape != (256, 3) or xy.shape != (256, 2):
+            if len(plane) != len(depth) or targets.shape != (256, 3) or xy.shape != (256, 2):
                 raise ValueError(f"Invalid ray metadata dimensions in {ray_file}")
             for ray in range(256):
                 base = keyed.get((scan, vm["image_name"], ray))
@@ -868,7 +868,9 @@ def audit_peak_composition(args):
                                     bool(abs(best-second) <= 4.0))
                 row = dict(scan=scan, view=vm["image_name"], ray=ray, x=int(xy[ray, 0]), y=int(xy[ray, 1]),
                     accepted=n, total_weight=total_w, top10_n=k10, nonfinite_depth_n=int((~np.isfinite(z_mm)).sum()),
-                    plane_degenerate=int(plane[ray]), source_status=base["ray_status"], mode_status_h1mm=base["mode_status_h1mm"],
+                    plane_degenerate_n=int(plane[first:last].sum()),
+                    plane_degenerate_any=int(plane[first:last].any()),
+                    source_status=base["ray_status"], mode_status_h1mm=base["mode_status_h1mm"],
                     weak_R_lt_0p5=weak, geometry_candidate_h1mm=candidate,
                     support_ratio_R_h1mm=_number(base, "support_ratio_R_h1mm"), expected_mm=expected,
                     best_peak_mm=best, second_peak_mm=second, relative_second_support=_number(base, "mode_relative_second_h1mm"),
