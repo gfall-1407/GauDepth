@@ -7,6 +7,9 @@ import hashlib
 import json
 import math
 from pathlib import Path
+import platform
+import subprocess
+import sys
 import time
 
 import numpy as np
@@ -140,22 +143,22 @@ def _kernel_mode(z: np.ndarray, w: np.ndarray, h_mm: float):
         iterations=max_iterations)
 
 
-def _ray_estimates(z_mm: np.ndarray, w: np.ndarray, host_target: np.ndarray):
+def _ray_estimates(z_mm: np.ndarray, w: np.ndarray, host_target_mm: np.ndarray):
     if len(z_mm) == 0:
         vals = {name: float("nan") for name in METHODS}
-        vals["native_median"] = float(host_target[1])
+        vals["native_median"] = float(host_target_mm[1])
         return vals, dict(status="empty", members=0, weighted_sd_mm=float("nan"),
             huber_status="unknown", huber_iterations=0, mode={}, support={})
     if not np.isfinite(w).all() or np.any(w <= 0):
         raise ValueError("Saved accepted-ray weights must be finite and positive")
     if not np.isfinite(z_mm).all():
         vals = {name: float("nan") for name in METHODS}
-        vals["native_median"] = float(host_target[1])
+        vals["native_median"] = float(host_target_mm[1])
         return vals, dict(status="nonfinite_depth", members=len(z_mm), weighted_sd_mm=float("nan"),
             huber_status="unknown", huber_iterations=0, mode={}, support={})
     fixed = _fixed_subsets(z_mm, w)
     expected_scene = fixed["expected"]
-    if np.isfinite(host_target[0]):
+    if np.isfinite(host_target_mm[0]):
         # Caller compares the unscaled value against the original host expected output.
         pass
     huber, huber_status, huber_iterations = _huber_location(z_mm, w, expected_scene, 1.0)
@@ -169,7 +172,7 @@ def _ray_estimates(z_mm: np.ndarray, w: np.ndarray, host_target: np.ndarray):
         m = modes[h]
         support[h] = dict(expected=s0, expected_peak_share=p0, mode=m["score"],
                           mode_peak_share=m["peak_share"])
-    vals = dict(expected=mu, native_median=float(host_target[1]),
+    vals = dict(expected=mu, native_median=float(host_target_mm[1]),
         weighted_median=fixed["weighted_median"], top10=fixed["top10"],
         top50=fixed["top50"], cover90=fixed["cover90"], huber_1mm=huber,
         kernel_mode_0p5mm=modes[0.5]["value"], kernel_mode_1mm=modes[1.0]["value"],
@@ -421,7 +424,7 @@ def _process_view(scan: int, old_meta: dict, vm: dict, ray_file: Path, scan_data
         if len(z) and (not np.isfinite(w).all() or np.any(w <= 0)):
             raise ValueError(f"Invalid accepted weights at scan{scan}/{name} ray {ray}")
         z_mm = z * scan_data["scale"]
-        vals, detail = _ray_estimates(z_mm, w, targets[ray])
+        vals, detail = _ray_estimates(z_mm, w, targets[ray] * scan_data["scale"])
         expected_replay.append((vals["expected"] / scan_data["scale"] if np.isfinite(vals["expected"]) else np.nan,
                                 targets[ray, 0]))
         for method in METHODS:
@@ -536,6 +539,20 @@ def _write_csv(path: Path, rows: list[dict]):
         writer.writerows(rows)
 
 
+def _source_provenance():
+    repo = Path(__file__).resolve().parents[2]
+    def git(*args):
+        return subprocess.check_output(["git", *args], cwd=repo, text=True, encoding="utf-8").strip()
+    dirty = git("status", "--porcelain")
+    if dirty:
+        raise RuntimeError(f"Source checkout must be clean before analysis: {dirty}")
+    from importlib.metadata import version
+    return dict(commit=git("rev-parse", "HEAD"), branch=git("branch", "--show-current"),
+        remote=git("remote", "get-url", "origin"), clean=True,
+        python=sys.version, platform=platform.platform(),
+        packages={name: version(name) for name in ("numpy", "scipy", "plyfile")})
+
+
 def run(args):
     ray_root, input_root, influence_root, accuracy_root, out = map(Path,
         (args.ray_root, args.input_root, args.influence_root, args.accuracy_root, args.output))
@@ -572,6 +589,7 @@ def run(args):
     _write_csv(out / "view_summary.csv", view_rows)
     _write_csv(out / "scan_summary.csv", scan_rows)
     metadata = dict(status="complete", scans=list(SCANS), ray_count=len(ray_rows), views=12,
+        source=_source_provenance(),
         methods=list(METHODS), fixed_parameters=dict(huber_h_mm=1.0, kernel_h_mm=list(MODE_BANDWIDTHS_MM),
             mean_shift_tol_mm=TOL_MM, mean_shift_max_iter=MAX_ITER, tie_mm=TIE_MM),
         support_definition="S(d)=sum_i p_i exp(-0.5*((z_i-d)/h)^2), p_i=original accepted w_i/sum(w); this is a weighted kernel support score, not a physical support probability. Mean-shift starts at each distinct accepted z; converged solutions are clustered as numerical solution basins (not physical layers or K); choose max score, ties by first accepted-order start. The second support peak is the highest-scoring converged cluster at least 2h from the best; it is NaN if absent.",
@@ -581,6 +599,7 @@ def run(args):
         input_sha256=input_meta, ray_root=str(ray_root.resolve()), influence_root=str(influence_root.resolve()),
         output=str(out.resolve()), elapsed_seconds=time.time()-started,
         dependence_note="Rays are paired within view; 3072 rays are not independent physical samples. Summaries are descriptive by view and scan; no pixel-level significance claims.")
+    metadata["native_median_units"] = "Original saved host_target median in camera-z scene units, multiplied by the same verified scale_to_dtu_mm before comparison."
     metadata["full_accuracy_map_crosschecks"] = crosschecks
     metadata["mechanism_thresholds"] = dict(main_bandwidth_mm=1.0, weak_expected_support_R_below=0.5,
         competing_peak_separation_at_least_mm=2.0,
