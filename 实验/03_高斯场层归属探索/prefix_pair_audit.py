@@ -33,6 +33,12 @@ def sha256(path: Path) -> str:
 
 
 def _self_check() -> None:
+    # Stored camera-z maps are scene units; the metadata scale converts them to DTU mm.
+    scene_depth = np.array([1.25, 1.2505], dtype=np.float32)
+    scale_to_mm = 1000.0
+    depth_mm = scene_depth.astype(np.float64) * scale_to_mm
+    assert np.allclose(depth_mm, [1250.0, 1250.5], rtol=0, atol=1e-10)
+    assert math.isclose(float(depth_mm[1] - depth_mm[0]), 0.5, rel_tol=0, abs_tol=1e-10)
     # Signed axial shifts: negative is nearer, positive is farther.
     shift = np.array([-5.0, -0.1, -0.00005, 0.0, 0.00005, 0.1, 5.0])
     direction = np.where(shift < 0, "near", np.where(shift > 0, "far", "zero"))
@@ -100,8 +106,60 @@ def _metadata_and_views(input_root: Path, retrieval: dict):
         yield scan, meta, meta_path, root
 
 
-def run(input_root: Path, output_root: Path) -> None:
+def _verify_reference_sample(input_root: Path, influence_root: Path) -> dict:
+    scan_root = input_root / "scan24"
+    accuracy_meta = json.loads((scan_root / "metadata.json").read_text(encoding="utf-8"))
+    influence_scan = influence_root / "scan24"
+    influence_meta = json.loads((influence_scan / "metadata.json").read_text(encoding="utf-8"))
+    assert influence_meta["status"] == "complete" and influence_meta["scan"] == 24
+    assert influence_meta["git_commit"] == "c3b8b28f1fcd96656b285a66820f1007dd422caf"
+    for key in ("model_sha256", "cfg_sha256", "cameras_npz_sha256", "gt_sha256", "obs_sha256"):
+        assert influence_meta[key] == accuracy_meta[key], key
+    scale = float(accuracy_meta["alignment"]["scale_to_dtu_mm"])
+    assert math.isclose(scale, float(influence_meta["alignment"]["scale_to_dtu_mm"]), rel_tol=0, abs_tol=1e-12)
+    view = next(v for v in accuracy_meta["views"] if v["name"] == "0000")
+    influence_view = next(v for v in influence_meta["views"] if v["name"] == "0000")
+    assert view["sha256"] and sha256(scan_root / view["file"]) == view["sha256"]
+    influence_files = {item["name"]: item["sha256"] for item in influence_view["files"]}
+    summary_path = influence_scan / "view_000.json"
+    sample_path = influence_scan / "view_000_sample.npz"
+    assert sha256(summary_path) == influence_files[summary_path.name]
+    assert sha256(sample_path) == influence_files[sample_path.name]
+    with np.load(scan_root / view["file"], allow_pickle=False) as maps, \
+            np.load(sample_path, allow_pickle=False) as samples:
+        map_index = maps["pixel_index"]
+        sample_index = samples["pixel_index"]
+        positions = np.searchsorted(map_index, sample_index)
+        assert np.all(positions < len(map_index)) and np.array_equal(map_index[positions], sample_index)
+        depth = maps["weighted_mean_depth"].astype(np.float64)
+        sample_mean = samples["mean"]
+        assert sample_mean.shape == (len(sample_index), 6)
+        checks = []
+        for col, name in zip((1, 2, 3), ("top10pct_count", "top50pct_count", "cover90pct_weight")):
+            sample_shift_mm = (depth[positions, col] - depth[positions, 0]) * scale
+            reference_sample_shift_mm = (sample_mean[:, col] - sample_mean[:, 0]) * scale
+            sample_error = np.abs(sample_shift_mm - reference_sample_shift_mm)
+            assert float(sample_error.max()) <= 1e-4, (name, float(sample_error.max()))
+            full_view_mean_mm = float(((depth[:, col] - depth[:, 0]) * scale).mean())
+            ref_stats = json.loads(summary_path.read_text(encoding="utf-8"))["comparison"]["all_mask"][name]["axial_shift_mm"]
+            reference_view_mean_mm = float(ref_stats["sum"] / ref_stats["n"])
+            assert abs(full_view_mean_mm - reference_view_mean_mm) <= 5e-6, (name, full_view_mean_mm, reference_view_mean_mm)
+            checks.append({"method": name, "sample_count": len(sample_index),
+                "sample_max_abs_difference_mm": float(sample_error.max()),
+                "sample_mean_abs_difference_mm": float(sample_error.mean()),
+                "map_view_mean_shift_mm": full_view_mean_mm,
+                "influence_view_mean_shift_mm": reference_view_mean_mm,
+                "view_mean_abs_difference_mm": abs(full_view_mean_mm - reference_view_mean_mm)})
+    return {"status": "passed", "scan": 24, "camera": "0000", "scale_to_dtu_mm": scale,
+        "accuracy_view_sha256": view["sha256"], "influence_summary_sha256": influence_files[summary_path.name],
+        "influence_sample_sha256": influence_files[sample_path.name], "checks": checks,
+        "tolerance": {"per_sample_max_abs_mm": 1e-4, "full_view_mean_abs_mm": 5e-6}}
+
+
+def run(input_root: Path, output_root: Path, reference_influence_root: Path | None = None) -> None:
     _self_check()
+    reference_sample_check = (_verify_reference_sample(input_root, reference_influence_root)
+                              if reference_influence_root is not None else None)
     retrieval_path = input_root / "retrieval_status.json"
     validation_path = input_root / "local_validation_complete.json"
     retrieval = json.loads(retrieval_path.read_text(encoding="utf-8"))
@@ -135,6 +193,8 @@ def run(input_root: Path, output_root: Path) -> None:
     total_started = time.monotonic()
 
     for scan, meta, meta_path, scan_root in _metadata_and_views(input_root, retrieval):
+        scale_to_dtu_mm = float(meta["alignment"]["scale_to_dtu_mm"])
+        assert math.isfinite(scale_to_dtu_mm) and scale_to_dtu_mm > 0, (scan, scale_to_dtu_mm)
         scan_started = time.monotonic()
         scan_pixels = 0
         for view in meta["views"]:
@@ -161,8 +221,8 @@ def run(input_root: Path, output_root: Path) -> None:
                 for col, method in METHODS:
                     pair_valid = (np.isfinite(depth[:, 0]) & np.isfinite(depth[:, col]) &
                                   np.isfinite(error[:, 0]) & np.isfinite(error[:, col]))
-                    base_z = depth[pair_valid, 0]
-                    cand_z = depth[pair_valid, col]
+                    base_z = depth[pair_valid, 0] * scale_to_dtu_mm
+                    cand_z = depth[pair_valid, col] * scale_to_dtu_mm
                     base_e = error[pair_valid, 0]
                     cand_e = error[pair_valid, col]
                     shift = cand_z - base_z
@@ -258,6 +318,7 @@ def run(input_root: Path, output_root: Path) -> None:
         assert scan_pixels == sum(int(v["pixels"]) for v in meta["views"])
         total_pixels += scan_pixels
         source_rows.append({"scan": scan, "git_commit": meta["git_commit"], "model_sha256": meta["model_sha256"],
+            "scale_to_dtu_mm": scale_to_dtu_mm,
             "cfg_sha256": meta["cfg_sha256"], "cameras_npz_sha256": meta["cameras_npz_sha256"],
             "gt_sha256": meta["gt_sha256"], "obs_sha256": meta["obs_sha256"],
             "host_binary_sha256": meta["host_binary_sha256"], "reader_binary_sha256": meta["reader_binary_sha256"],
@@ -403,7 +464,9 @@ def run(input_root: Path, output_root: Path) -> None:
         "epsilon_tie_mm": EPS_MM,
         "top10_tail_definition": "Counts and sums of per-pixel delta-NN > epsilon vs < -epsilon; large-shift non-improvement reported separately for |axial shift|>=2 and >=5mm. No quantiles are averaged.",
         "aggregation": "Pixel pooled rows sum sufficient counts/sums; scan_equal rows average per-scan means only. Quantiles are not computed or averaged.",
-        "self_checks": ["empty", "invalid", "signed near/far/zero", "fixed bins", "epsilon=1e-4mm"],
+        "depth_units": "weighted_mean_depth maps are scene units; converted to DTU mm using each scan metadata alignment.scale_to_dtu_mm; NN errors are already mm and are not rescaled",
+        "reference_sample_check": reference_sample_check,
+        "self_checks": ["scene-to-mm conversion", "empty", "invalid", "signed near/far/zero", "fixed bins", "epsilon=1e-4mm"],
         "outputs": ["prefix_pair_shift_bins.csv", "prefix_pair_scan_summary.csv", "input_provenance.csv"],
     }
     (output_root / "prefix_pair_audit.json").write_text(json.dumps(summary, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
@@ -415,8 +478,9 @@ def main() -> None:
     p = argparse.ArgumentParser()
     p.add_argument("--input", type=Path, required=True)
     p.add_argument("--output", type=Path, required=True)
+    p.add_argument("--reference-influence", type=Path)
     a = p.parse_args()
-    run(a.input, a.output)
+    run(a.input, a.output, a.reference_influence)
 
 
 if __name__ == "__main__":
