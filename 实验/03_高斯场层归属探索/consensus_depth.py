@@ -941,7 +941,8 @@ def audit_peak_composition(args):
 
 
 GATE_METHODS = {
-    "A_all_mode1": "Always select the saved 1 mm best mode.",
+    "A_all_mode1": "Select the saved 1 mm best mode regardless of converged/partial status; partial is a coarse-search result, not a global optimum.",
+    "A_converged_only": "Select the saved 1 mm mode only when status is converged; partial/unknown remains unknown.",
     "B_weak_converged": "Replace expected only when R<0.5 and the saved mode status is converged.",
     "C_weak_converged_dominant": "B plus no saved second peak or relative second support<0.5.",
     "D_unknown_without_gate": "Expected for R>=0.5; mode for C-qualified weak rays; unknown otherwise.",
@@ -953,10 +954,12 @@ def _gate_one(name, expected, mode, second, ratio, rel, status, expected_nn, mod
     weak = bool(finite_ratio and ratio < .5)
     dominant = bool(not np.isfinite(second) or (np.isfinite(rel) and rel < .5))
     can_use_mode = bool(weak and status == "converged" and dominant)
-    use_mode = name == "A_all_mode1" or (name in ("B_weak_converged", "C_weak_converged_dominant") and
+    use_mode = name == "A_all_mode1" or (name == "A_converged_only" and status == "converged") or \
+        (name in ("B_weak_converged", "C_weak_converged_dominant") and
         weak and status == "converged" and (name == "B_weak_converged" or dominant)) or \
         (name == "D_unknown_without_gate" and can_use_mode)
-    force_unknown = bool(name == "D_unknown_without_gate" and not (finite_ratio and ratio >= .5) and not can_use_mode)
+    force_unknown = bool((name == "A_converged_only" and status != "converged") or
+        (name == "D_unknown_without_gate" and not (finite_ratio and ratio >= .5) and not can_use_mode))
     if use_mode:
         depth, nn, decision = mode, mode_nn, "mode"
     elif force_unknown:
@@ -1069,7 +1072,7 @@ def audit_support_gates(args):
         R_finite_count=sum(r["R_finite"] for r in ray_rows), R_unknown_count=sum(not r["R_finite"] for r in ray_rows),
         fixed_rules=GATE_METHODS, tie_tolerance_mm=TIE_MM,
         paired_delta_definition="candidate NN minus expected NN on identical finite-NN rows; negative is lower candidate NN. Switched-subset risk uses only rows where candidate differs from expected by more than the existing 1e-4 mm tie tolerance (or finite/unknown changes).",
-        interpretation="Exploratory gates evaluated on the same four-scan sample used to inspect these mechanisms; not independent validation or a general improvement claim. R>1 counts are descriptive and do not establish a reliable support gate. Unknown R is not treated as R>=0.5.",
+        interpretation="Exploratory gates evaluated on the same four-scan sample used to inspect these mechanisms; not independent validation or a general improvement claim. A_all_mode1 includes partial bounded-search results and is a coarse-search comparison, not evidence about an intrinsic mode. A_converged_only leaves partial/unknown results unknown. R>1 counts are descriptive and do not establish a reliable support gate. Unknown R is not treated as R>=0.5.",
         elapsed_seconds=time.time()-started, output=str(out.resolve()))
     (out / "run_metadata.json").write_text(json.dumps(metadata, indent=2, ensure_ascii=False), encoding="utf-8")
     return metadata
@@ -1196,6 +1199,8 @@ def self_check():
     assert _gate_one("B_weak_converged", 5., 2., 3.5, .3, .6, "converged", 4., 1.)["decision"] == "mode"
     assert _gate_one("C_weak_converged_dominant", 5., 2., 3.5, .3, .6, "converged", 4., 1.)["decision"] == "expected"
     assert _gate_one("D_unknown_without_gate", 5., 2., 3.5, .3, .6, "converged", 4., 1.)["decision"] == "unknown"
+    assert _gate_one("A_converged_only", 5., 2., 3.5, .3, .6, "partial", 4., 1.)["decision"] == "unknown"
+    assert _gate_one("A_converged_only", 5., 2., 3.5, .3, .6, "converged", 4., 1.)["decision"] == "mode"
     assert _gate_one("C_weak_converged_dominant", 5., 2., np.nan, .3, np.nan, "converged", 4., 1.)["decision"] == "mode"
     assert _gate_one("B_weak_converged", 5., 2., np.nan, .3, np.nan, "partial", 4., 1.)["decision"] == "expected"
     assert _gate_one("D_unknown_without_gate", 5., 2., np.nan, np.nan, np.nan, "converged", 4., 1.)["decision"] == "unknown"
