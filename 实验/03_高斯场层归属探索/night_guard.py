@@ -21,6 +21,9 @@ ALLOWED_IDENTITIES = {
     # Console and SSH hostname both verified on 2026-10-23; deployment still
     # requires an independent Linux shutdown test on each host.
     "8209458d70-897b4075": "autodl-container-8209458d70-897b4075",
+    # Console instance ID and SSH hostname independently verified on 2026-10-23;
+    # a live Linux guard/shutdown test is still required before deployment.
+    "adf6469986-f6e3df6c": "autodl-container-adf6469986-f6e3df6c",
 }
 POLL_SECONDS = 2
 CHILD_EXIT_LINGER = 120
