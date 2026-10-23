@@ -17,6 +17,26 @@ SCANS = (24, 65, 105, 110)
 PROTOCOL = dict(radius_px=.75, nearest_px=.25, front_gap_mm=2., min_points=6,
                 max_rms_mm=.1, max_planarity=.05, min_incidence=.2,
                 max_extrapolation_mm=.25)
+REFERENCE_RADII_PX = (.75, 1.5, 3.)
+
+
+def stable_reference(refs):
+    """Coverage repair uses GT only, with fixed cross-footprint agreement."""
+    a, b = refs[1:]
+    if a['status'] == b['status'] == 'accepted':
+        gap = abs(a['reference_mm'] - b['reference_mm'])
+        if gap <= .1:
+            result = dict(a)
+        else:
+            result = dict(a, status='cross_scale_disagreement', reference_mm=None)
+    else:
+        gap = None
+        result = dict(a, status='missing_multiscale_reference', reference_mm=None)
+    result['cross_scale_gap_mm'] = gap
+    for label, ref in zip(('075', '15', '30'), refs):
+        result[f'status_radius_{label}'] = ref['status']
+        result[f'reference_radius_{label}_mm'] = ref['reference_mm']
+    return result
 
 
 def sha(path):
@@ -113,6 +133,10 @@ def self_check():
     assert local_reference(front[:3], uv[:3], np.zeros(2), np.ones(2), np.zeros(2))['status'] == 'sparse'
     outside = local_reference(front, uv, np.array([1., 0.]), np.array([100., 100.]), np.zeros(2))
     assert outside['status'] != 'accepted'
+    good = dict(r, status='accepted', reference_mm=100.)
+    assert stable_reference([good, good, good])['status'] == 'accepted'
+    shifted = dict(good, reference_mm=100.2)
+    assert stable_reference([good, good, shifted])['reference_mm'] is None
     print('scan-plane, front occlusion, sparse and extrapolation checks passed')
 
 
@@ -185,11 +209,15 @@ def run(args):
             tree = cKDTree(uv)
             with np.load(data_path) as rays:
                 pixels = rays['pixel_xy'].astype(float)
-            neighborhoods = tree.query_ball_point(pixels, PROTOCOL['radius_px'])
+            radii = REFERENCE_RADII_PX if args.multiscale else (PROTOCOL['radius_px'],)
+            neighborhoods = [tree.query_ball_point(pixels, radius) for radius in radii]
             statuses = collections.Counter()
-            for ri, (pixel, neighbors) in enumerate(zip(pixels, neighborhoods)):
-                neighbors = np.asarray(neighbors, dtype=int)
-                ref = local_reference(cam_mm[neighbors], uv[neighbors], pixel, focal, center)
+            for ri, pixel in enumerate(pixels):
+                refs = []
+                for neighborhood in neighborhoods:
+                    neighbors = np.asarray(neighborhood[ri], dtype=int)
+                    refs.append(local_reference(cam_mm[neighbors], uv[neighbors], pixel, focal, center))
+                ref = stable_reference(refs) if args.multiscale else refs[0]
                 statuses[ref['status']] += 1
                 rows.append(dict(scan=scan, image_name=name, ray_index=ri,
                                  pixel_x=int(pixel[0]), pixel_y=int(pixel[1]), **ref))
@@ -202,7 +230,10 @@ def run(args):
         del scene
     write_csv(out / 'ray_reference.csv', rows)
     write_csv(out / 'view_coverage.csv', [{k: v for k, v in x.items() if k != 'statuses'} for x in views])
-    report = dict(commit=commit, protocol=PROTOCOL, inputs=inputs, views=views,
+    report = dict(commit=commit, protocol=PROTOCOL, reference_radii_px=list(radii),
+                  multiscale=args.multiscale,
+                  stable_reference_rule='Both 1.5px and 3px references must independently pass identical plane gates and differ by <=0.1mm; use 1.5px depth. This coverage check was added after the 0.75px-only run had 30/3072 coverage, before inspecting prediction errors.',
+                  inputs=inputs, views=views,
                   sampled_rays=len(rows), accepted=sum(x['status'] == 'accepted' for x in rows),
                   interpretation='Local front scan-plane reference on a conservative coverage subset; not exact pixel GT, not whole-image coverage; thresholds fixed before predictions; above-plane GT only.')
     (out / 'reference_metadata.json').write_text(json.dumps(report, indent=2), encoding='utf-8')
@@ -211,6 +242,7 @@ def run(args):
 def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument('--self-check', action='store_true')
+    p.add_argument('--multiscale', action='store_true')
     p.add_argument('--inputs', type=Path)
     p.add_argument('--ray-root', type=Path)
     p.add_argument('--influence-root', type=Path)
