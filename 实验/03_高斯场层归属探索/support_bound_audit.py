@@ -165,6 +165,7 @@ def main() -> None:
     parser.add_argument("--raw-root", type=Path, required=True, help="20261022_夜间 directory")
     parser.add_argument("--inputs-root", type=Path, required=True, help="一致深度支持/inputs directory")
     parser.add_argument("--output", type=Path, required=True, help="new, nonexistent result directory")
+    parser.add_argument("--resume-lineage", type=Path, help="JSON mapping scan/view/ray/h_mm keys to the commits that computed legacy resumed rows")
     args = parser.parse_args()
     self_test()
     with args.support_csv.open(newline="", encoding="utf-8-sig") as f:
@@ -179,26 +180,46 @@ def main() -> None:
     fields = ("scan", "view", "ray", "pixel_x", "pixel_y", "h_mm", "members", "scale_to_mm", "expected_mm", "weighted_median_mm",
               "saved_mode_mm", "saved_mode_status", "saved_mode_score", "saved_mode_score_le_final_lower", "lower_depth_mm", "lower_source",
               "lower_score", "upper_score", "certified_score_gap", "status", "reason", "interval_count", "elapsed_seconds",
-              "original_expected_support", "original_mode_support", "original_relative_support_R", "peak_location_certified")
+              "original_expected_support", "original_mode_support", "original_relative_support_R", "peak_location_certified", "computed_commit")
+    legacy_fields = fields[:-1]
     task_keys = [(int(r["scan"]), r["view"], int(r["ray"]), h) for r, h in tasks]
     existing_rows = []
+    legacy_schema = False
+    resume_lineage = json.loads(args.resume_lineage.read_text(encoding="utf-8")) if args.resume_lineage else {}
     if args.output.exists():
         children = sorted(p.name for p in args.output.iterdir())
         if children != ["support_bound.csv"]:
             raise FileExistsError(f"Refusing to resume unknown output contents: {children}")
         with csv_path.open(newline="", encoding="utf-8-sig") as f:
             reader = csv.DictReader(f)
-            if tuple(reader.fieldnames or ()) != fields:
+            old_fields = tuple(reader.fieldnames or ())
+            if old_fields not in (fields, legacy_fields):
                 raise ValueError("Existing partial CSV schema differs; refusing to append")
+            legacy_schema = old_fields == legacy_fields
             existing_rows = list(reader)
+        for row in existing_rows:
+            if not row.get("peak_location_certified"):
+                row["peak_location_certified"] = "False"
+            if not row.get("computed_commit"):
+                key = f"{row['scan']}/{row['view']}/{row['ray']}/{float(row['h_mm']):g}"
+                if key not in resume_lineage:
+                    raise ValueError(f"Missing --resume-lineage entry for {key}")
+                row["computed_commit"] = resume_lineage[key]
         existing_keys = [(int(r["scan"]), r["view"], int(r["ray"]), float(r["h_mm"])) for r in existing_rows]
         if existing_keys != task_keys[:len(existing_keys)]:
             raise ValueError("Existing rows are not a contiguous prefix of the fixed task list")
         if any(r["status"] not in ("certified_score", "unknown") for r in existing_rows):
             raise ValueError("Existing partial result has an unexpected status")
+        if legacy_schema:
+            with csv_path.open("w", newline="", encoding="utf-8-sig") as f:
+                writer = csv.DictWriter(f, fieldnames=fields)
+                writer.writeheader()
+                writer.writerows(existing_rows)
     else:
         args.output.mkdir(parents=True, exist_ok=False)
     results = list(existing_rows)
+    current_commit = subprocess.run(["git", "rev-parse", "HEAD"], cwd=Path(__file__).resolve().parents[2],
+                                    check=True, capture_output=True, text=True).stdout.strip()
     with csv_path.open("a" if existing_rows else "w", newline="", encoding="utf-8-sig") as f:
         writer = csv.DictWriter(f, fieldnames=fields)
         if not existing_rows:
@@ -254,6 +275,7 @@ def main() -> None:
                           original_relative_support_R=(float(source_row["support_ratio_R_h1mm"]) if h == 1.0 else
                                                        float(source_row[support_expected_field]) / float(source_row[support_mode_field])),
                           peak_location_certified=False,
+                          computed_commit=current_commit,
                           interval_count=result["interval_count"], converged_starts=converged_starts,
                           failed_starts=failed, solution_clusters=clusters, starts=starts,
                           input_npz_sha256=npz_sha, input_cameras_sha256=sha256(camera_path))
@@ -263,8 +285,7 @@ def main() -> None:
     manifest_results = results
     manifest = {
         "schema": "support_bound_audit_v1", "status": "complete", "self_test": "passed",
-        "source_commit": subprocess.run(["git", "rev-parse", "HEAD"], cwd=Path(__file__).resolve().parents[2],
-                                        check=True, capture_output=True, text=True).stdout.strip(),
+        "source_commit": current_commit,
         "script_sha256": sha256(Path(__file__)),
         "selection": {"h1": "support_ratio_R_h1mm>1 and mode_status_h1mm=partial (fixed source CSV; exactly 13)",
                       "h2": "scan65/view0032/ray202 (fixed; partial)", "count": len(results)},
@@ -276,6 +297,9 @@ def main() -> None:
                     "peak_position_certified": False, "GT_used": False},
         "inputs": {"support_csv": str(args.support_csv.resolve()), "support_csv_sha256": sha256(args.support_csv),
                    "raw_root": str(args.raw_root.resolve()), "inputs_root": str(args.inputs_root.resolve())},
+        "output": {"csv": str(csv_path.resolve()), "csv_sha256": sha256(csv_path)},
+        "resume_lineage": {"legacy_rows_require_explicit_commit_map": True,
+                           "resumed_rows_are_not_recomputed": True},
         "results": manifest_results,
     }
     (args.output / "manifest.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=2, allow_nan=False), encoding="utf-8")
