@@ -410,7 +410,7 @@ def _process_view(scan: int, old_meta: dict, vm: dict, ray_file: Path, scan_data
         raise ValueError(f"Invalid saved view transform: scan{scan}/{name}")
     c2w = np.linalg.inv(w2c)
     center = np.asarray(camera["camera_center"], dtype=np.float64)
-    np.testing.assert_allclose(c2w[3, :3], center, rtol=0, atol=2e-5)
+    np.testing.assert_allclose(c2w[:3, 3], center, rtol=0, atol=2e-5)
     rows, expected_replay = [], []
     all_values, all_details = [], []
     projection_check = _check_camera_projection(scan_data["cameras"], vm, scan_data["alignment"])
