@@ -743,6 +743,192 @@ def audit_peak_geometry(args):
     return metadata
 
 
+def _peak_composition(z_mm: np.ndarray, weight: np.ndarray, peak_mm: float, top10: np.ndarray,
+                      half_width_mm: float = 2.0, bandwidth_mm: float = 1.0):
+    n = len(z_mm)
+    total_w = float(weight.sum(dtype=np.float64))
+    result = dict(window_q=float("nan"), window_n=None, window_neff=float("nan"),
+        window_max_member_share=float("nan"), outside_mass=float("nan"),
+        support_s=float("nan"), support_top10_s=float("nan"), support_rest_s=float("nan"),
+        support_top10_fraction=float("nan"))
+    if not np.isfinite(peak_mm) or n == 0:
+        return result, None
+    if not np.isfinite(z_mm).all():
+        # Do not silently remove accepted members with unknown depth.
+        result["window_n"] = None
+        return result, None
+    if not np.isfinite(weight).all() or np.any(weight <= 0) or not total_w > 0:
+        raise ValueError("Accepted weights must be finite and positive")
+    p = weight / total_w
+    in_window = np.abs(z_mm - peak_mm) <= half_width_mm
+    q = float(p[in_window].sum(dtype=np.float64))
+    n_window = int(in_window.sum())
+    squared = float(np.square(p[in_window]).sum(dtype=np.float64))
+    neff = q * q / squared if squared > 0 else 0.0
+    max_share = float(p[in_window].max() / q) if q > 0 else float("nan")
+    kernel = np.exp(-0.5 * np.square((z_mm - peak_mm) / bandwidth_mm))
+    contributions = p * kernel
+    total_s = float(contributions.sum(dtype=np.float64))
+    top_s = float(contributions[top10].sum(dtype=np.float64))
+    rest_s = float(contributions[~top10].sum(dtype=np.float64))
+    if not math.isclose(top_s + rest_s, total_s, rel_tol=1e-12, abs_tol=1e-15):
+        raise AssertionError("Top10/rest support contributions do not sum to total S")
+    result.update(window_q=q, window_n=n_window, window_neff=neff,
+        window_max_member_share=max_share, outside_mass=1.0-q,
+        support_s=total_s, support_top10_s=top_s, support_rest_s=rest_s,
+        support_top10_fraction=top_s / total_s if total_s > 0 else float("nan"))
+    return result, in_window
+
+
+def _composition_mean(rows, field):
+    vals = np.asarray([_number(r, field) for r in rows], dtype=np.float64)
+    finite = np.isfinite(vals)
+    return int(finite.sum()), float(vals[finite].mean()) if finite.any() else None
+
+
+def audit_peak_composition(args):
+    ray_root, input_root, influence_root, csv_path, out = map(Path,
+        (args.ray_root, args.input_root, args.influence_root, args.rays_csv, args.output))
+    geometry_csv = Path(args.geometry_csv)
+    if not out.is_absolute():
+        raise ValueError("--output must be an absolute independent directory")
+    if out.exists() and any(out.iterdir()):
+        raise FileExistsError(f"Refusing nonempty peak-composition output: {out}")
+    meta_path = csv_path.parent / "run_metadata.json"
+    source_meta = json.loads(meta_path.read_text(encoding="utf-8"))
+    if source_meta.get("status") != "complete" or source_meta.get("ray_count") != 3072 or \
+            source_meta.get("source", {}).get("commit") != "7aba27a72929dd47ddf20dd7a91e9f6116062745":
+        raise ValueError("Expected the validated ray_support_v2 output and source commit")
+    with csv_path.open("r", newline="", encoding="utf-8-sig") as f:
+        source_rows = list(csv.DictReader(f))
+    keyed = {(int(r["scan"]), r["view"], int(r["ray"])): r for r in source_rows}
+    if len(keyed) != 3072 or len(source_rows) != 3072:
+        raise ValueError("Expected 3072 unique v2 ray rows")
+    geometry_meta_path = geometry_csv.parent / "run_metadata.json"
+    geometry_meta = json.loads(geometry_meta_path.read_text(encoding="utf-8"))
+    if geometry_meta.get("status") != "complete" or geometry_meta.get("ray_count") != 3072 or \
+            geometry_meta.get("source", {}).get("commit") != "90c92402b3cdb86f8b548c5f02931ae5f8858829":
+        raise ValueError("Expected the validated peak_geometry_v1_retry2 audit")
+    with geometry_csv.open("r", newline="", encoding="utf-8-sig") as f:
+        geometry_rows = list(csv.DictReader(f))
+    geometry_keyed = {(int(r["scan"]), r["view"], int(r["ray"])): r for r in geometry_rows}
+    if len(geometry_keyed) != 3072 or len(geometry_rows) != 3072:
+        raise ValueError("Expected all 3072 unique geometry rows")
+    out.mkdir(parents=True, exist_ok=True)
+    started = time.time()
+    ray_rows, weak_summary, candidate_rows, input_hashes = [], [], [], []
+    for scan in SCANS:
+        data = _load_scan(scan, ray_root, input_root, influence_root)
+        input_hashes.append(dict(scan=scan, model_sha256=sha256(data["model"]),
+            cameras_sha256=sha256(data["cameras"]), gt_sha256=sha256(data["gt"]),
+            influence_metadata_sha256=sha256(data["influence_meta_path"])))
+        scan_rows = []
+        for old_meta, vm, ray_file in data["views"]:
+            with np.load(ray_file) as archive:
+                offsets = archive["offsets"].astype(np.int64)
+                depth = archive["depth"].astype(np.float64)
+                weight = archive["weight"].astype(np.float64)
+                plane = archive["plane_degenerate"].astype(bool)
+                targets = archive["host_target"].astype(np.float64)
+                xy = archive["pixel_xy"].astype(np.int32)
+            if len(offsets) != 257 or offsets[0] != 0 or offsets[-1] != len(depth) or len(weight) != len(depth):
+                raise ValueError(f"Invalid ragged ray offsets in {ray_file}")
+            if len(plane) != 256 or targets.shape != (256, 3) or xy.shape != (256, 2):
+                raise ValueError(f"Invalid ray metadata dimensions in {ray_file}")
+            for ray in range(256):
+                base = keyed.get((scan, vm["image_name"], ray))
+                geometry = geometry_keyed.get((scan, vm["image_name"], ray))
+                if (base is None or geometry is None or int(base["x"]) != int(xy[ray, 0]) or
+                        int(base["y"]) != int(xy[ray, 1]) or int(geometry["x"]) != int(xy[ray, 0]) or
+                        int(geometry["y"]) != int(xy[ray, 1])):
+                    raise ValueError(f"v2 ray identity mismatch scan{scan}/{vm['image_name']}/{ray}")
+                first, last = int(offsets[ray]), int(offsets[ray + 1])
+                z_mm = depth[first:last] * data["scale"]
+                w = weight[first:last]
+                if not np.isfinite(w).all() or np.any(w <= 0):
+                    raise ValueError(f"Invalid accepted weight at scan{scan}/{vm['image_name']}/{ray}")
+                n = len(w)
+                total_w = float(w.sum(dtype=np.float64))
+                k10 = int(math.ceil(.1*n)) if n else 0
+                order = np.argsort(-w, kind="stable")
+                top10 = np.zeros(n, dtype=bool)
+                top10[order[:k10]] = True
+                best = _number(base, "kernel_mode_1mm")
+                second = _number(base, "mode_second_h1mm")
+                expected = _number(base, "expected")
+                weak = int(np.isfinite(_number(base, "support_ratio_R_h1mm")) and _number(base, "support_ratio_R_h1mm") < .5)
+                candidate = int(geometry["two_position_scan_geometry_candidate_h1mm"] == "1")
+                # The fixed candidate is copied from the already completed geometry audit.
+                # This audit does not recompute that decision or select peaks.
+                comp_best, mask_best = _peak_composition(z_mm, w, best, top10)
+                comp_second, mask_second = _peak_composition(z_mm, w, second, top10)
+                valid_depths = bool(np.isfinite(z_mm).all())
+                overlap = None if mask_best is None or mask_second is None else bool(np.any(mask_best & mask_second))
+                interval_overlap = (None if not (np.isfinite(best) and np.isfinite(second)) else
+                                    bool(abs(best-second) <= 4.0))
+                row = dict(scan=scan, view=vm["image_name"], ray=ray, x=int(xy[ray, 0]), y=int(xy[ray, 1]),
+                    accepted=n, total_weight=total_w, top10_n=k10, nonfinite_depth_n=int((~np.isfinite(z_mm)).sum()),
+                    plane_degenerate=int(plane[ray]), source_status=base["ray_status"], mode_status_h1mm=base["mode_status_h1mm"],
+                    weak_R_lt_0p5=weak, geometry_candidate_h1mm=candidate,
+                    support_ratio_R_h1mm=_number(base, "support_ratio_R_h1mm"), expected_mm=expected,
+                    best_peak_mm=best, second_peak_mm=second, relative_second_support=_number(base, "mode_relative_second_h1mm"),
+                    second_finite=int(np.isfinite(second)), peak_windows_member_overlap=overlap,
+                    peak_windows_interval_overlap=interval_overlap, all_depths_finite=int(valid_depths))
+                for prefix, comp in (("best", comp_best), ("second", comp_second)):
+                    for key, val in comp.items():
+                        row[f"{prefix}_{key}"] = val
+                if candidate:
+                    candidate_rows.append(row.copy())
+                ray_rows.append(row)
+                scan_rows.append(row)
+        weak_rows = [r for r in scan_rows if r["weak_R_lt_0p5"] == 1]
+        summary = dict(scan=scan, all_rays=len(scan_rows), weak_rays=len(weak_rows),
+            weak_second_missing=sum(r["second_finite"] == 0 for r in weak_rows),
+            weak_partial_mode=sum(r["mode_status_h1mm"] == "partial" for r in weak_rows),
+            weak_unknown_mode=sum(r["mode_status_h1mm"] == "unknown" for r in weak_rows))
+        for peak in ("best", "second"):
+            for field in ("window_q", "window_n", "window_neff", "window_max_member_share", "outside_mass",
+                          "support_s", "support_top10_s", "support_rest_s", "support_top10_fraction"):
+                count, mean = _composition_mean(weak_rows, f"{peak}_{field}")
+                summary[f"weak_{peak}_{field}_finite_n"] = count
+                summary[f"weak_{peak}_{field}_mean"] = mean
+        weak_summary.append(summary)
+    weak_rows = [r for r in ray_rows if r["weak_R_lt_0p5"] == 1]
+    pooled = dict(scan="pooled", all_rays=len(ray_rows), weak_rays=len(weak_rows),
+        weak_second_missing=sum(r["second_finite"] == 0 for r in weak_rows),
+        weak_partial_mode=sum(r["mode_status_h1mm"] == "partial" for r in weak_rows),
+        weak_unknown_mode=sum(r["mode_status_h1mm"] == "unknown" for r in weak_rows))
+    for peak in ("best", "second"):
+        for field in ("window_q", "window_n", "window_neff", "window_max_member_share", "outside_mass",
+                      "support_s", "support_top10_s", "support_rest_s", "support_top10_fraction"):
+            count, mean = _composition_mean(weak_rows, f"{peak}_{field}")
+            pooled[f"weak_{peak}_{field}_finite_n"] = count
+            pooled[f"weak_{peak}_{field}_mean"] = mean
+    weak_summary.append(pooled)
+    if len(ray_rows) != 3072:
+        raise ValueError(f"Expected all 3072 rays, got {len(ray_rows)}")
+    if sum(r["weak_R_lt_0p5"] for r in ray_rows) != 83:
+        raise ValueError("Expected the validated 83 weak-support rays in v2; source changed or audit mismatch")
+    if len(candidate_rows) != int(geometry_meta.get("geometry_candidate_count", -1)):
+        raise ValueError("Copied geometry-candidate count does not match the validated geometry metadata")
+    _write_csv(out / "rays.csv", ray_rows)
+    _write_csv(out / "weak_scan_summary.csv", weak_summary)
+    _write_csv(out / "geometry_candidates.csv", candidate_rows or [dict(note="no fixed-threshold geometry candidates")])
+    metadata = dict(status="complete", source=_source_provenance(), ray_count=len(ray_rows),
+        weak_R_lt_0p5_count=len(weak_rows), geometry_candidate_count=len(candidate_rows),
+        source_rays_csv=str(csv_path.resolve()), source_rays_sha256=sha256(csv_path),
+        source_run_metadata_sha256=sha256(meta_path), source_geometry_csv=str(geometry_csv.resolve()),
+        source_geometry_csv_sha256=sha256(geometry_csv), source_geometry_metadata_sha256=sha256(geometry_meta_path),
+        input_sha256=input_hashes,
+        fixed_parameters=dict(bandwidth_mm=1.0, peak_window_half_width_mm=2.0,
+            top_members="stable descending original accepted weight; ceil(10% N)",
+            weak_support="saved v2 R_h1mm < 0.5", geometry_candidate="copied fixed h1mm flag from validated geometry CSV; no recomputation"),
+        interpretation="Window mass/member summaries and exact support-score contributions describe numerical peak composition, not physical layers or probabilities. All accepted weights are retained. Nonfinite accepted depths make depth-dependent composition unknown, not silently filtered.",
+        elapsed_seconds=time.time()-started, output=str(out.resolve()))
+    (out / "run_metadata.json").write_text(json.dumps(metadata, indent=2, ensure_ascii=False), encoding="utf-8")
+    return metadata
+
+
 def run(args):
     ray_root, input_root, influence_root, accuracy_root, out = map(Path,
         (args.ray_root, args.input_root, args.influence_root, args.accuracy_root, args.output))
@@ -849,6 +1035,16 @@ def self_check():
     sample_summary = _summarize_peak_rows([summary_row], "synthetic", "one")
     assert len(sample_summary) == 3 and sample_summary[0]["R_gt_1_partial"] == 1
     assert sample_summary[0]["relative_support_finite"] == 1
+    wz = np.array([0., 1., 4., 10.])
+    ww = np.array([.4, .3, .2, .1])
+    top = np.array([True, False, False, False])
+    comp, mask = _peak_composition(wz, ww, 0., top)
+    assert np.array_equal(mask, [True, True, False, False])
+    assert abs(comp["window_q"] - .7) < 1e-14 and comp["window_n"] == 2
+    assert abs(comp["window_neff"] - (.7**2 / (.4**2 + .3**2))) < 1e-14
+    assert abs(comp["support_top10_s"] + comp["support_rest_s"] - comp["support_s"]) < 1e-14
+    unknown, unknown_mask = _peak_composition(np.array([0., np.nan]), np.array([.5, .5]), 0., np.array([True, False]))
+    assert unknown_mask is None and np.isnan(unknown["window_q"])
     print("CPU self-check passed: empty/single/one-peak/two-peak/scale/split/finite")
 
 
@@ -862,6 +1058,9 @@ def main():
     parser.add_argument("--audit-peak-geometry", action="store_true",
                         help="Reproject saved v2 second/best peaks and audit their GT-nearest-neighbor geometry")
     parser.add_argument("--rays-csv", type=Path, help="Saved ray_support_v2/rays.csv")
+    parser.add_argument("--geometry-csv", type=Path, help="Saved peak_geometry_v1_retry2/rays.csv")
+    parser.add_argument("--audit-peak-composition", action="store_true",
+                        help="Summarize raw accepted-ray mass and support contributions at saved 1mm peaks")
     parser.add_argument("--output", type=Path)
     args = parser.parse_args()
     if args.check:
@@ -872,6 +1071,16 @@ def main():
             parser.error("peak-geometry audit requires --ray-root --input-root --influence-root --rays-csv --output")
         result = audit_peak_geometry(args)
         print(json.dumps(dict(status=result["status"], ray_count=result["ray_count"], views=result["views"],
+                              elapsed_seconds=result["elapsed_seconds"], output=result["output"]), indent=2))
+        return
+    if args.audit_peak_composition:
+        if not all((args.ray_root, args.input_root, args.influence_root, args.rays_csv,
+                    args.geometry_csv, args.output)):
+            parser.error("peak-composition audit requires --ray-root --input-root --influence-root --rays-csv --geometry-csv --output")
+        result = audit_peak_composition(args)
+        print(json.dumps(dict(status=result["status"], ray_count=result["ray_count"],
+                              weak_R_lt_0p5_count=result["weak_R_lt_0p5_count"],
+                              geometry_candidate_count=result["geometry_candidate_count"],
                               elapsed_seconds=result["elapsed_seconds"], output=result["output"]), indent=2))
         return
     if not all((args.ray_root, args.input_root, args.influence_root, args.accuracy_root, args.output)):
