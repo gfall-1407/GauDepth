@@ -175,7 +175,6 @@ def main() -> None:
     if len(h1) != 13 or len(h2) != 1 or h2[0]["mode_status_h2mm"] != "partial":
         raise ValueError(f"Fixed selection mismatch: h1={len(h1)}, h2={len(h2)}")
     tasks = [(r, 1.0) for r in h1] + [(h2[0], 2.0)]
-    args.output.mkdir(parents=True, exist_ok=False)
     csv_path = args.output / "support_bound.csv"
     fields = ("scan", "view", "ray", "pixel_x", "pixel_y", "h_mm", "members", "scale_to_mm", "expected_mm", "weighted_median_mm",
               "saved_mode_mm", "saved_mode_status", "saved_mode_score", "saved_mode_score_le_final_lower", "lower_depth_mm", "lower_source",
