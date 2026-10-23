@@ -196,6 +196,7 @@ def _native_evaluate(evaluator, dataset, iteration, gt_root, gaussians, scene):
     import torch
     body = inspect.getsource(evaluator.evaluate_mesh)
     runner = """import multiprocessing as mp
+import open3d as o3d
 import sys
 from pathlib import Path
 
@@ -205,6 +206,7 @@ def bounded_pool(*args, **kwargs):
         kwargs["processes"] = 8
     return base_pool(*args, **kwargs)
 mp.Pool = bounded_pool
+o3d.io.write_point_cloud = lambda *args, **kwargs: True
 
 script = sys.argv[1]
 sys.argv = [script, *sys.argv[2:]]
@@ -227,6 +229,22 @@ exec(compile(Path(script).read_text(), script, "exec"), main_globals)
     torch.manual_seed(0)
     torch.cuda.set_device(torch.device("cuda:0"))
     scope["evaluate_mesh"](dataset, iteration, str(gt_root))
+
+
+def _remove_pilot_intermediates(output):
+    out = Path(output).resolve()
+    removed = []
+    for name in ("recon.ply", "recon_aligned.ply"):
+        path = out / name
+        if path.resolve().parent != out or not _inside(path, out):
+            raise RuntimeError(f"Refusing to remove a path outside this pilot output: {path}")
+        if not path.is_file():
+            raise FileNotFoundError(f"Expected this scan's generated intermediate: {path}")
+        record = dict(name=name, sha256=_sha(path), size_bytes=path.stat().st_size)
+        path.unlink()
+        record["removed"] = True
+        removed.append(record)
+    return removed
 
 
 def run(args):
@@ -305,6 +323,7 @@ def run(args):
     new_results = json.loads(new_results_path.read_text(encoding="utf-8"))
     if _sha(ply) != model_sha:
         raise RuntimeError("Original frozen model PLY changed during the pilot")
+    removed_intermediates = _remove_pilot_intermediates(out)
     meta = dict(status="complete", scan=args.scan, expected_instance_id=args.expected_instance_id,
         actual_hostname=os.uname().nodename, git=repo,
         model_path=str(model_path.resolve()), model_sha256=model_sha,
@@ -327,8 +346,10 @@ def run(args):
         native=dict(results_path=str(new_results_path.resolve()), results=new_results,
             mesh_path=str(new_mesh.resolve()), mesh_sha256=_sha(new_mesh)),
         mesh_comparison=mesh_comparison, expected_statistics_reference=expected_reference,
-        evaluation_protocol="Original evaluate_dtu_mesh.evaluate_mesh Calibration camera-center alignment and unchanged dtu_eval/eval.py scoring defaults; subprocess timeout 1200s; temporary multiprocessing.Pool wrapper limits default worker count to 8; default_rng remains unseeded.",
-        writes="All generated mesh, aligned mesh, evaluator vis and results are under this independent output directory.")
+        evaluation_protocol="Original evaluate_dtu_mesh.evaluate_mesh Calibration camera-center alignment and unchanged dtu_eval/eval.py scoring defaults; subprocess timeout 1200s; temporary multiprocessing.Pool wrapper limits default worker count to 8; default_rng remains unseeded; evaluator visualization point-cloud writes are disabled (write_point_cloud returns True).",
+        evaluator_visualization_point_cloud_writes=False,
+        removed_pilot_intermediates=removed_intermediates,
+        writes="recon_post.ply and scores are retained; evaluator point-cloud visualizations are not written; after successful comparison and scoring, this scan's recon.ply and recon_aligned.ply are recorded by SHA256/size and removed.")
     (out / "native_median_metadata.json").write_text(json.dumps(meta, indent=2, ensure_ascii=False), encoding="utf-8")
     return meta
 
