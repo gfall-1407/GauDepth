@@ -92,7 +92,7 @@ def _metadata_and_views(input_root: Path, retrieval: dict):
         expected_cameras = 49 if scan in (24, 37, 40, 55, 63, 65, 69) else 64
         assert len(names) == expected_cameras and len(set(names)) == expected_cameras
         assert [v["name"] for v in meta["views"]] == names
-        assert len(meta["views"]) == 49
+        assert len(meta["views"]) == expected_cameras
         for key in ("model_sha256", "cfg_sha256", "cameras_npz_sha256", "gt_sha256", "obs_sha256",
                     "host_binary_sha256", "reader_binary_sha256", "reader_source_sha256"):
             value = meta[key]
