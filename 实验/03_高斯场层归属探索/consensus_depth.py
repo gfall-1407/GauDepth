@@ -966,8 +966,8 @@ def _gate_one(name, expected, mode, second, ratio, rel, status, expected_nn, mod
         depth, nn, decision = float("nan"), float("nan"), "unknown"
     else:
         depth, nn, decision = expected, expected_nn, "expected"
-    switched = bool(np.isfinite(depth) != np.isfinite(expected) or
-        (np.isfinite(depth) and np.isfinite(expected) and abs(depth - expected) > TIE_MM))
+    switched = bool(use_mode and np.isfinite(depth) and
+        (not np.isfinite(expected) or abs(depth - expected) > TIE_MM))
     return dict(depth=depth, nn=nn, decision=decision, switched=int(switched),
         mode_branch=int(use_mode), unknown=int(not np.isfinite(depth)))
 
@@ -981,6 +981,8 @@ def _summarize_gate(rows, scope, scan, view):
         switched = np.asarray([r[f"{method}_switched"] == 1 for r in rows])
         mode_branch = np.asarray([r[f"{method}_mode_branch"] == 1 for r in rows])
         depth_finite = np.asarray([np.isfinite(_number(r, f"{method}_depth_mm")) for r in rows])
+        became_unknown = np.asarray([r[f"{method}_decision"] == "unknown" and
+            np.isfinite(_number(r, "expected_depth_mm")) for r in rows])
         pair = np.isfinite(baseline) & np.isfinite(candidate)
         delta = candidate[pair] - baseline[pair]
         switch_pair = pair & switched
@@ -990,6 +992,7 @@ def _summarize_gate(rows, scope, scan, view):
         out = dict(scope=scope, scan=scan, view=view, method=method, rule=label,
             denominator_rays=n, finite_n=int(depth_finite.sum()), unknown_n=int((~depth_finite).sum()),
             mode_branch_n=int(mode_branch.sum()), actual_switch_n=int(switched.sum()),
+            expected_to_unknown_n=int(became_unknown.sum()),
             mode_converged_n=sum(x == "converged" for x in status),
             mode_partial_n=sum(x == "partial" for x in status), mode_unknown_n=sum(x == "unknown" for x in status),
             R_finite_n=int(np.isfinite(ratios).sum()), R_unknown_n=int((~np.isfinite(ratios)).sum()),
@@ -1071,7 +1074,7 @@ def audit_support_gates(args):
         ray_count=len(ray_rows), weak_count=sum(r["weak_R_lt_0p5"] for r in ray_rows),
         R_finite_count=sum(r["R_finite"] for r in ray_rows), R_unknown_count=sum(not r["R_finite"] for r in ray_rows),
         fixed_rules=GATE_METHODS, tie_tolerance_mm=TIE_MM,
-        paired_delta_definition="candidate NN minus expected NN on identical finite-NN rows; negative is lower candidate NN. Switched-subset risk uses only rows where candidate differs from expected by more than the existing 1e-4 mm tie tolerance (or finite/unknown changes).",
+        paired_delta_definition="candidate NN minus expected NN on identical finite-NN rows; negative is lower candidate NN. Actual switch means a finite mode output differs from expected by more than the existing 1e-4 mm tie tolerance (or expected is nonfinite); expected-to-unknown transitions are counted separately and are not mode switches.",
         interpretation="Exploratory gates evaluated on the same four-scan sample used to inspect these mechanisms; not independent validation or a general improvement claim. A_all_mode1 includes partial bounded-search results and is a coarse-search comparison, not evidence about an intrinsic mode. A_converged_only leaves partial/unknown results unknown. R>1 counts are descriptive and do not establish a reliable support gate. Unknown R is not treated as R>=0.5.",
         elapsed_seconds=time.time()-started, output=str(out.resolve()))
     (out / "run_metadata.json").write_text(json.dumps(metadata, indent=2, ensure_ascii=False), encoding="utf-8")
