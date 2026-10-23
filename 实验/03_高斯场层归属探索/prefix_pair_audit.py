@@ -296,7 +296,7 @@ def run_transition_audit(input_root: Path, output_root: Path) -> None:
             "obs_sha256": meta["obs_sha256"]})
     assert total_views == 855 and total_mask == retrieval["mask_pixels"] == 152505785
     summary_rows = []
-    for method, _ in methods:
+    for _, method in methods:
         for near_mm, far_mm in thresholds:
             pool = pooled[(method, near_mm, far_mm)]
             for aggregation in ("scan", "pixel_pool", "scan_equal"):
