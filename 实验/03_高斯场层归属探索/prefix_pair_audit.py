@@ -34,11 +34,11 @@ def sha256(path: Path) -> str:
 
 def _self_check() -> None:
     # Stored camera-z maps are scene units; the metadata scale converts them to DTU mm.
-    scene_depth = np.array([1.25, 1.2505], dtype=np.float32)
-    scale_to_mm = 1000.0
+    scene_depth = np.array([1.25, 1.2509765625], dtype=np.float32)
+    scale_to_mm = 1024.0
     depth_mm = scene_depth.astype(np.float64) * scale_to_mm
-    assert np.allclose(depth_mm, [1250.0, 1250.5], rtol=0, atol=1e-10)
-    assert math.isclose(float(depth_mm[1] - depth_mm[0]), 0.5, rel_tol=0, abs_tol=1e-10)
+    assert np.array_equal(depth_mm, [1280.0, 1281.0])
+    assert math.isclose(float(depth_mm[1] - depth_mm[0]), 1.0, rel_tol=0, abs_tol=1e-12)
     # Signed axial shifts: negative is nearer, positive is farther.
     shift = np.array([-5.0, -0.1, -0.00005, 0.0, 0.00005, 0.1, 5.0])
     direction = np.where(shift < 0, "near", np.where(shift > 0, "far", "zero"))
