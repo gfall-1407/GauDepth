@@ -205,12 +205,16 @@ def run_transition_audit(input_root: Path, output_root: Path) -> None:
                     pair = base_valid & candidate_valid
                     pair_n = int(pair.sum())
                     delta_z = depth[:, col] - depth[:, 0]
+                    delta_nn = error[:, col] - error[:, 0]
                     for near_mm, far_mm in thresholds:
                         key = (scan, method, near_mm, far_mm)
                         state = scan_state.setdefault(key, {"mask": 0, "pair": 0, "invalid": 0,
                             "base_nn_finite": 0, "candidate_nn_finite": 0,
                             "base_depth_finite": 0, "candidate_depth_finite": 0,
-                            "counts": {category: 0 for category in categories}, "n2f_shift": [],
+                            "counts": {category: 0 for category in categories},
+                            "delta_stats": {category: {"sum": 0.0, "positive": 0.0, "negative": 0.0,
+                                "improved": 0, "worsened": 0, "tied": 0} for category in categories},
+                            "delta_sum_all": 0.0, "n2f_shift": [],
                             "n2f_dir": {"near": 0, "far": 0, "zero": 0}})
                         state["mask"] += len(index)
                         state["pair"] += pair_n
@@ -238,8 +242,20 @@ def run_transition_audit(input_root: Path, output_root: Path) -> None:
                             pool = pooled.setdefault(pool_key, {"mask": 0, "pair": 0, "invalid": 0,
                                 "base_nn_finite": 0, "candidate_nn_finite": 0,
                                 "base_depth_finite": 0, "candidate_depth_finite": 0,
-                                "counts": {c: 0 for c in categories}, "n2f_dir": {"near": 0, "far": 0, "zero": 0}})
+                                "counts": {c: 0 for c in categories},
+                                "delta_stats": {c: {"sum": 0.0, "positive": 0.0, "negative": 0.0,
+                                    "improved": 0, "worsened": 0, "tied": 0} for c in categories},
+                                "delta_sum_all": 0.0, "n2f_dir": {"near": 0, "far": 0, "zero": 0}})
                             pool["counts"][category] += n
+                            d = delta_nn[selected]
+                            for target in (state, pool):
+                                stats = target["delta_stats"][category]
+                                stats["sum"] += float(d.sum(dtype=np.float64))
+                                stats["positive"] += float(np.maximum(d, 0.0).sum(dtype=np.float64))
+                                stats["negative"] += float(np.minimum(d, 0.0).sum(dtype=np.float64))
+                                stats["improved"] += int((d < -EPS_MM).sum())
+                                stats["worsened"] += int((d > EPS_MM).sum())
+                                stats["tied"] += int((np.abs(d) <= EPS_MM).sum())
                             if n and len(examples[(method, near_mm, far_mm, category)]) < 3:
                                 remaining = 3 - len(examples[(method, near_mm, far_mm, category)])
                                 positions = np.flatnonzero(selected)[:remaining]
@@ -280,8 +296,22 @@ def run_transition_audit(input_root: Path, output_root: Path) -> None:
                         pool = pooled.setdefault(pool_key, {"mask": 0, "pair": 0, "invalid": 0,
                             "base_nn_finite": 0, "candidate_nn_finite": 0,
                             "base_depth_finite": 0, "candidate_depth_finite": 0,
-                            "counts": {c: 0 for c in categories}, "n2f_dir": {"near": 0, "far": 0, "zero": 0}})
+                            "counts": {c: 0 for c in categories},
+                            "delta_stats": {c: {"sum": 0.0, "positive": 0.0, "negative": 0.0,
+                                "improved": 0, "worsened": 0, "tied": 0} for c in categories},
+                            "delta_sum_all": 0.0, "n2f_dir": {"near": 0, "far": 0, "zero": 0}})
                         pool["counts"]["other"] += other_n
+                        d = delta_nn[masks["other"]]
+                        for target in (state, pool):
+                            stats = target["delta_stats"]["other"]
+                            stats["sum"] += float(d.sum(dtype=np.float64))
+                            stats["positive"] += float(np.maximum(d, 0.0).sum(dtype=np.float64))
+                            stats["negative"] += float(np.minimum(d, 0.0).sum(dtype=np.float64))
+                            stats["improved"] += int((d < -EPS_MM).sum())
+                            stats["worsened"] += int((d > EPS_MM).sum())
+                            stats["tied"] += int((np.abs(d) <= EPS_MM).sum())
+                        state["delta_sum_all"] += float(delta_nn[pair].sum(dtype=np.float64))
+                        pool["delta_sum_all"] += float(delta_nn[pair].sum(dtype=np.float64))
                         n2f = masks["near_to_far"]
                         shifts = delta_z[n2f]
                         if shifts.size:
@@ -311,6 +341,12 @@ def run_transition_audit(input_root: Path, output_root: Path) -> None:
             "cameras_npz_sha256": meta["cameras_npz_sha256"], "gt_sha256": meta["gt_sha256"],
             "obs_sha256": meta["obs_sha256"]})
     assert total_views == 855 and total_mask == retrieval["mask_pixels"] == 152505785
+    for state in list(scan_states.values()) + list(pooled.values()):
+        category_sum = sum(state["delta_stats"][c]["sum"] for c in categories)
+        assert math.isclose(category_sum, state["delta_sum_all"], rel_tol=1e-11, abs_tol=1e-5)
+        for category in categories:
+            values = state["delta_stats"][category]
+            assert math.isclose(values["positive"] + values["negative"], values["sum"], rel_tol=1e-11, abs_tol=1e-6)
     summary_rows = []
     for _, method in methods:
         for near_mm, far_mm in thresholds:
@@ -343,6 +379,8 @@ def run_transition_audit(input_root: Path, output_root: Path) -> None:
                         "base_depth_finite": sum(int(r["n_base_depth_finite"]) for r in scan_rows),
                         "candidate_depth_finite": sum(int(r["n_candidate_depth_finite"]) for r in scan_rows),
                         "counts": {c: None for c in categories},
+                        "delta_stats": {c: {"sum": None, "positive": None, "negative": None,
+                            "improved": None, "worsened": None, "tied": None} for c in categories},
                         "n2f_dir": {d: None for d in ("near", "far", "zero")}}
                     for c in categories:
                         vals = [float(r[f"fraction_{c}"]) for r in pair_scans]
@@ -355,6 +393,10 @@ def run_transition_audit(input_root: Path, output_root: Path) -> None:
                     for field in ("mean_near_to_far_abs_shift_mm", "median_near_to_far_abs_shift_mm"):
                         vals = [float(r[field]) for r in pair_scans if r[field] is not None]
                         state.setdefault("value_overrides", {})[field] = float(np.mean(vals)) if vals else None
+                    for category in categories:
+                        vals = [float(r[f"mean_delta_nn_mm_{category}"]) for r in pair_scans
+                                if r[f"mean_delta_nn_mm_{category}"] is not None]
+                        state.setdefault("delta_mean_overrides", {})[category] = float(np.mean(vals)) if vals else None
                 summary_rows.append(_transition_row(aggregation, "ALL" if aggregation=="pixel_pool" else "MEAN_OF_SCAN_MEANS",
                     method, near_mm, far_mm, state, shifts, categories))
 
@@ -376,6 +418,7 @@ def run_transition_audit(input_root: Path, output_root: Path) -> None:
         "example_selection": "first three matching flattened pixel indices in scan/view traversal order; selected after aggregate rule fixed; quality mass fraction is not present in accuracy_v1 maps",
         "methods": [name for _, name in methods], "source_provenance": source_rows,
         "aggregate_rule": "pixel_pool sums counts once across all scans; scan_equal averages per-scan proportions and per-scan near-to-far shift summaries",
+        "category_delta_rule": "For each mutually exclusive class, sum/mean(candidate scan-point NN minus baseline NN) in mm; positive and negative parts sum to net delta. scan_equal reports mean of non-empty per-scan class means; additive sums/counts are blank there.",
         "elapsed_seconds": time.monotonic()-started, "outputs": ["prefix_transition_summary.csv", "prefix_transition_examples.csv"]}
     (output_root / "prefix_transition_audit.json").write_text(json.dumps(audit,ensure_ascii=False,indent=2)+"\n",encoding="utf-8")
 
@@ -394,8 +437,17 @@ def _transition_row(aggregation, scan, method, near_mm, far_mm, state, shifts, c
     overrides=state.get("fraction_overrides",{})
     for category in categories:
         count=state["counts"][category]
+        delta=state["delta_stats"][category]
         row[f"n_{category}"]=count
         row[f"fraction_{category}"]=overrides.get(category, count/pair_n if pair_n and count is not None else None)
+        row[f"sum_delta_nn_mm_{category}"]=delta["sum"]
+        row[f"mean_delta_nn_mm_{category}"]=state.get("delta_mean_overrides",{}).get(category,
+            delta["sum"]/count if count and delta["sum"] is not None else None)
+        row[f"positive_delta_sum_mm_{category}"]=delta["positive"]
+        row[f"negative_delta_sum_mm_{category}"]=delta["negative"]
+        row[f"improved_{category}"]=delta["improved"]
+        row[f"worsened_{category}"]=delta["worsened"]
+        row[f"tied_{category}"]=delta["tied"]
     for direction in ("near","far","zero"):
         count=state["n2f_dir"][direction]
         row[f"near_to_far_shift_direction_{direction}_fraction"]=(
