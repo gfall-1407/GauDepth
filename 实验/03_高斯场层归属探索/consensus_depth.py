@@ -918,8 +918,8 @@ def audit_peak_composition(args):
         raise ValueError(f"Expected all 3072 rays, got {len(ray_rows)}")
     if sum(r["weak_R_lt_0p5"] for r in ray_rows) != 83:
         raise ValueError("Expected the validated 83 weak-support rays in v2; source changed or audit mismatch")
-    if len(candidate_rows) != int(geometry_meta.get("geometry_candidate_count", -1)):
-        raise ValueError("Copied geometry-candidate count does not match the validated geometry metadata")
+    if len(candidate_rows) != 7:
+        raise ValueError(f"Expected all seven fixed geometry candidates, got {len(candidate_rows)}")
     _write_csv(out / "rays.csv", ray_rows)
     _write_csv(out / "weak_scan_summary.csv", weak_summary)
     _write_csv(out / "geometry_candidates.csv", candidate_rows or [dict(note="no fixed-threshold geometry candidates")])
