@@ -1,0 +1,417 @@
+"""Conservative local scan-plane references for saved G1 rays; not pixel GT."""
+import argparse
+import collections
+import csv
+import hashlib
+import json
+from pathlib import Path
+import subprocess
+import time
+
+import numpy as np
+from scipy.io import loadmat
+from scipy.spatial import cKDTree, ConvexHull, QhullError
+from plyfile import PlyData
+
+SCANS = (24, 65, 105, 110)
+PROTOCOL = dict(radius_px=.75, nearest_px=.25, front_gap_mm=2., min_points=6,
+                max_rms_mm=.1, max_planarity=.05, min_incidence=.2,
+                max_extrapolation_mm=.25)
+REFERENCE_RADII_PX = (.75, 1.5, 3.)
+METHODS = ('expected', 'native_median', 'weighted_median', 'top10', 'top50',
+           'cover90', 'huber_1mm', 'kernel_mode_0p5mm', 'kernel_mode_1mm', 'kernel_mode_2mm')
+
+
+def stable_reference(refs, labels=('075', '15', '30')):
+    """Coverage repair uses GT only, with fixed cross-footprint agreement."""
+    a, b = refs[1:]
+    if a['status'] == b['status'] == 'accepted':
+        gap = abs(a['reference_mm'] - b['reference_mm'])
+        if gap <= .1:
+            result = dict(a)
+        else:
+            result = dict(a, status='cross_scale_disagreement', reference_mm=None)
+    else:
+        gap = None
+        result = dict(a, status='missing_multiscale_reference', reference_mm=None)
+    result['cross_scale_gap_mm'] = gap
+    for label, ref in zip(labels, refs):
+        result[f'status_radius_{label}'] = ref['status']
+        result[f'reference_radius_{label}_mm'] = ref['reference_mm']
+    return result
+
+
+def spatial_reference(cam_mm, uv, pixel, focal, center, neighbors, tree):
+    """A front scan anchor and local 3D neighborhoods avoid merging back surfaces."""
+    neighbors = np.asarray(neighbors, dtype=int)
+    initial = local_reference(cam_mm[neighbors], uv[neighbors], pixel, focal, center)
+    close = neighbors[np.linalg.norm(uv[neighbors] - pixel, axis=1) <= .25]
+    if not len(close):
+        return dict(initial, status='no_front_anchor', reference_mm=None)
+    anchor = close[np.argmin(cam_mm[close, 2])]
+    distances, indices = tree.query(cam_mm[anchor], k=min(64, len(cam_mm)))
+    refs = [initial]
+    for radius in (1., 2.):
+        take = indices[np.asarray(distances) <= radius]
+        refs.append(local_reference(cam_mm[take], uv[take], pixel, focal, center))
+    result = stable_reference(refs, ('projected075', 'spatial1mm', 'spatial2mm'))
+    result['front_anchor_z_mm'] = float(cam_mm[anchor, 2])
+    return result
+
+
+def sha(path):
+    h = hashlib.sha256()
+    with Path(path).open('rb') as f:
+        for b in iter(lambda: f.read(1 << 20), b''):
+            h.update(b)
+    return h.hexdigest()
+
+
+def read_json(path):
+    return json.loads(Path(path).read_text(encoding='utf-8-sig'))
+
+
+def write_csv(path, rows):
+    keys = list(dict.fromkeys(k for r in rows for k in r))
+    with Path(path).open('w', encoding='utf-8-sig', newline='') as f:
+        w = csv.DictWriter(f, fieldnames=keys)
+        w.writeheader()
+        w.writerows(rows)
+
+
+def compare_estimates(args):
+    out = args.output.resolve()
+    if out.exists() and any(out.iterdir()):
+        raise ValueError('Comparison output must be independent and empty')
+    out.mkdir(parents=True, exist_ok=True)
+    def csv_rows(path):
+        with Path(path).open(encoding='utf-8-sig', newline='') as f:
+            return list(csv.DictReader(f))
+    def rk(r):
+        return (int(r['scan']), r['image_name'].zfill(4), int(r['ray_index']), int(r['pixel_x']), int(r['pixel_y']))
+    def ek(r):
+        return (int(r['scan']), r['view'].zfill(4), int(r['ray']), int(r['x']), int(r['y']))
+    references = csv_rows(args.references)
+    estimates = csv_rows(args.compare_estimates)
+    refmap = {rk(r): r for r in references}
+    predmap = {ek(r): r for r in estimates}
+    if len(refmap) != len(references) or len(predmap) != len(estimates) or set(refmap) != set(predmap):
+        raise ValueError('Duplicate or mismatched ray/pixel keys')
+    prediction_meta_path = args.compare_estimates.parent / 'run_metadata.json'
+    prediction_meta = read_json(prediction_meta_path)
+    if prediction_meta.get('valid') is False:
+        raise ValueError('Prediction batch was explicitly invalidated')
+    raw, source_records = {}, []
+    for path in sorted(args.ray_root.glob('scan*/metadata.json')):
+        m = read_json(path)
+        if m.get('hostname') != 'autodl-container-d6a7459179-693ab6ee' or not m.get('model_sha256'):
+            continue
+        scan = int(Path(m['model'].replace('\\', '/')).parts[-4].replace('scan', ''))
+        if scan not in SCANS:
+            continue
+        imeta_path = args.influence_root / f'scan{scan}/metadata.json'
+        imeta = read_json(imeta_path)
+        assert m['model_sha256'] == imeta['model_sha256']
+        scale = float(imeta['alignment']['scale_to_dtu_mm'])
+        assert sha(args.inputs / f'scan{scan}/point_cloud.ply') == m['model_sha256']
+        assert sha(args.inputs / f'scan{scan}/cfg_args') == m['cfg_sha256']
+        source = dict(path=str(path.resolve()), sha256=sha(path), model_sha256=m['model_sha256'],
+                      cfg_sha256=m['cfg_sha256'], influence_metadata_sha256=sha(imeta_path), views=[])
+        for view in m['views']:
+            p = path.parent / view['file']
+            assert sha(p) == view['npz_sha256']
+            with np.load(p) as a:
+                raw[(scan, view['image_name'])] = dict(z=a['depth'].astype(float) * scale,
+                    w=a['weight'].astype(float), offsets=a['offsets'].copy(),
+                    xy=a['pixel_xy'].copy(), native=a['host_target'][:, 1].astype(float) * scale)
+            source['views'].append(dict(name=view['image_name'], path=str(p.resolve()), sha256=sha(p)))
+        source_records.append(source)
+    cases = []
+    for key, ref in refmap.items():
+        if ref['status'] != 'accepted':
+            continue
+        scan, view, ri, x, y = key
+        r = raw[(scan, view)]
+        np.testing.assert_array_equal(r['xy'][ri], [x, y])
+        p = predmap[key]
+        np.testing.assert_allclose(float(p['native_median']), r['native'][ri], rtol=0, atol=1e-9)
+        first, last = r['offsets'][ri:ri + 2]
+        z, w = r['z'][first:last], r['w'][first:last]
+        depth = float(ref['reference_mm'])
+        base = float(p['expected'])
+        np.testing.assert_allclose(base, np.dot(z, w) / w.sum(), rtol=1e-10, atol=1e-8)
+        row = dict(scan=scan, view=view, ray=ri, x=x, y=y, reference_mm=depth,
+                   reference_rms_z_mm=float(ref['rms_z_mm']), cross_scale_gap_mm=ref.get('cross_scale_gap_mm', ''),
+                   support_at_reference_h1mm=float(np.dot(w, np.exp(-.5 * (z - depth) ** 2)) / w.sum()),
+                   mass_within_reference_1mm=float(w[np.abs(z - depth) <= 1.].sum() / w.sum()),
+                   support_expected_h1mm=float(p['support_expected_h1mm']),
+                   support_mode_h1mm=float(p['support_mode_h1mm']),
+                   support_ratio_R_h1mm=float(p['support_ratio_R_h1mm']))
+        for method in METHODS:
+            value = float(p[method])
+            row[method] = value
+            row[f'abs_z_reference_{method}_mm'] = abs(value - depth)
+            row[f'delta_z_reference_{method}_mm'] = abs(value - depth) - abs(base - depth)
+        cases.append(row)
+    summaries = []
+    group_keys = [('pooled', 'ALL', 'ALL')]
+    group_keys += [('scan', str(s), 'ALL') for s in SCANS]
+    group_keys += [('view', str(s), name) for s, name in sorted(raw)]
+    for scope, scan, view in group_keys:
+        group = [r for r in cases if (scan == 'ALL' or r['scan'] == int(scan)) and
+                 (view == 'ALL' or r['view'] == view)]
+        for method in METHODS:
+            paired = [r for r in group if np.isfinite(r[f'abs_z_reference_{method}_mm'])]
+            if not paired:
+                summaries.append(dict(scope=scope, scan=scan, view=view, method=method,
+                                      reference_n=len(group), paired_n=0, unknown=len(group)))
+                continue
+            error = np.array([r[f'abs_z_reference_{method}_mm'] for r in paired])
+            delta = np.array([r[f'delta_z_reference_{method}_mm'] for r in paired])
+            base_error = np.array([r['abs_z_reference_expected_mm'] for r in paired])
+            band = np.array([max(.1, 3 * r['reference_rms_z_mm']) for r in paired])
+            summaries.append(dict(scope=scope, scan=scan, view=view, method=method,
+                reference_n=len(group), paired_n=len(paired), unknown=len(group) - len(paired),
+                mean_abs_z_reference_mm=float(error.mean()), expected_mean_same_pairs_mm=float(base_error.mean()),
+                mean_delta_mm=float(delta.mean()), median_delta_mm=float(np.median(delta)),
+                improved_gt_0p1mm=int((delta < -.1).sum()), worsened_gt_0p1mm=int((delta > .1).sum()),
+                improved_beyond_plane_residual_band=int((delta < -band).sum()),
+                worsened_beyond_plane_residual_band=int((delta > band).sum())))
+    write_csv(out / 'reference_cases.csv', cases)
+    write_csv(out / 'reference_method_comparison.csv', summaries)
+    repo = Path(__file__).resolve().parents[2]
+    code = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=repo, text=True).strip()
+    if subprocess.check_output(['git', 'status', '--short'], cwd=repo, text=True).strip():
+        raise ValueError('Commit comparison source before a data run')
+    metadata = dict(commit=code, reference_rows=len(references), accepted_reference_rows=len(cases),
+        reference_csv=str(args.references.resolve()), reference_csv_sha256=sha(args.references),
+        reference_generation=read_json(args.references.parent / 'reference_metadata.json'),
+        estimates_csv=str(args.compare_estimates.resolve()), estimates_csv_sha256=sha(args.compare_estimates),
+        prediction_metadata_sha256=sha(prediction_meta_path), prediction_commit=prediction_meta['source']['commit'],
+        raw_sources=source_records, input_manifest_sha256=sha(args.inputs.parent / 'retrieval_v1/manifest.json'),
+        interpretation='Conditional axial-depth discrepancy to accepted local scan planes, not pixel GT MAE; very selective reference coverage and unresolved image principal-point/crop provenance. Counts beyond residual bands are descriptive, not statistical confidence.')
+    (out / 'comparison_metadata.json').write_text(json.dumps(metadata, indent=2), encoding='utf-8')
+    print(json.dumps(dict(reference_rows=len(references), accepted=len(cases), summary_rows=len(summaries))))
+
+
+def local_reference(points_mm, uv, pixel, focal, center):
+    """Uses only projected scan points. No prediction enters the acceptance gates."""
+    info = dict(status='sparse', points=len(points_mm), front_points=0,
+                reference_mm=None, rms_mm=None, rms_z_mm=None,
+                planarity=None, incidence=None, projected_components=0)
+    if len(points_mm) < PROTOCOL['min_points']:
+        return info
+    order = np.argsort(points_mm[:, 2], kind='stable')
+    points_mm, uv = points_mm[order], uv[order]
+    cuts = np.flatnonzero(np.diff(points_mm[:, 2]) > PROTOCOL['front_gap_mm']) + 1
+    info['projected_components'] = len(cuts) + 1
+    end = int(cuts[0]) if len(cuts) else len(points_mm)
+    points_mm, uv = points_mm[:end], uv[:end]
+    info['front_points'] = end
+    if end < PROTOCOL['min_points']:
+        info['status'] = 'front_sparse'
+        return info
+    if np.linalg.norm(uv - pixel, axis=1).min() > PROTOCOL['nearest_px']:
+        info['status'] = 'no_close_scan_projection'
+        return info
+    try:
+        hull = ConvexHull(uv)
+    except QhullError:
+        info['status'] = 'degenerate_projection'
+        return info
+    if np.any(hull.equations[:, :2] @ pixel + hull.equations[:, 2] > 1e-9):
+        info['status'] = 'pixel_outside_scan_hull'
+        return info
+    centroid = points_mm.mean(0)
+    delta = points_mm - centroid
+    eigenvalues, eigenvectors = np.linalg.eigh(delta.T @ delta / end)
+    normal = eigenvectors[:, 0]
+    rms = float(np.sqrt(max(eigenvalues[0], 0.)))
+    planarity = float(max(eigenvalues[0], 0.) / max(eigenvalues[1], 1e-30))
+    info.update(rms_mm=rms, planarity=planarity)
+    if eigenvalues[1] <= 1e-8 or rms > PROTOCOL['max_rms_mm'] or planarity > PROTOCOL['max_planarity']:
+        info['status'] = 'nonplanar_scan_patch'
+        return info
+    ray = np.r_[(pixel - center) / focal, 1.]
+    denominator = float(normal @ ray)
+    incidence = abs(denominator) / np.linalg.norm(ray)
+    info['incidence'] = float(incidence)
+    if incidence < PROTOCOL['min_incidence']:
+        info['status'] = 'grazing_scan_patch'
+        return info
+    depth = float((normal @ centroid) / denominator)
+    if not np.isfinite(depth) or depth <= 0:
+        info['status'] = 'nonpositive_reference'
+        return info
+    margin = PROTOCOL['max_extrapolation_mm']
+    if depth < points_mm[:, 2].min() - margin or depth > points_mm[:, 2].max() + margin:
+        info['status'] = 'depth_extrapolation'
+        return info
+    info.update(status='accepted', reference_mm=depth,
+                rms_z_mm=float(rms / abs(denominator)))
+    return info
+
+
+def self_check():
+    a = np.linspace(-.7, .7, 9)
+    uv = np.array([(x, y) for x in a for y in a])
+    q = np.c_[uv / 100., np.ones(len(uv))]
+    z = 100. / (1. - .1 * q[:, 0])
+    front = q * z[:, None]
+    r = local_reference(front, uv, np.zeros(2), np.array([100., 100.]), np.zeros(2))
+    assert r['status'] == 'accepted', r
+    np.testing.assert_allclose(r['reference_mm'], 100., atol=1e-9)
+    r = local_reference(np.r_[front, q * (z[:, None] + 100.)], np.r_[uv, uv],
+                        np.zeros(2), np.array([100., 100.]), np.zeros(2))
+    assert r['status'] == 'accepted' and r['projected_components'] == 2, r
+    np.testing.assert_allclose(r['reference_mm'], 100., atol=1e-9)
+    assert local_reference(front[:3], uv[:3], np.zeros(2), np.ones(2), np.zeros(2))['status'] == 'sparse'
+    outside = local_reference(front, uv, np.array([1., 0.]), np.array([100., 100.]), np.zeros(2))
+    assert outside['status'] != 'accepted'
+    good = dict(r, status='accepted', reference_mm=100.)
+    assert stable_reference([good, good, good])['status'] == 'accepted'
+    shifted = dict(good, reference_mm=100.2)
+    assert stable_reference([good, good, shifted])['reference_mm'] is None
+    double = np.r_[front, q * (z[:, None] + 100.)]
+    test_uv = np.r_[uv, uv]
+    rr = spatial_reference(double, test_uv, np.zeros(2), np.array([100., 100.]),
+                           np.zeros(2), np.arange(len(double)), cKDTree(double))
+    assert rr['status'] == 'accepted', rr
+    np.testing.assert_allclose(rr['reference_mm'], 100., atol=1e-9)
+    print('scan-plane, front occlusion, sparse and extrapolation checks passed')
+
+
+def run(args):
+    out = args.output.resolve()
+    if out.exists() and any(out.iterdir()):
+        raise ValueError('Independent output must be empty')
+    out.mkdir(parents=True, exist_ok=True)
+    repo = Path(__file__).resolve().parents[2]
+    commit = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=repo, text=True).strip()
+    if subprocess.check_output(['git', 'status', '--short'], cwd=repo, text=True).strip():
+        raise ValueError('Commit the source before a data run')
+    start = time.monotonic()
+    inputs, rows, views = [], [], []
+    sampled = {}
+    for path in sorted(args.ray_root.glob('scan*/metadata.json')):
+        m = read_json(path)
+        if m.get('hostname') != 'autodl-container-d6a7459179-693ab6ee' or not m.get('model_sha256'):
+            continue
+        scan = int(Path(m['model'].replace('\\', '/')).parts[-4].replace('scan', ''))
+        if scan not in SCANS:
+            continue
+        for view in m['views']:
+            key = (scan, view['image_name'])
+            if key in sampled:
+                raise ValueError(f'Duplicate saved view: {key}')
+            sampled[key] = (path, m, view)
+    if len(sampled) != 12:
+        raise ValueError(f'Expected 12 pre-existing saved views, got {len(sampled)}')
+    for scan in SCANS:
+        root = args.inputs / f'scan{scan}'
+        old = read_json(args.influence_root / f'scan{scan}/metadata.json')
+        gt_path = root / f'stl{scan:03d}_total.ply'
+        camera_path = root / 'cameras.npz'
+        plane_path = root / 'ObsMask' / f'Plane{scan}.mat'
+        assert sha(gt_path) == old['gt_sha256']
+        assert sha(camera_path) == old['cameras_npz_sha256']
+        with np.load(camera_path) as camera:
+            transform = camera['scale_mat_0'].astype(float)
+        scale = float(transform[0, 0])
+        np.testing.assert_allclose(transform[:3, :3], np.eye(3) * scale, atol=1e-6)
+        vertex = PlyData.read(gt_path)['vertex']
+        gt = np.column_stack([vertex[k] for k in ('x', 'y', 'z')]).astype(float)
+        plane = loadmat(plane_path)['P'].reshape(-1)
+        keep = np.isfinite(gt).all(1) & ((gt @ plane[:3] + plane[3]) > 0)
+        inputs.append(dict(scan=scan, gt_sha256=sha(gt_path), camera_sha256=sha(camera_path),
+                           plane_sha256=sha(plane_path), gt_total=len(gt), gt_above=int(keep.sum()),
+                           scale_to_mm=scale))
+        scene = (gt[keep] - transform[:3, 3]) / scale
+        del vertex, gt
+        for (s, name), (meta_path, meta, view) in sorted(sampled.items()):
+            if s != scan:
+                continue
+            assert meta['model_sha256'] == old['model_sha256']
+            data_path = meta_path.parent / view['file']
+            assert sha(data_path) == view['npz_sha256']
+            world_view = np.asarray(view['world_view_transform'], float).T
+            rot, trans = world_view[:3, :3], world_view[:3, 3]
+            np.testing.assert_allclose(rot @ rot.T, np.eye(3), atol=2e-6)
+            np.testing.assert_allclose(-rot.T @ trans, view['camera_center'], atol=2e-6)
+            h, w = view['image_size']
+            focal = np.asarray(view['focal'], float)
+            center = np.array([(w - 1) / 2., (h - 1) / 2.])
+            cam_mm = (scene @ rot.T + trans) * scale
+            positive = cam_mm[:, 2] > 0
+            cam_mm = cam_mm[positive]
+            uv = cam_mm[:, :2] / cam_mm[:, 2, None] * focal + center
+            inside = ((uv >= [-1., -1.]) & (uv <= [w, h])).all(1)
+            cam_mm, uv = cam_mm[inside], uv[inside]
+            tree = cKDTree(uv)
+            spatial_tree = cKDTree(cam_mm) if args.spatial3d else None
+            with np.load(data_path) as rays:
+                pixels = rays['pixel_xy'].astype(float)
+            radii = REFERENCE_RADII_PX if args.multiscale else (PROTOCOL['radius_px'],)
+            neighborhoods = [tree.query_ball_point(pixels, radius) for radius in radii]
+            statuses = collections.Counter()
+            for ri, pixel in enumerate(pixels):
+                refs = []
+                for neighborhood in neighborhoods:
+                    neighbors = np.asarray(neighborhood[ri], dtype=int)
+                    refs.append(local_reference(cam_mm[neighbors], uv[neighbors], pixel, focal, center))
+                if args.spatial3d:
+                    ref = spatial_reference(cam_mm, uv, pixel, focal, center,
+                                            neighborhoods[0][ri], spatial_tree)
+                else:
+                    ref = stable_reference(refs) if args.multiscale else refs[0]
+                statuses[ref['status']] += 1
+                rows.append(dict(scan=scan, image_name=name, ray_index=ri,
+                                 pixel_x=int(pixel[0]), pixel_y=int(pixel[1]), **ref))
+            views.append(dict(scan=scan, image_name=name, sampled_rays=len(pixels),
+                              accepted=statuses['accepted'], statuses=dict(statuses)))
+            print(json.dumps(views[-1]), flush=True)
+            del tree, spatial_tree, cam_mm, uv
+            if time.monotonic() - start > 600:
+                raise TimeoutError('Reference batch exceeded its 600-second bound')
+        del scene
+    write_csv(out / 'ray_reference.csv', rows)
+    write_csv(out / 'view_coverage.csv', [{k: v for k, v in x.items() if k != 'statuses'} for x in views])
+    report = dict(commit=commit, protocol=PROTOCOL, reference_radii_px=list(radii),
+                  multiscale=args.multiscale,
+                  spatial3d=args.spatial3d,
+                  spatial_reference_rule='Frontmost GT point projected within 0.25px anchors up to 64 nearest scan points within 1mm/2mm 3D radius; both planes must pass the unchanged gates and agree within 0.1mm. Added after projection-only reference coverage was low, without using prediction-error feedback.',
+                  stable_reference_rule='Both 1.5px and 3px references must independently pass identical plane gates and differ by <=0.1mm; use 1.5px depth. This coverage check was added after the 0.75px-only run had 30/3072 coverage, before inspecting prediction errors.',
+                  inputs=inputs, views=views,
+                  sampled_rays=len(rows), accepted=sum(x['status'] == 'accepted' for x in rows),
+                  interpretation='Local front scan-plane reference on a conservative coverage subset; not exact pixel GT, not whole-image coverage; thresholds fixed before predictions; above-plane GT only.')
+    (out / 'reference_metadata.json').write_text(json.dumps(report, indent=2), encoding='utf-8')
+
+
+def main():
+    p = argparse.ArgumentParser(description=__doc__)
+    p.add_argument('--self-check', action='store_true')
+    p.add_argument('--multiscale', action='store_true')
+    p.add_argument('--spatial3d', action='store_true')
+    p.add_argument('--compare-estimates', type=Path)
+    p.add_argument('--references', type=Path)
+    p.add_argument('--inputs', type=Path)
+    p.add_argument('--ray-root', type=Path)
+    p.add_argument('--influence-root', type=Path)
+    p.add_argument('--output', type=Path)
+    args = p.parse_args()
+    if args.multiscale and args.spatial3d:
+        p.error('Choose one reference-construction mode')
+    if args.self_check:
+        self_check()
+    elif args.compare_estimates:
+        if any(getattr(args, k) is None for k in ('inputs', 'ray_root', 'influence_root', 'output', 'references')):
+            p.error('Comparison requires input, source, references and output paths')
+        compare_estimates(args)
+    else:
+        if any(getattr(args, k) is None for k in ('inputs', 'ray_root', 'influence_root', 'output')):
+            p.error('Data runs require inputs, ray-root, influence-root and output')
+        run(args)
+
+
+if __name__ == '__main__':
+    main()
