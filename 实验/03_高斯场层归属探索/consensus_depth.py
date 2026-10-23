@@ -587,7 +587,7 @@ def _summarize_peak_rows(rows: list[dict], scan, view):
         status = [r[f"mode_status_h{tag}mm"] for r in rows]
         rvals = np.array([_number(r, "support_ratio_R_h1mm") for r in rows])
         candidates = np.array([r[f"two_position_scan_geometry_candidate_h{tag}mm"] == 1 for r in rows])
-        rel = np.array([_number(r, f"mode_relative_second_h{tag}mm") for r in rows])
+        rel = np.array([_number(r, f"second_relative_support_{tag}mm") for r in rows])
         rel_ge = np.array([r[f"second_relative_support_ge_0p25_h{tag}mm"] == 1 for r in rows])
         second_finite = np.array([r[f"second_finite_h{tag}mm"] == 1 for r in rows])
         sep = np.array([r[f"separated_2h_h{tag}mm"] == 1 for r in rows])
@@ -843,11 +843,12 @@ def self_check():
     for h in MODE_BANDWIDTHS_MM:
         tag = f"{h:g}"
         summary_row.update({f"mode_status_h{tag}mm":"partial", f"two_position_scan_geometry_candidate_h{tag}mm":0,
-            f"mode_relative_second_h{tag}mm":.3, f"second_relative_support_ge_0p25_h{tag}mm":1,
+            f"second_relative_support_{tag}mm":.3, f"second_relative_support_ge_0p25_h{tag}mm":1,
             f"second_finite_h{tag}mm":1, f"separated_2h_h{tag}mm":0, f"expected_between_h{tag}mm":0,
             f"nn_best_{tag}mm":1., f"nn_second_{tag}mm":2.})
     sample_summary = _summarize_peak_rows([summary_row], "synthetic", "one")
     assert len(sample_summary) == 3 and sample_summary[0]["R_gt_1_partial"] == 1
+    assert sample_summary[0]["relative_support_finite"] == 1
     print("CPU self-check passed: empty/single/one-peak/two-peak/scale/split/finite")
 
 
