@@ -940,6 +940,141 @@ def audit_peak_composition(args):
     return metadata
 
 
+GATE_METHODS = {
+    "A_all_mode1": "Always select the saved 1 mm best mode.",
+    "B_weak_converged": "Replace expected only when R<0.5 and the saved mode status is converged.",
+    "C_weak_converged_dominant": "B plus no saved second peak or relative second support<0.5.",
+    "D_unknown_without_gate": "Expected for R>=0.5; mode for C-qualified weak rays; unknown otherwise.",
+}
+
+
+def _gate_one(name, expected, mode, second, ratio, rel, status, expected_nn, mode_nn):
+    finite_ratio = np.isfinite(ratio)
+    weak = bool(finite_ratio and ratio < .5)
+    dominant = bool(not np.isfinite(second) or (np.isfinite(rel) and rel < .5))
+    can_use_mode = bool(weak and status == "converged" and dominant)
+    use_mode = name == "A_all_mode1" or (name in ("B_weak_converged", "C_weak_converged_dominant") and
+        weak and status == "converged" and (name == "B_weak_converged" or dominant)) or \
+        (name == "D_unknown_without_gate" and can_use_mode)
+    force_unknown = bool(name == "D_unknown_without_gate" and not (finite_ratio and ratio >= .5) and not can_use_mode)
+    if use_mode:
+        depth, nn, decision = mode, mode_nn, "mode"
+    elif force_unknown:
+        depth, nn, decision = float("nan"), float("nan"), "unknown"
+    else:
+        depth, nn, decision = expected, expected_nn, "expected"
+    switched = bool(np.isfinite(depth) != np.isfinite(expected) or
+        (np.isfinite(depth) and np.isfinite(expected) and abs(depth - expected) > TIE_MM))
+    return dict(depth=depth, nn=nn, decision=decision, switched=int(switched),
+        mode_branch=int(use_mode), unknown=int(not np.isfinite(depth)))
+
+
+def _summarize_gate(rows, scope, scan, view):
+    result = []
+    for method, label in GATE_METHODS.items():
+        n = len(rows)
+        baseline = np.asarray([_number(r, "expected_nn_mm") for r in rows], dtype=np.float64)
+        candidate = np.asarray([_number(r, f"{method}_nn_mm") for r in rows], dtype=np.float64)
+        switched = np.asarray([r[f"{method}_switched"] == 1 for r in rows])
+        mode_branch = np.asarray([r[f"{method}_mode_branch"] == 1 for r in rows])
+        depth_finite = np.asarray([np.isfinite(_number(r, f"{method}_depth_mm")) for r in rows])
+        pair = np.isfinite(baseline) & np.isfinite(candidate)
+        delta = candidate[pair] - baseline[pair]
+        switch_pair = pair & switched
+        delta_sw = candidate[switch_pair] - baseline[switch_pair]
+        status = [r["mode_status_h1mm"] for r in rows]
+        ratios = np.asarray([_number(r, "support_ratio_R_h1mm") for r in rows])
+        out = dict(scope=scope, scan=scan, view=view, method=method, rule=label,
+            denominator_rays=n, finite_n=int(depth_finite.sum()), unknown_n=int((~depth_finite).sum()),
+            mode_branch_n=int(mode_branch.sum()), actual_switch_n=int(switched.sum()),
+            mode_converged_n=sum(x == "converged" for x in status),
+            mode_partial_n=sum(x == "partial" for x in status), mode_unknown_n=sum(x == "unknown" for x in status),
+            R_finite_n=int(np.isfinite(ratios).sum()), R_unknown_n=int((~np.isfinite(ratios)).sum()),
+            R_gt_1_n=int(np.sum(np.isfinite(ratios) & (ratios > 1))), paired_n=int(pair.sum()),
+            expected_nn_mean_paired_mm=float(baseline[pair].mean()) if pair.any() else None,
+            candidate_nn_mean_paired_mm=float(candidate[pair].mean()) if pair.any() else None,
+            delta_candidate_minus_expected_mean_mm=float(delta.mean()) if len(delta) else None,
+            delta_candidate_minus_expected_median_mm=float(np.median(delta)) if len(delta) else None,
+            improved=int(np.sum(delta < -TIE_MM)), worsened=int(np.sum(delta > TIE_MM)),
+            tied=int(np.sum(np.abs(delta) <= TIE_MM)),
+            switched_paired_n=int(switch_pair.sum()),
+            switched_expected_nn_mean_mm=float(baseline[switch_pair].mean()) if switch_pair.any() else None,
+            switched_candidate_nn_mean_mm=float(candidate[switch_pair].mean()) if switch_pair.any() else None,
+            switched_delta_mean_mm=float(delta_sw.mean()) if len(delta_sw) else None,
+            switched_delta_median_mm=float(np.median(delta_sw)) if len(delta_sw) else None,
+            switched_improved=int(np.sum(delta_sw < -TIE_MM)), switched_worsened=int(np.sum(delta_sw > TIE_MM)),
+            switched_tied=int(np.sum(np.abs(delta_sw) <= TIE_MM)))
+        result.append(out)
+    return result
+
+
+def audit_support_gates(args):
+    csv_path, out = Path(args.rays_csv), Path(args.output)
+    started = time.time()
+    if not out.is_absolute():
+        raise ValueError("--output must be an absolute independent directory")
+    if out.exists() and any(out.iterdir()):
+        raise FileExistsError(f"Refusing nonempty support-gate output: {out}")
+    meta_path = csv_path.parent / "run_metadata.json"
+    source_meta = json.loads(meta_path.read_text(encoding="utf-8"))
+    if source_meta.get("status") != "complete" or source_meta.get("ray_count") != 3072 or \
+            source_meta.get("source", {}).get("commit") != "7aba27a72929dd47ddf20dd7a91e9f6116062745":
+        raise ValueError("Expected the validated ray_support_v2 output and source commit")
+    with csv_path.open("r", newline="", encoding="utf-8-sig") as f:
+        source_rows = list(csv.DictReader(f))
+    if len(source_rows) != 3072 or len({(r["scan"], r["view"], r["ray"]) for r in source_rows}) != 3072:
+        raise ValueError("Expected all 3072 unique ray_support_v2 rows")
+    ray_rows = []
+    for base in source_rows:
+        expected = _number(base, "expected")
+        mode = _number(base, "kernel_mode_1mm")
+        second = _number(base, "mode_second_h1mm")
+        ratio = _number(base, "support_ratio_R_h1mm")
+        rel = _number(base, "mode_relative_second_h1mm")
+        expected_nn = _number(base, "nn_expected_mm")
+        mode_nn = _number(base, "nn_kernel_mode_1mm_mm")
+        row = dict(scan=int(base["scan"]), view=base["view"], ray=int(base["ray"]),
+            ray_status=base["ray_status"], mode_status_h1mm=base["mode_status_h1mm"],
+            expected_depth_mm=expected, mode_depth_mm=mode, second_depth_mm=second,
+            expected_nn_mm=expected_nn, support_ratio_R_h1mm=ratio,
+            relative_second_support=rel, weak_R_lt_0p5=int(np.isfinite(ratio) and ratio < .5),
+            R_finite=int(np.isfinite(ratio)), R_gt_1=int(np.isfinite(ratio) and ratio > 1))
+        for method in GATE_METHODS:
+            result = _gate_one(method, expected, mode, second, ratio, rel,
+                base["mode_status_h1mm"], expected_nn, mode_nn)
+            row[f"{method}_depth_mm"] = result["depth"]
+            row[f"{method}_nn_mm"] = result["nn"]
+            row[f"{method}_decision"] = result["decision"]
+            row[f"{method}_mode_branch"] = result["mode_branch"]
+            row[f"{method}_switched"] = result["switched"]
+        ray_rows.append(row)
+    if sum(r["weak_R_lt_0p5"] for r in ray_rows) != 83:
+        raise ValueError("Expected the validated 83 weak R<0.5 rays")
+    if sum(not r["R_finite"] for r in ray_rows) != 1:
+        raise ValueError("Expected the validated single unknown-R ray; it must remain distinct from R>=0.5")
+    summary = []
+    summary.extend(_summarize_gate(ray_rows, "pooled", "pooled", "all_3072_sampled_rays"))
+    for scan in SCANS:
+        subset = [r for r in ray_rows if r["scan"] == scan]
+        summary.extend(_summarize_gate(subset, "scan", scan, "scan_pooled_sample"))
+        views = sorted({r["view"] for r in subset})
+        for view in views:
+            summary.extend(_summarize_gate([r for r in subset if r["view"] == view], "view", scan, view))
+    out.mkdir(parents=True, exist_ok=True)
+    _write_csv(out / "rays.csv", ray_rows)
+    _write_csv(out / "summary.csv", summary)
+    metadata = dict(status="complete", source=_source_provenance(), source_rays_csv=str(csv_path.resolve()),
+        source_rays_sha256=sha256(csv_path), source_run_metadata_sha256=sha256(meta_path),
+        ray_count=len(ray_rows), weak_count=sum(r["weak_R_lt_0p5"] for r in ray_rows),
+        R_finite_count=sum(r["R_finite"] for r in ray_rows), R_unknown_count=sum(not r["R_finite"] for r in ray_rows),
+        fixed_rules=GATE_METHODS, tie_tolerance_mm=TIE_MM,
+        paired_delta_definition="candidate NN minus expected NN on identical finite-NN rows; negative is lower candidate NN. Switched-subset risk uses only rows where candidate differs from expected by more than the existing 1e-4 mm tie tolerance (or finite/unknown changes).",
+        interpretation="Exploratory gates evaluated on the same four-scan sample used to inspect these mechanisms; not independent validation or a general improvement claim. R>1 counts are descriptive and do not establish a reliable support gate. Unknown R is not treated as R>=0.5.",
+        elapsed_seconds=time.time()-started, output=str(out.resolve()))
+    (out / "run_metadata.json").write_text(json.dumps(metadata, indent=2, ensure_ascii=False), encoding="utf-8")
+    return metadata
+
+
 def run(args):
     ray_root, input_root, influence_root, accuracy_root, out = map(Path,
         (args.ray_root, args.input_root, args.influence_root, args.accuracy_root, args.output))
@@ -1056,6 +1191,14 @@ def self_check():
     assert abs(comp["support_top10_s"] + comp["support_rest_s"] - comp["support_s"]) < 1e-14
     unknown, unknown_mask = _peak_composition(np.array([0., np.nan]), np.array([.5, .5]), 0., np.array([True, False]))
     assert unknown_mask is None and np.isnan(unknown["window_q"])
+    g = _gate_one("A_all_mode1", 5., 2., 3.5, .3, .6, "converged", 4., 1.)
+    assert g["decision"] == "mode" and g["switched"] == 1
+    assert _gate_one("B_weak_converged", 5., 2., 3.5, .3, .6, "converged", 4., 1.)["decision"] == "mode"
+    assert _gate_one("C_weak_converged_dominant", 5., 2., 3.5, .3, .6, "converged", 4., 1.)["decision"] == "expected"
+    assert _gate_one("D_unknown_without_gate", 5., 2., 3.5, .3, .6, "converged", 4., 1.)["decision"] == "unknown"
+    assert _gate_one("C_weak_converged_dominant", 5., 2., np.nan, .3, np.nan, "converged", 4., 1.)["decision"] == "mode"
+    assert _gate_one("B_weak_converged", 5., 2., np.nan, .3, np.nan, "partial", 4., 1.)["decision"] == "expected"
+    assert _gate_one("D_unknown_without_gate", 5., 2., np.nan, np.nan, np.nan, "converged", 4., 1.)["decision"] == "unknown"
     print("CPU self-check passed: empty/single/one-peak/two-peak/scale/split/finite")
 
 
@@ -1072,6 +1215,8 @@ def main():
     parser.add_argument("--geometry-csv", type=Path, help="Saved peak_geometry_v1_retry2/rays.csv")
     parser.add_argument("--audit-peak-composition", action="store_true",
                         help="Summarize raw accepted-ray mass and support contributions at saved 1mm peaks")
+    parser.add_argument("--audit-support-gates", action="store_true",
+                        help="Compare four fixed expected/mode gates using only saved v2 values")
     parser.add_argument("--output", type=Path)
     args = parser.parse_args()
     if args.check:
@@ -1092,6 +1237,14 @@ def main():
         print(json.dumps(dict(status=result["status"], ray_count=result["ray_count"],
                               weak_R_lt_0p5_count=result["weak_R_lt_0p5_count"],
                               geometry_candidate_count=result["geometry_candidate_count"],
+                              elapsed_seconds=result["elapsed_seconds"], output=result["output"]), indent=2))
+        return
+    if args.audit_support_gates:
+        if not all((args.rays_csv, args.output)):
+            parser.error("support-gate audit requires --rays-csv --output")
+        result = audit_support_gates(args)
+        print(json.dumps(dict(status=result["status"], ray_count=result["ray_count"],
+                              weak_count=result["weak_count"], R_unknown_count=result["R_unknown_count"],
                               elapsed_seconds=result["elapsed_seconds"], output=result["output"]), indent=2))
         return
     if not all((args.ray_root, args.input_root, args.influence_root, args.accuracy_root, args.output)):
