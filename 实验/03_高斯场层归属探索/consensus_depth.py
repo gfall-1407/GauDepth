@@ -425,6 +425,9 @@ def _process_view(scan: int, old_meta: dict, vm: dict, ray_file: Path, scan_data
             raise ValueError(f"Invalid accepted weights at scan{scan}/{name} ray {ray}")
         z_mm = z * scan_data["scale"]
         vals, detail = _ray_estimates(z_mm, w, targets[ray] * scan_data["scale"])
+        np.testing.assert_allclose(vals["native_median"] / scan_data["scale"], targets[ray, 1],
+            rtol=0, atol=1e-12, equal_nan=True,
+            err_msg=f"Native median unit roundtrip mismatch: scan{scan}/{name} ray{ray}")
         expected_replay.append((vals["expected"] / scan_data["scale"] if np.isfinite(vals["expected"]) else np.nan,
                                 targets[ray, 0]))
         for method in METHODS:
@@ -600,6 +603,7 @@ def run(args):
         output=str(out.resolve()), elapsed_seconds=time.time()-started,
         dependence_note="Rays are paired within view; 3072 rays are not independent physical samples. Summaries are descriptive by view and scan; no pixel-level significance claims.")
     metadata["native_median_units"] = "Original saved host_target median in camera-z scene units, multiplied by the same verified scale_to_dtu_mm before comparison."
+    metadata["depth_units"] = "All predicted depth, depth shift, weighted SD and support-mode coordinates in rays.csv are DTU mm; accepted input depth and host_target are camera-z scene units. NN errors are DTU mm."
     metadata["full_accuracy_map_crosschecks"] = crosschecks
     metadata["mechanism_thresholds"] = dict(main_bandwidth_mm=1.0, weak_expected_support_R_below=0.5,
         competing_peak_separation_at_least_mm=2.0,
@@ -636,6 +640,10 @@ def self_check():
     huber, state, _ = _huber_location(np.array([0., .1, 5., 5.1]), np.array([.4,.4,.1,.1]), .9)
     assert state == "converged" and np.isfinite(huber)
     assert np.isnan(_kernel_mode(np.array([0., np.nan]), np.array([.5,.5]), 1.)["value"])
+    scale, native_scene = 324.6551818847656, 1.9148331
+    native_vals, _ = _ray_estimates(np.array([1., 2.]) * scale, np.array([.4, .6]),
+                                    np.array([1., native_scene, 1.]) * scale)
+    np.testing.assert_allclose(native_vals["native_median"] / scale, native_scene, rtol=0, atol=1e-12)
     print("CPU self-check passed: empty/single/one-peak/two-peak/scale/split/finite")
 
 
