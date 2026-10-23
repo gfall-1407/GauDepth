@@ -260,6 +260,22 @@ def run_transition_audit(input_root: Path, output_root: Path) -> None:
                         masks["other"] = pair & ~classified
                         other_n = int(masks["other"].sum())
                         state["counts"]["other"] += other_n
+                        if other_n and len(examples[(method, near_mm, far_mm, "other")]) < 3:
+                            remaining = 3 - len(examples[(method, near_mm, far_mm, "other")])
+                            for pos in np.flatnonzero(masks["other"])[:remaining]:
+                                pixel = int(index[pos])
+                                examples[(method, near_mm, far_mm, "other")].append({
+                                    "scan": scan, "camera": view["name"], "pixel_index": pixel,
+                                    "row": pixel // width, "column": pixel % width,
+                                    "image_size": [int(x) for x in image_size],
+                                    "baseline_depth_mm": float(depth[pos, 0]),
+                                    "candidate_depth_mm": float(depth[pos, col]),
+                                    "baseline_scan_point_nn_mm": float(error[pos, 0]),
+                                    "candidate_scan_point_nn_mm": float(error[pos, col]),
+                                    "axial_shift_mm": float(delta_z[pos]),
+                                    "selected_counts_all_and_candidate": [int(counts[pos, 0]), int(counts[pos, col])],
+                                    "quality_mass_fraction_available": False,
+                                })
                         pool_key = (method, near_mm, far_mm)
                         pool = pooled.setdefault(pool_key, {"mask": 0, "pair": 0, "invalid": 0,
                             "base_nn_finite": 0, "candidate_nn_finite": 0,
