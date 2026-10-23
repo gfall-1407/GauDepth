@@ -7,6 +7,7 @@ import csv
 import hashlib
 import json
 import math
+import time
 from collections import defaultdict
 from pathlib import Path
 
@@ -154,6 +155,238 @@ def _verify_reference_sample(input_root: Path, influence_root: Path) -> dict:
         "accuracy_view_sha256": view["sha256"], "influence_summary_sha256": influence_files[summary_path.name],
         "influence_sample_sha256": influence_files[sample_path.name], "checks": checks,
         "tolerance": {"per_sample_max_abs_mm": 1e-4, "full_view_mean_abs_mm": 5e-6}}
+
+
+def run_transition_audit(input_root: Path, output_root: Path) -> None:
+    _self_check()
+    started = time.monotonic()
+    retrieval_path = input_root / "retrieval_status.json"
+    validation_path = input_root / "local_validation_complete.json"
+    retrieval = json.loads(retrieval_path.read_text(encoding="utf-8"))
+    retrieval.update(json.loads(validation_path.read_text(encoding="utf-8")))
+    if output_root.exists():
+        raise FileExistsError(f"Refusing to overwrite existing transition output: {output_root}")
+
+    thresholds = ((1.0, 5.0), (2.0, 10.0))
+    categories = ("near_to_far", "far_to_near", "both_near", "both_far", "other")
+    methods = ((0, "all"),) + tuple((column, name) for column, name in METHODS)
+    scan_states = {}
+    pooled = {}
+    pooled_shift_parts = defaultdict(list)
+    examples = defaultdict(list)
+    source_rows = []
+    total_mask = total_views = 0
+
+    for scan, meta, meta_path, scan_root in _metadata_and_views(input_root, retrieval):
+        scale = float(meta["alignment"]["scale_to_dtu_mm"])
+        assert math.isfinite(scale) and scale > 0
+        scan_state = {}
+        scan_mask = 0
+        for view in meta["views"]:
+            assert time.monotonic() - started <= 600, "transition audit exceeded 600 seconds"
+            view_path = scan_root / view["file"]
+            digest = sha256(view_path)
+            assert digest == view["sha256"], (scan, view["name"], digest, view["sha256"])
+            with np.load(view_path, allow_pickle=False) as archive:
+                index = archive["pixel_index"]
+                depth = archive["weighted_mean_depth"].astype(np.float64, copy=False) * scale
+                error = archive["gt_point_distance_mm"].astype(np.float64, copy=False)
+                counts = archive["selected_counts"]
+                image_size = archive["image_size"]
+                assert depth.shape == error.shape == (len(index), 4)
+                assert counts.shape == (len(index), 4) and image_size.shape == (2,)
+                assert int(view["pixels"]) == len(index)
+                width = int(image_size[1])
+                assert width > 0
+                base_valid = np.isfinite(depth[:, 0]) & np.isfinite(error[:, 0])
+                scan_mask += len(index)
+                for col, method in methods:
+                    candidate_valid = np.isfinite(depth[:, col]) & np.isfinite(error[:, col])
+                    pair = base_valid & candidate_valid
+                    pair_n = int(pair.sum())
+                    delta_z = depth[:, col] - depth[:, 0]
+                    for near_mm, far_mm in thresholds:
+                        key = (scan, method, near_mm, far_mm)
+                        state = scan_state.setdefault(key, {"mask": 0, "pair": 0, "invalid": 0,
+                            "base_nn_finite": 0, "candidate_nn_finite": 0,
+                            "base_depth_finite": 0, "candidate_depth_finite": 0,
+                            "counts": {category: 0 for category in categories}, "n2f_shift": [],
+                            "n2f_dir": {"near": 0, "far": 0, "zero": 0}})
+                        state["mask"] += len(index)
+                        state["pair"] += pair_n
+                        state["invalid"] += len(index) - pair_n
+                        state["base_nn_finite"] += int(np.isfinite(error[:, 0]).sum())
+                        state["candidate_nn_finite"] += int(np.isfinite(error[:, col]).sum())
+                        state["base_depth_finite"] += int(np.isfinite(depth[:, 0]).sum())
+                        state["candidate_depth_finite"] += int(np.isfinite(depth[:, col]).sum())
+                        base_near = error[:, 0] <= near_mm
+                        cand_near = error[:, col] <= near_mm
+                        base_far = error[:, 0] >= far_mm
+                        cand_far = error[:, col] >= far_mm
+                        masks = {
+                            "near_to_far": pair & base_near & cand_far,
+                            "far_to_near": pair & base_far & cand_near,
+                            "both_near": pair & base_near & cand_near,
+                            "both_far": pair & base_far & cand_far,
+                        }
+                        classified = np.zeros(len(index), dtype=bool)
+                        for category, selected in masks.items():
+                            classified |= selected
+                            n = int(selected.sum())
+                            state["counts"][category] += n
+                            pool_key = (method, near_mm, far_mm)
+                            pool = pooled.setdefault(pool_key, {"mask": 0, "pair": 0, "invalid": 0,
+                                "base_nn_finite": 0, "candidate_nn_finite": 0,
+                                "base_depth_finite": 0, "candidate_depth_finite": 0,
+                                "counts": {c: 0 for c in categories}, "n2f_dir": {"near": 0, "far": 0, "zero": 0}})
+                            pool["counts"][category] += n
+                            if n and len(examples[(method, near_mm, far_mm, category)]) < 3:
+                                remaining = 3 - len(examples[(method, near_mm, far_mm, category)])
+                                positions = np.flatnonzero(selected)[:remaining]
+                                for pos in positions:
+                                    pixel = int(index[pos])
+                                    examples[(method, near_mm, far_mm, category)].append({
+                                        "scan": scan, "camera": view["name"], "pixel_index": pixel,
+                                        "row": pixel // width, "column": pixel % width,
+                                        "image_size": [int(x) for x in image_size],
+                                        "baseline_depth_mm": float(depth[pos, 0]),
+                                        "candidate_depth_mm": float(depth[pos, col]),
+                                        "baseline_scan_point_nn_mm": float(error[pos, 0]),
+                                        "candidate_scan_point_nn_mm": float(error[pos, col]),
+                                        "axial_shift_mm": float(delta_z[pos]),
+                                        "selected_counts_all_and_candidate": [int(counts[pos, 0]), int(counts[pos, col])],
+                                        "quality_mass_fraction_available": False,
+                                    })
+                        masks["other"] = pair & ~classified
+                        other_n = int(masks["other"].sum())
+                        state["counts"]["other"] += other_n
+                        pool_key = (method, near_mm, far_mm)
+                        pool = pooled.setdefault(pool_key, {"mask": 0, "pair": 0, "invalid": 0,
+                            "base_nn_finite": 0, "candidate_nn_finite": 0,
+                            "base_depth_finite": 0, "candidate_depth_finite": 0,
+                            "counts": {c: 0 for c in categories}, "n2f_dir": {"near": 0, "far": 0, "zero": 0}})
+                        pool["counts"]["other"] += other_n
+                        n2f = masks["near_to_far"]
+                        shifts = delta_z[n2f]
+                        if shifts.size:
+                            state["n2f_shift"].append(np.abs(shifts))
+                            pooled_shift_parts[pool_key].append(np.abs(shifts))
+                            state["n2f_dir"]["near"] += int((shifts < 0).sum())
+                            state["n2f_dir"]["far"] += int((shifts > 0).sum())
+                            state["n2f_dir"]["zero"] += int((shifts == 0).sum())
+                            pool["n2f_dir"]["near"] += int((shifts < 0).sum())
+                            pool["n2f_dir"]["far"] += int((shifts > 0).sum())
+                            pool["n2f_dir"]["zero"] += int((shifts == 0).sum())
+                        pool["mask"] += len(index)
+                        pool["pair"] += pair_n
+                        pool["invalid"] += len(index) - pair_n
+                        pool["base_nn_finite"] += int(np.isfinite(error[:, 0]).sum())
+                        pool["candidate_nn_finite"] += int(np.isfinite(error[:, col]).sum())
+                        pool["base_depth_finite"] += int(np.isfinite(depth[:, 0]).sum())
+                        pool["candidate_depth_finite"] += int(np.isfinite(depth[:, col]).sum())
+            total_views += 1
+        total_mask += scan_mask
+        for key, state in scan_state.items():
+            state["n2f_shift"] = np.concatenate(state["n2f_shift"]) if state["n2f_shift"] else np.array([], dtype=float)
+            scan_states[key] = state
+        source_rows.append({"scan": scan, "metadata_sha256": sha256(meta_path), "scale_to_dtu_mm": scale,
+            "camera_count": len(meta["camera_names"]), "views": len(meta["views"]), "mask_pixels": scan_mask,
+            "model_sha256": meta["model_sha256"], "cfg_sha256": meta["cfg_sha256"],
+            "cameras_npz_sha256": meta["cameras_npz_sha256"], "gt_sha256": meta["gt_sha256"],
+            "obs_sha256": meta["obs_sha256"]})
+    assert total_views == 855 and total_mask == retrieval["mask_pixels"] == 152505785
+    summary_rows = []
+    for method, _ in methods:
+        for near_mm, far_mm in thresholds:
+            pool = pooled[(method, near_mm, far_mm)]
+            for aggregation in ("scan", "pixel_pool", "scan_equal"):
+                if aggregation == "scan":
+                    scan_rows = []
+                    for scan in SCANS:
+                        k = (scan, method, near_mm, far_mm)
+                        # Scan state is retained below in scan_states.
+                        state = scan_states[k]
+                        row = _transition_row(aggregation, scan, method, near_mm, far_mm, state,
+                            np.concatenate(state["n2f_shift"]) if state["n2f_shift"] else np.array([], dtype=float), categories)
+                        summary_rows.append(row)
+                        scan_rows.append(row)
+                    continue
+                if aggregation == "pixel_pool":
+                    shifts = np.concatenate(pooled_shift_parts[(method, near_mm, far_mm)]) if pooled_shift_parts[(method, near_mm, far_mm)] else np.array([], dtype=float)
+                    state = pool
+                else:
+                    scan_rows = [r for r in summary_rows if r["aggregation"] == "scan" and r["method"] == method and
+                                 r["near_threshold_mm"] == near_mm and r["far_threshold_mm"] == far_mm]
+                    pair_scans = [r for r in scan_rows if int(r["n_finite_pair"]) > 0]
+                    shifts = np.array([], dtype=float)
+                    state = {"mask": sum(int(r["n_mask"]) for r in scan_rows),
+                        "pair": sum(int(r["n_finite_pair"]) for r in scan_rows),
+                        "invalid": sum(int(r["n_invalid_pair"]) for r in scan_rows),
+                        "base_nn_finite": sum(int(r["n_base_nn_finite"]) for r in scan_rows),
+                        "candidate_nn_finite": sum(int(r["n_candidate_nn_finite"]) for r in scan_rows),
+                        "base_depth_finite": sum(int(r["n_base_depth_finite"]) for r in scan_rows),
+                        "candidate_depth_finite": sum(int(r["n_candidate_depth_finite"]) for r in scan_rows),
+                        "counts": {c: None for c in categories},
+                        "n2f_dir": {d: None for d in ("near", "far", "zero")}}
+                    for c in categories:
+                        vals = [float(r[f"fraction_{c}"]) for r in pair_scans]
+                        state["counts"][c] = None
+                        state.setdefault("fraction_overrides", {})[c] = float(np.mean(vals)) if vals else None
+                    for d in ("near", "far", "zero"):
+                        vals = [float(r[f"near_to_far_shift_direction_{d}_fraction"]) for r in pair_scans]
+                        state["fraction_overrides"][f"near_to_far_shift_direction_{d}"] = float(np.mean(vals)) if vals else None
+                    for field in ("mean_near_to_far_abs_shift_mm", "median_near_to_far_abs_shift_mm"):
+                        vals = [float(r[field]) for r in pair_scans if r[field] is not None]
+                        state.setdefault("value_overrides", {})[field] = float(np.mean(vals)) if vals else None
+                summary_rows.append(_transition_row(aggregation, "ALL" if aggregation=="pixel_pool" else "MEAN_OF_SCAN_MEANS",
+                    method, near_mm, far_mm, state, shifts, categories))
+
+    output_root.mkdir(parents=True)
+    _write_csv(output_root / "prefix_transition_summary.csv", summary_rows)
+    example_rows = []
+    for key, values in sorted(examples.items()):
+        method, near_mm, far_mm, category = key
+        for rank, value in enumerate(values, 1):
+            example_rows.append({"method": method, "near_threshold_mm": near_mm, "far_threshold_mm": far_mm,
+                "category": category, "display_rank_after_analysis": rank, **value})
+    _write_csv(output_root / "prefix_transition_examples.csv", example_rows)
+    audit = {"status": "complete", "run_commit": EXPECTED_COMMIT, "input_root": str(input_root),
+        "scan_count": len(source_rows), "view_count": total_views, "mask_pixels": total_mask,
+        "invalid_denominator_definition": "mask pixels lacking finite baseline/candidate camera-z or scan-point NN; pair counts are finite in all four values",
+        "transition_definition": "NN is one-way distance to the scan point cloud, not pixelwise GT depth or a correctness label",
+        "near_far_thresholds_mm": [{"near_le_mm": n, "far_ge_mm": f} for n,f in thresholds],
+        "categories": list(categories), "direction_definition": "candidate camera-z minus all-member camera-z; negative=nearer along camera axis, positive=farther",
+        "example_selection": "first three matching flattened pixel indices in scan/view traversal order; selected after aggregate rule fixed; quality mass fraction is not present in accuracy_v1 maps",
+        "methods": [name for _, name in methods], "source_provenance": source_rows,
+        "aggregate_rule": "pixel_pool sums counts once across all scans; scan_equal averages per-scan proportions and per-scan near-to-far shift summaries",
+        "elapsed_seconds": time.monotonic()-started, "outputs": ["prefix_transition_summary.csv", "prefix_transition_examples.csv"]}
+    (output_root / "prefix_transition_audit.json").write_text(json.dumps(audit,ensure_ascii=False,indent=2)+"\n",encoding="utf-8")
+
+
+def _transition_row(aggregation, scan, method, near_mm, far_mm, state, shifts, categories):
+    pair_n=int(state["pair"]); mask_n=int(state["mask"]); invalid=int(state["invalid"])
+    row={"aggregation":aggregation,"scan":scan,"method":method,"near_threshold_mm":near_mm,
+        "far_threshold_mm":far_mm,"n_mask":mask_n,"n_finite_pair":pair_n,"n_invalid_pair":invalid,
+        "n_base_nn_finite":state["base_nn_finite"],"n_candidate_nn_finite":state["candidate_nn_finite"],
+        "n_base_depth_finite":state["base_depth_finite"],"n_candidate_depth_finite":state["candidate_depth_finite"],
+        "n_near_to_far_shift_direction_near":state["n2f_dir"]["near"],
+        "n_near_to_far_shift_direction_far":state["n2f_dir"]["far"],
+        "n_near_to_far_shift_direction_zero":state["n2f_dir"]["zero"],
+        "mean_near_to_far_abs_shift_mm":float(shifts.mean()) if len(shifts) else None,
+        "median_near_to_far_abs_shift_mm":float(np.median(shifts)) if len(shifts) else None}
+    overrides=state.get("fraction_overrides",{})
+    for category in categories:
+        count=state["counts"][category]
+        row[f"n_{category}"]=count
+        row[f"fraction_{category}"]=overrides.get(category, count/pair_n if pair_n and count is not None else None)
+    for direction in ("near","far","zero"):
+        count=state["n2f_dir"][direction]
+        row[f"near_to_far_shift_direction_{direction}_fraction"]=(
+            overrides.get(f"near_to_far_shift_direction_{direction}", count/state["counts"]["near_to_far"]
+                if state["counts"]["near_to_far"] else None))
+    for field,value in state.get("value_overrides",{}).items():
+        row[field]=value
+    return row
 
 
 def run(input_root: Path, output_root: Path, reference_influence_root: Path | None = None) -> None:
@@ -479,8 +712,12 @@ def main() -> None:
     p.add_argument("--input", type=Path, required=True)
     p.add_argument("--output", type=Path, required=True)
     p.add_argument("--reference-influence", type=Path)
+    p.add_argument("--transition-audit", action="store_true")
     a = p.parse_args()
-    run(a.input, a.output, a.reference_influence)
+    if a.transition_audit:
+        run_transition_audit(a.input, a.output)
+    else:
+        run(a.input, a.output, a.reference_influence)
 
 
 if __name__ == "__main__":
