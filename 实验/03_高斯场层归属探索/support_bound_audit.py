@@ -62,6 +62,25 @@ def weighted_median(z: np.ndarray, w: np.ndarray) -> float:
     return float(z[order[min(index, len(order) - 1)]])
 
 
+def resolve_raw_view(raw_root: Path, scan: int, image_name: str):
+    for directory in (raw_root / f"scan{scan}", raw_root / f"scan{scan}_more"):
+        metadata_path = directory / "metadata.json"
+        if not metadata_path.is_file():
+            continue
+        metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+        view = next((v for v in metadata["views"] if v["image_name"] == image_name), None)
+        if view is None:
+            continue
+        npz_path = directory / view["file"]
+        if not npz_path.is_file():
+            raise FileNotFoundError(f"Metadata-listed raw NPZ missing: {npz_path}")
+        digest = sha256(npz_path)
+        if digest != view["npz_sha256"]:
+            raise ValueError(f"Raw NPZ SHA mismatch: {npz_path}")
+        return npz_path, view, digest
+    raise FileNotFoundError(f"No metadata-mapped raw view scan{scan}/{image_name}")
+
+
 def find_modes(z: np.ndarray, p: np.ndarray, h: float):
     starts = list(dict.fromkeys(map(float, z)))
     solutions = []
@@ -148,8 +167,6 @@ def main() -> None:
     parser.add_argument("--output", type=Path, required=True, help="new, nonexistent result directory")
     args = parser.parse_args()
     self_test()
-    if args.output.exists():
-        raise FileExistsError(f"Refusing to overwrite existing output: {args.output}")
     with args.support_csv.open(newline="", encoding="utf-8-sig") as f:
         rows = list(csv.DictReader(f))
     h1 = [r for r in rows if float(r["support_ratio_R_h1mm"]) > 1.0 and r["mode_status_h1mm"] == "partial"]
@@ -164,14 +181,36 @@ def main() -> None:
               "saved_mode_mm", "saved_mode_status", "saved_mode_score", "saved_mode_score_le_final_lower", "lower_depth_mm", "lower_source",
               "lower_score", "upper_score", "certified_score_gap", "status", "reason", "interval_count", "elapsed_seconds",
               "original_expected_support", "original_mode_support", "original_relative_support_R", "peak_location_certified")
-    results = []
-    with csv_path.open("w", newline="", encoding="utf-8-sig") as f:
+    task_keys = [(int(r["scan"]), r["view"], int(r["ray"]), h) for r, h in tasks]
+    existing_rows = []
+    if args.output.exists():
+        children = sorted(p.name for p in args.output.iterdir())
+        if children != ["support_bound.csv"]:
+            raise FileExistsError(f"Refusing to resume unknown output contents: {children}")
+        with csv_path.open(newline="", encoding="utf-8-sig") as f:
+            reader = csv.DictReader(f)
+            if tuple(reader.fieldnames or ()) != fields:
+                raise ValueError("Existing partial CSV schema differs; refusing to append")
+            existing_rows = list(reader)
+        existing_keys = [(int(r["scan"]), r["view"], int(r["ray"]), float(r["h_mm"])) for r in existing_rows]
+        if existing_keys != task_keys[:len(existing_keys)]:
+            raise ValueError("Existing rows are not a contiguous prefix of the fixed task list")
+        if any(r["status"] not in ("certified_score", "unknown") for r in existing_rows):
+            raise ValueError("Existing partial result has an unexpected status")
+    else:
+        args.output.mkdir(parents=True, exist_ok=False)
+    results = list(existing_rows)
+    with csv_path.open("a" if existing_rows else "w", newline="", encoding="utf-8-sig") as f:
         writer = csv.DictWriter(f, fieldnames=fields)
-        writer.writeheader(); f.flush()
+        if not existing_rows:
+            writer.writeheader(); f.flush()
+        completed = set(existing_keys) if existing_rows else set()
         for source_row, h in tasks:
             scan, view, ray = int(source_row["scan"]), source_row["view"], int(source_row["ray"])
-            npz_path = args.raw_root / f"scan{scan}" / f"view_{int(view):03d}.npz"
-            meta_path = args.raw_root / f"scan{scan}" / "metadata.json"
+            task_key = (scan, view, ray, h)
+            if task_key in completed:
+                continue
+            npz_path, saved_view, npz_sha = resolve_raw_view(args.raw_root, scan, view)
             camera_path = args.inputs_root / f"scan{scan}" / "cameras.npz"
             with np.load(npz_path) as data:
                 left, right = map(int, data["offsets"][ray:ray + 2])
@@ -180,10 +219,6 @@ def main() -> None:
                 px, py = map(int, data["pixel_xy"][ray])
             if (px, py) != (int(source_row["x"]), int(source_row["y"])):
                 raise ValueError(f"Pixel identity mismatch scan{scan}/{view}/ray{ray}")
-            view_meta = json.loads(meta_path.read_text(encoding="utf-8"))["views"]
-            saved_view = next(v for v in view_meta if v["image_name"] == view)
-            if sha256(npz_path) != saved_view["npz_sha256"]:
-                raise ValueError(f"Raw NPZ SHA mismatch scan{scan}/{view}")
             with np.load(camera_path) as camera:
                 transform = camera["scale_mat_0"].astype(np.float64)
             scale = float(transform[0, 0])
@@ -218,17 +253,14 @@ def main() -> None:
                           original_expected_support=float(source_row[support_expected_field]),
                           original_mode_support=float(source_row[support_mode_field]),
                           original_relative_support_R=float(source_row[f"support_ratio_R_h{int(h)}mm"]),
+                          peak_location_certified=False,
                           interval_count=result["interval_count"], converged_starts=converged_starts,
                           failed_starts=failed, solution_clusters=clusters, starts=starts,
-                          input_npz_sha256=sha256(npz_path), input_cameras_sha256=sha256(camera_path))
-            results.append(result)
+                          input_npz_sha256=npz_sha, input_cameras_sha256=sha256(camera_path))
+            results.append({k: result.get(k, "") for k in fields})
             writer.writerow({k: result.get(k, "") for k in fields}); f.flush()
             print(f"scan{scan}/{view}/ray{ray} h={h:g}: {result['status']} gap={result['certified_score_gap']:.3g} intervals={result['interval_count']} elapsed={result['elapsed_seconds']:.2f}s", flush=True)
-    manifest_results = []
-    for result in results:
-        item = {k: v for k, v in result.items() if k not in ("scan", "view", "ray")}
-        item.update(scan=result["scan"], view=result["view"], ray=result["ray"])
-        manifest_results.append(item)
+    manifest_results = results
     manifest = {
         "schema": "support_bound_audit_v1", "status": "complete", "self_test": "passed",
         "source_commit": subprocess.run(["git", "rev-parse", "HEAD"], cwd=Path(__file__).resolve().parents[2],
