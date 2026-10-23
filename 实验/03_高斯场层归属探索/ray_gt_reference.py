@@ -18,6 +18,8 @@ PROTOCOL = dict(radius_px=.75, nearest_px=.25, front_gap_mm=2., min_points=6,
                 max_rms_mm=.1, max_planarity=.05, min_incidence=.2,
                 max_extrapolation_mm=.25)
 REFERENCE_RADII_PX = (.75, 1.5, 3.)
+METHODS = ('expected', 'native_median', 'weighted_median', 'top10', 'top50',
+           'cover90', 'huber_1mm', 'kernel_mode_0p5mm', 'kernel_mode_1mm', 'kernel_mode_2mm')
 
 
 def stable_reference(refs, labels=('075', '15', '30')):
@@ -75,6 +77,121 @@ def write_csv(path, rows):
         w = csv.DictWriter(f, fieldnames=keys)
         w.writeheader()
         w.writerows(rows)
+
+
+def compare_estimates(args):
+    out = args.output.resolve()
+    if out.exists() and any(out.iterdir()):
+        raise ValueError('Comparison output must be independent and empty')
+    out.mkdir(parents=True, exist_ok=True)
+    def csv_rows(path):
+        with Path(path).open(encoding='utf-8-sig', newline='') as f:
+            return list(csv.DictReader(f))
+    def rk(r):
+        return (int(r['scan']), r['image_name'].zfill(4), int(r['ray_index']), int(r['pixel_x']), int(r['pixel_y']))
+    def ek(r):
+        return (int(r['scan']), r['view'].zfill(4), int(r['ray']), int(r['x']), int(r['y']))
+    references = csv_rows(args.references)
+    estimates = csv_rows(args.compare_estimates)
+    refmap = {rk(r): r for r in references}
+    predmap = {ek(r): r for r in estimates}
+    if len(refmap) != len(references) or len(predmap) != len(estimates) or set(refmap) != set(predmap):
+        raise ValueError('Duplicate or mismatched ray/pixel keys')
+    prediction_meta_path = args.compare_estimates.parent / 'run_metadata.json'
+    prediction_meta = read_json(prediction_meta_path)
+    if prediction_meta.get('valid') is False:
+        raise ValueError('Prediction batch was explicitly invalidated')
+    raw, source_records = {}, []
+    for path in sorted(args.ray_root.glob('scan*/metadata.json')):
+        m = read_json(path)
+        if m.get('hostname') != 'autodl-container-d6a7459179-693ab6ee' or not m.get('model_sha256'):
+            continue
+        scan = int(Path(m['model'].replace('\\', '/')).parts[-4].replace('scan', ''))
+        if scan not in SCANS:
+            continue
+        imeta_path = args.influence_root / f'scan{scan}/metadata.json'
+        imeta = read_json(imeta_path)
+        assert m['model_sha256'] == imeta['model_sha256']
+        scale = float(imeta['alignment']['scale_to_dtu_mm'])
+        assert sha(args.inputs / f'scan{scan}/point_cloud.ply') == m['model_sha256']
+        assert sha(args.inputs / f'scan{scan}/cfg_args') == m['cfg_sha256']
+        source = dict(path=str(path.resolve()), sha256=sha(path), model_sha256=m['model_sha256'],
+                      cfg_sha256=m['cfg_sha256'], influence_metadata_sha256=sha(imeta_path), views=[])
+        for view in m['views']:
+            p = path.parent / view['file']
+            assert sha(p) == view['npz_sha256']
+            with np.load(p) as a:
+                raw[(scan, view['image_name'])] = dict(z=a['depth'].astype(float) * scale,
+                    w=a['weight'].astype(float), offsets=a['offsets'].copy(),
+                    xy=a['pixel_xy'].copy(), native=a['host_target'][:, 1].astype(float) * scale)
+            source['views'].append(dict(name=view['image_name'], path=str(p.resolve()), sha256=sha(p)))
+        source_records.append(source)
+    cases = []
+    for key, ref in refmap.items():
+        if ref['status'] != 'accepted':
+            continue
+        scan, view, ri, x, y = key
+        r = raw[(scan, view)]
+        np.testing.assert_array_equal(r['xy'][ri], [x, y])
+        p = predmap[key]
+        np.testing.assert_allclose(float(p['native_median']), r['native'][ri], rtol=0, atol=1e-9)
+        first, last = r['offsets'][ri:ri + 2]
+        z, w = r['z'][first:last], r['w'][first:last]
+        depth = float(ref['reference_mm'])
+        base = float(p['expected'])
+        np.testing.assert_allclose(base, np.dot(z, w) / w.sum(), rtol=1e-10, atol=1e-8)
+        row = dict(scan=scan, view=view, ray=ri, x=x, y=y, reference_mm=depth,
+                   reference_rms_z_mm=float(ref['rms_z_mm']), cross_scale_gap_mm=ref.get('cross_scale_gap_mm', ''),
+                   support_at_reference_h1mm=float(np.dot(w, np.exp(-.5 * (z - depth) ** 2)) / w.sum()),
+                   mass_within_reference_1mm=float(w[np.abs(z - depth) <= 1.].sum() / w.sum()),
+                   support_expected_h1mm=float(p['support_expected_h1mm']),
+                   support_mode_h1mm=float(p['support_mode_h1mm']),
+                   support_ratio_R_h1mm=float(p['support_ratio_R_h1mm']))
+        for method in METHODS:
+            value = float(p[method])
+            row[method] = value
+            row[f'abs_z_reference_{method}_mm'] = abs(value - depth)
+            row[f'delta_z_reference_{method}_mm'] = abs(value - depth) - abs(base - depth)
+        cases.append(row)
+    summaries = []
+    group_keys = [('pooled', 'ALL', 'ALL')]
+    group_keys += [('scan', str(s), 'ALL') for s in SCANS]
+    group_keys += [('view', str(s), name) for s, name in sorted(raw)]
+    for scope, scan, view in group_keys:
+        group = [r for r in cases if (scan == 'ALL' or r['scan'] == int(scan)) and
+                 (view == 'ALL' or r['view'] == view)]
+        for method in METHODS:
+            paired = [r for r in group if np.isfinite(r[f'abs_z_reference_{method}_mm'])]
+            if not paired:
+                summaries.append(dict(scope=scope, scan=scan, view=view, method=method,
+                                      reference_n=len(group), paired_n=0, unknown=len(group)))
+                continue
+            error = np.array([r[f'abs_z_reference_{method}_mm'] for r in paired])
+            delta = np.array([r[f'delta_z_reference_{method}_mm'] for r in paired])
+            base_error = np.array([r['abs_z_reference_expected_mm'] for r in paired])
+            band = np.array([max(.1, 3 * r['reference_rms_z_mm']) for r in paired])
+            summaries.append(dict(scope=scope, scan=scan, view=view, method=method,
+                reference_n=len(group), paired_n=len(paired), unknown=len(group) - len(paired),
+                mean_abs_z_reference_mm=float(error.mean()), expected_mean_same_pairs_mm=float(base_error.mean()),
+                mean_delta_mm=float(delta.mean()), median_delta_mm=float(np.median(delta)),
+                improved_gt_0p1mm=int((delta < -.1).sum()), worsened_gt_0p1mm=int((delta > .1).sum()),
+                improved_beyond_plane_residual_band=int((delta < -band).sum()),
+                worsened_beyond_plane_residual_band=int((delta > band).sum())))
+    write_csv(out / 'reference_cases.csv', cases)
+    write_csv(out / 'reference_method_comparison.csv', summaries)
+    repo = Path(__file__).resolve().parents[2]
+    code = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=repo, text=True).strip()
+    if subprocess.check_output(['git', 'status', '--short'], cwd=repo, text=True).strip():
+        raise ValueError('Commit comparison source before a data run')
+    metadata = dict(commit=code, reference_rows=len(references), accepted_reference_rows=len(cases),
+        reference_csv=str(args.references.resolve()), reference_csv_sha256=sha(args.references),
+        reference_generation=read_json(args.references.parent / 'reference_metadata.json'),
+        estimates_csv=str(args.compare_estimates.resolve()), estimates_csv_sha256=sha(args.compare_estimates),
+        prediction_metadata_sha256=sha(prediction_meta_path), prediction_commit=prediction_meta['source']['commit'],
+        raw_sources=source_records, input_manifest_sha256=sha(args.inputs.parent / 'retrieval_v1/manifest.json'),
+        interpretation='Conditional axial-depth discrepancy to accepted local scan planes, not pixel GT MAE; very selective reference coverage and unresolved image principal-point/crop provenance. Counts beyond residual bands are descriptive, not statistical confidence.')
+    (out / 'comparison_metadata.json').write_text(json.dumps(metadata, indent=2), encoding='utf-8')
+    print(json.dumps(dict(reference_rows=len(references), accepted=len(cases), summary_rows=len(summaries))))
 
 
 def local_reference(points_mm, uv, pixel, focal, center):
@@ -275,6 +392,8 @@ def main():
     p.add_argument('--self-check', action='store_true')
     p.add_argument('--multiscale', action='store_true')
     p.add_argument('--spatial3d', action='store_true')
+    p.add_argument('--compare-estimates', type=Path)
+    p.add_argument('--references', type=Path)
     p.add_argument('--inputs', type=Path)
     p.add_argument('--ray-root', type=Path)
     p.add_argument('--influence-root', type=Path)
@@ -284,6 +403,10 @@ def main():
         p.error('Choose one reference-construction mode')
     if args.self_check:
         self_check()
+    elif args.compare_estimates:
+        if any(getattr(args, k) is None for k in ('inputs', 'ray_root', 'influence_root', 'output', 'references')):
+            p.error('Comparison requires input, source, references and output paths')
+        compare_estimates(args)
     else:
         if any(getattr(args, k) is None for k in ('inputs', 'ray_root', 'influence_root', 'output')):
             p.error('Data runs require inputs, ray-root, influence-root and output')
