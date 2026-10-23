@@ -307,7 +307,7 @@ def run_transition_audit(input_root: Path, output_root: Path) -> None:
                         # Scan state is retained below in scan_states.
                         state = scan_states[k]
                         row = _transition_row(aggregation, scan, method, near_mm, far_mm, state,
-                            np.concatenate(state["n2f_shift"]) if state["n2f_shift"] else np.array([], dtype=float), categories)
+                            state["n2f_shift"], categories)
                         summary_rows.append(row)
                         scan_rows.append(row)
                     continue
@@ -333,7 +333,8 @@ def run_transition_audit(input_root: Path, output_root: Path) -> None:
                         state["counts"][c] = None
                         state.setdefault("fraction_overrides", {})[c] = float(np.mean(vals)) if vals else None
                     for d in ("near", "far", "zero"):
-                        vals = [float(r[f"near_to_far_shift_direction_{d}_fraction"]) for r in pair_scans]
+                        vals = [float(r[f"near_to_far_shift_direction_{d}_fraction"]) for r in pair_scans
+                                if r[f"near_to_far_shift_direction_{d}_fraction"] is not None]
                         state["fraction_overrides"][f"near_to_far_shift_direction_{d}"] = float(np.mean(vals)) if vals else None
                     for field in ("mean_near_to_far_abs_shift_mm", "median_near_to_far_abs_shift_mm"):
                         vals = [float(r[field]) for r in pair_scans if r[field] is not None]
