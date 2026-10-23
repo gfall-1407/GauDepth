@@ -83,7 +83,7 @@ def _support(z: np.ndarray, w: np.ndarray, d: float, h_mm: float):
 def _kernel_mode(z: np.ndarray, w: np.ndarray, h_mm: float):
     if not len(z) or not np.isfinite(z).all() or not np.isfinite(w).all() or np.any(w <= 0):
         return dict(value=float("nan"), status="unknown", starts=0, converged=0,
-                    distinct_modes=0, score=float("nan"), score_gap=float("nan"), peak_share=float("nan"),
+                    solution_clusters=0, score=float("nan"), score_gap=float("nan"), peak_share=float("nan"),
                     second_value=float("nan"), second_score=float("nan"), relative_second=float("nan"), iterations=0)
     p = w / w.sum(dtype=np.float64)
     starts, seen = [], set()
@@ -117,7 +117,7 @@ def _kernel_mode(z: np.ndarray, w: np.ndarray, h_mm: float):
             failed += 1
     if not solutions:
         return dict(value=float("nan"), status="unknown", starts=len(starts), converged=0,
-                    distinct_modes=0, score=float("nan"), score_gap=float("nan"), peak_share=float("nan"),
+                    solution_clusters=0, score=float("nan"), score_gap=float("nan"), peak_share=float("nan"),
                     second_value=float("nan"), second_score=float("nan"), relative_second=float("nan"),
                     iterations=max_iterations)
     # Keep the first accepted-order seed when multiple seeds converge to the same mode.
@@ -127,10 +127,12 @@ def _kernel_mode(z: np.ndarray, w: np.ndarray, h_mm: float):
             unique.append(item)
     ranked = sorted(unique, key=lambda x: (-x[0], x[1]))
     best = ranked[0]
-    second = ranked[1] if len(ranked) > 1 else None
+    # A second seed can converge to the same basin or nearby duplicate solution.
+    # Only call it a competing support peak when it is separated from the best by >=2h.
+    second = next((item for item in ranked[1:] if abs(item[2] - best[2]) >= 2.0 * h_mm), None)
     status = "partial" if failed else "converged"
     return dict(value=best[2], status=status, starts=len(starts), converged=len(solutions),
-        distinct_modes=len(unique), score=best[0],
+        solution_clusters=len(unique), score=best[0],
         score_gap=(best[0] - second[0]) if second else float("nan"),
         peak_share=best[3], second_value=second[2] if second else float("nan"),
         second_score=second[0] if second else float("nan"),
@@ -438,7 +440,7 @@ def _process_view(scan: int, old_meta: dict, vm: dict, ray_file: Path, scan_data
             vals[f"mode_peak_share_h{hband:g}mm"] = detail["mode"].get(hband, {}).get("peak_share", float("nan"))
             vals[f"mode_status_h{hband:g}mm"] = detail["mode"].get(hband, {}).get("status", "unknown")
             vals[f"mode_score_gap_h{hband:g}mm"] = detail["mode"].get(hband, {}).get("score_gap", float("nan"))
-            vals[f"mode_count_h{hband:g}mm"] = detail["mode"].get(hband, {}).get("distinct_modes", 0)
+            vals[f"mode_solution_clusters_h{hband:g}mm"] = detail["mode"].get(hband, {}).get("solution_clusters", 0)
             vals[f"mode_second_h{hband:g}mm"] = detail["mode"].get(hband, {}).get("second_value", float("nan"))
             vals[f"mode_relative_second_h{hband:g}mm"] = detail["mode"].get(hband, {}).get("relative_second", float("nan"))
         row = dict(scan=scan, view=name, ray=ray, x=int(xy[ray, 0]), y=int(xy[ray, 1]),
@@ -498,7 +500,7 @@ def _summarize(scan: int, view: str, rows: list[dict]):
     for hband in MODE_BANDWIDTHS_MM:
         status = [r[f"mode_status_h{hband:g}mm"] for r in rows]
         summary.append(dict(scan=scan, view=view, method=f"mode_convergence_h{hband:g}mm",
-            rays=len(rows), finite_n=sum(r[f"mode_count_h{hband:g}mm"] > 0 for r in rows),
+            rays=len(rows), finite_n=sum(r[f"mode_solution_clusters_h{hband:g}mm"] > 0 for r in rows),
             paired_n=None, mean_nn_mm=None, mean_delta_mm=None, improved=None, worsened=None, tied=None,
             mean_shift_mm=None, converged=sum(x == "converged" for x in status),
             partial=sum(x == "partial" for x in status), unknown=sum(x == "unknown" for x in status)))
@@ -572,7 +574,7 @@ def run(args):
     metadata = dict(status="complete", scans=list(SCANS), ray_count=len(ray_rows), views=12,
         methods=list(METHODS), fixed_parameters=dict(huber_h_mm=1.0, kernel_h_mm=list(MODE_BANDWIDTHS_MM),
             mean_shift_tol_mm=TOL_MM, mean_shift_max_iter=MAX_ITER, tie_mm=TIE_MM),
-        support_definition="S(d)=sum_i p_i exp(-0.5*((z_i-d)/h)^2), p_i=original accepted w_i/sum(w); this is a weighted kernel support score, not a physical support probability. Mean-shift starts at each distinct accepted z; retain converged modes and choose max score, ties by first accepted-order start.",
+        support_definition="S(d)=sum_i p_i exp(-0.5*((z_i-d)/h)^2), p_i=original accepted w_i/sum(w); this is a weighted kernel support score, not a physical support probability. Mean-shift starts at each distinct accepted z; converged solutions are clustered as numerical solution basins (not physical layers or K); choose max score, ties by first accepted-order start. The second support peak is the highest-scoring converged cluster at least 2h from the best; it is NaN if absent.",
         robust_definition="Weighted Huber location with fixed 1 mm threshold, initialized at expected and iterated to 1e-7 mm or 64 iterations.",
         width_basis="No Gaussian covariance is used. Bandwidths are fixed in DTU millimeters before evaluation; no labels/GT select them.",
         coordinate_definition="Use original per-view focal, saved world_view_transform and pixel centers, then the verified shared influence-accuracy scale_mat transform. DTU GT is an independent scan point cloud; nearest-neighbor distance is one-way geometry, never pixel-depth truth.",
@@ -599,7 +601,9 @@ def self_check():
     z = np.array([0., .1, 5., 5.1])
     w = np.array([.4, .4, .1, .1])
     base = _kernel_mode(z, w, 1.0)
-    assert base["distinct_modes"] >= 2 and np.isfinite(base["second_value"]) and 0 < base["relative_second"] < 1
+    assert base["solution_clusters"] >= 2 and np.isfinite(base["second_value"]) and 0 < base["relative_second"] < 1
+    single_mode = _kernel_mode(np.array([0., .1, -.1]), np.array([.3, .4, .3]), 1.0)
+    assert not np.isfinite(single_mode["second_value"])
     scaled = _kernel_mode(z * 3.0, w, 3.0)
     assert abs(scaled["value"] / 3.0 - base["value"]) < 5e-7
     split_z = np.repeat(z, 2)
