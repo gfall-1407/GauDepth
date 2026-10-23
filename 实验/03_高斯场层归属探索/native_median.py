@@ -311,12 +311,14 @@ def run(args):
     dataset_fields = vars(dataset).copy()
     dataset_fields.update(model_path=str(out), source_path=str(source_path))
     native_dataset = SimpleNamespace(**dataset_fields)
-    _native_extract(mesh_extract, native_dataset, pipe, 30000, 1, gaussians, scene)
+    with torch.no_grad():
+        _native_extract(mesh_extract, native_dataset, pipe, 30000, 1, gaussians, scene)
     new_mesh = out / "recon_post.ply"
     if not new_mesh.is_file():
         raise FileNotFoundError("Native extractor did not produce recon_post.ply")
     mesh_comparison = _compare_meshes(old_mesh_path, historical_mesh_sha, new_mesh)
-    _native_evaluate(evaluate_dtu_mesh, native_dataset, 30000, gt_root, gaussians, scene)
+    with torch.no_grad():
+        _native_evaluate(evaluate_dtu_mesh, native_dataset, 30000, gt_root, gaussians, scene)
     new_results_path = out / "vis" / "results.json"
     if not new_results_path.is_file():
         raise FileNotFoundError("Original DTU evaluator did not write vis/results.json")
