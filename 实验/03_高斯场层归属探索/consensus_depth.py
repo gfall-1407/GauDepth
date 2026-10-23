@@ -736,8 +736,8 @@ def audit_peak_geometry(args):
             peak_nn_le_mm=1.0, expected_nn_ge_mm=2.0, expected_between_peaks=True, relative_support_reporting_threshold=.25),
         interpretation="Descriptive candidate for two scan-geometry-supported positions with a mean-depth gap; not proof of true surface, physical layer, visibility, or pixelwise ground truth. Sparse GT misses can affect nearest-neighbor distances. S(best) is selected to be high among converged search results by construction and is not correctness evidence. Partial search results are not called global maxima.",
         convergence_counts={h: {s: sum(r[f"mode_status_h{h:g}mm"]==s for r in ray_rows) for s in ("converged","partial","unknown")} for h in MODE_BANDWIDTHS_MM},
-        R_gt_1_count=sum(np.isfinite(_number(r,"support_ratio_R_h1mm")) and _number(r,"support_ratio_R_h1mm")>1 for r in ray_rows),
-        R_finite_count=sum(np.isfinite(_number(r,"support_ratio_R_h1mm")) for r in ray_rows),
+        R_gt_1_count=int(sum(bool(np.isfinite(_number(r,"support_ratio_R_h1mm")) and _number(r,"support_ratio_R_h1mm")>1) for r in ray_rows)),
+        R_finite_count=int(sum(bool(np.isfinite(_number(r,"support_ratio_R_h1mm"))) for r in ray_rows)),
         elapsed_seconds=time.time()-started, output=str(out.resolve()))
     (out / "run_metadata.json").write_text(json.dumps(metadata, indent=2, ensure_ascii=False), encoding="utf-8")
     return metadata
