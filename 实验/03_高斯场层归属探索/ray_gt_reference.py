@@ -20,7 +20,7 @@ PROTOCOL = dict(radius_px=.75, nearest_px=.25, front_gap_mm=2., min_points=6,
 REFERENCE_RADII_PX = (.75, 1.5, 3.)
 
 
-def stable_reference(refs):
+def stable_reference(refs, labels=('075', '15', '30')):
     """Coverage repair uses GT only, with fixed cross-footprint agreement."""
     a, b = refs[1:]
     if a['status'] == b['status'] == 'accepted':
@@ -33,9 +33,27 @@ def stable_reference(refs):
         gap = None
         result = dict(a, status='missing_multiscale_reference', reference_mm=None)
     result['cross_scale_gap_mm'] = gap
-    for label, ref in zip(('075', '15', '30'), refs):
+    for label, ref in zip(labels, refs):
         result[f'status_radius_{label}'] = ref['status']
         result[f'reference_radius_{label}_mm'] = ref['reference_mm']
+    return result
+
+
+def spatial_reference(cam_mm, uv, pixel, focal, center, neighbors, tree):
+    """A front scan anchor and local 3D neighborhoods avoid merging back surfaces."""
+    neighbors = np.asarray(neighbors, dtype=int)
+    initial = local_reference(cam_mm[neighbors], uv[neighbors], pixel, focal, center)
+    close = neighbors[np.linalg.norm(uv[neighbors] - pixel, axis=1) <= .25]
+    if not len(close):
+        return dict(initial, status='no_front_anchor', reference_mm=None)
+    anchor = close[np.argmin(cam_mm[close, 2])]
+    distances, indices = tree.query(cam_mm[anchor], k=min(64, len(cam_mm)))
+    refs = [initial]
+    for radius in (1., 2.):
+        take = indices[np.asarray(distances) <= radius]
+        refs.append(local_reference(cam_mm[take], uv[take], pixel, focal, center))
+    result = stable_reference(refs, ('projected075', 'spatial1mm', 'spatial2mm'))
+    result['front_anchor_z_mm'] = float(cam_mm[anchor, 2])
     return result
 
 
@@ -137,6 +155,12 @@ def self_check():
     assert stable_reference([good, good, good])['status'] == 'accepted'
     shifted = dict(good, reference_mm=100.2)
     assert stable_reference([good, good, shifted])['reference_mm'] is None
+    double = np.r_[front, q * (z[:, None] + 100.)]
+    test_uv = np.r_[uv, uv]
+    rr = spatial_reference(double, test_uv, np.zeros(2), np.array([100., 100.]),
+                           np.zeros(2), np.arange(len(double)), cKDTree(double))
+    assert rr['status'] == 'accepted', rr
+    np.testing.assert_allclose(rr['reference_mm'], 100., atol=1e-9)
     print('scan-plane, front occlusion, sparse and extrapolation checks passed')
 
 
@@ -207,6 +231,7 @@ def run(args):
             inside = ((uv >= [-1., -1.]) & (uv <= [w, h])).all(1)
             cam_mm, uv = cam_mm[inside], uv[inside]
             tree = cKDTree(uv)
+            spatial_tree = cKDTree(cam_mm) if args.spatial3d else None
             with np.load(data_path) as rays:
                 pixels = rays['pixel_xy'].astype(float)
             radii = REFERENCE_RADII_PX if args.multiscale else (PROTOCOL['radius_px'],)
@@ -217,14 +242,18 @@ def run(args):
                 for neighborhood in neighborhoods:
                     neighbors = np.asarray(neighborhood[ri], dtype=int)
                     refs.append(local_reference(cam_mm[neighbors], uv[neighbors], pixel, focal, center))
-                ref = stable_reference(refs) if args.multiscale else refs[0]
+                if args.spatial3d:
+                    ref = spatial_reference(cam_mm, uv, pixel, focal, center,
+                                            neighborhoods[0][ri], spatial_tree)
+                else:
+                    ref = stable_reference(refs) if args.multiscale else refs[0]
                 statuses[ref['status']] += 1
                 rows.append(dict(scan=scan, image_name=name, ray_index=ri,
                                  pixel_x=int(pixel[0]), pixel_y=int(pixel[1]), **ref))
             views.append(dict(scan=scan, image_name=name, sampled_rays=len(pixels),
                               accepted=statuses['accepted'], statuses=dict(statuses)))
             print(json.dumps(views[-1]), flush=True)
-            del tree, cam_mm, uv
+            del tree, spatial_tree, cam_mm, uv
             if time.monotonic() - start > 600:
                 raise TimeoutError('Reference batch exceeded its 600-second bound')
         del scene
@@ -232,6 +261,8 @@ def run(args):
     write_csv(out / 'view_coverage.csv', [{k: v for k, v in x.items() if k != 'statuses'} for x in views])
     report = dict(commit=commit, protocol=PROTOCOL, reference_radii_px=list(radii),
                   multiscale=args.multiscale,
+                  spatial3d=args.spatial3d,
+                  spatial_reference_rule='Frontmost GT point projected within 0.25px anchors up to 64 nearest scan points within 1mm/2mm 3D radius; both planes must pass the unchanged gates and agree within 0.1mm. Added after projection-only reference coverage was low, without using prediction-error feedback.',
                   stable_reference_rule='Both 1.5px and 3px references must independently pass identical plane gates and differ by <=0.1mm; use 1.5px depth. This coverage check was added after the 0.75px-only run had 30/3072 coverage, before inspecting prediction errors.',
                   inputs=inputs, views=views,
                   sampled_rays=len(rows), accepted=sum(x['status'] == 'accepted' for x in rows),
@@ -243,11 +274,14 @@ def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument('--self-check', action='store_true')
     p.add_argument('--multiscale', action='store_true')
+    p.add_argument('--spatial3d', action='store_true')
     p.add_argument('--inputs', type=Path)
     p.add_argument('--ray-root', type=Path)
     p.add_argument('--influence-root', type=Path)
     p.add_argument('--output', type=Path)
     args = p.parse_args()
+    if args.multiscale and args.spatial3d:
+        p.error('Choose one reference-construction mode')
     if args.self_check:
         self_check()
     else:
