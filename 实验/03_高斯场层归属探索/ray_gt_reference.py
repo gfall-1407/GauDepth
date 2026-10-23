@@ -147,7 +147,7 @@ def run(args):
         old = read_json(args.influence_root / f'scan{scan}/metadata.json')
         gt_path = root / f'stl{scan:03d}_total.ply'
         camera_path = root / 'cameras.npz'
-        plane_path = root / f'Plane{scan}.mat'
+        plane_path = root / 'ObsMask' / f'Plane{scan}.mat'
         assert sha(gt_path) == old['gt_sha256']
         assert sha(camera_path) == old['cameras_npz_sha256']
         with np.load(camera_path) as camera:
