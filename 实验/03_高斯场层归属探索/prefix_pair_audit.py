@@ -89,7 +89,8 @@ def _metadata_and_views(input_root: Path, retrieval: dict):
         assert meta["hostname"] == EXPECTED_HOST
         assert meta["git_remote"] == "git@github.com:gfall-1407/GauDepth.git"
         names = meta["camera_names"]
-        assert len(names) == 49 and len(set(names)) == 49
+        expected_cameras = 49 if scan in (24, 37, 40, 55, 63, 65, 69) else 64
+        assert len(names) == expected_cameras and len(set(names)) == expected_cameras
         assert [v["name"] for v in meta["views"]] == names
         assert len(meta["views"]) == 49
         for key in ("model_sha256", "cfg_sha256", "cameras_npz_sha256", "gt_sha256", "obs_sha256",
