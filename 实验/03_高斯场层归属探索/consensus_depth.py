@@ -556,6 +556,193 @@ def _source_provenance():
         packages={name: version(name) for name in ("numpy", "scipy", "plyfile")})
 
 
+def _peak_diagnostics(expected: float, best: float, second: float, expected_nn: float,
+                      best_nn: float, second_nn: float, relative_support: float, h_mm: float):
+    finite = np.isfinite([expected, best, second]).all()
+    separation = abs(second - best) if finite else float("nan")
+    between = bool(finite and min(best, second) <= expected <= max(best, second))
+    separated = bool(finite and separation >= 2.0 * h_mm)
+    geometry_candidate = bool(separated and between and np.isfinite([expected_nn, best_nn, second_nn]).all()
+        and best_nn <= 1.0 and second_nn <= 1.0 and expected_nn >= 2.0)
+    return dict(second_finite=bool(np.isfinite(second)), separation_mm=separation,
+        expected_between=between, separated_2h=separated,
+        two_position_scan_geometry_candidate=geometry_candidate,
+        relative_support_ge_0p25=bool(np.isfinite(relative_support) and relative_support >= .25))
+
+
+def _number(row: dict, key: str):
+    value = row.get(key, "")
+    try:
+        x = float(value)
+    except (TypeError, ValueError):
+        return float("nan")
+    return x
+
+
+def _summarize_peak_rows(rows: list[dict], scan, view):
+    out = []
+    for h in MODE_BANDWIDTHS_MM:
+        tag = f"{h:g}"
+        n = len(rows)
+        status = [r[f"mode_status_h{tag}mm"] for r in rows]
+        rvals = np.array([_number(r, "support_ratio_R_h1mm") for r in rows])
+        candidates = np.array([r[f"two_position_scan_geometry_candidate_h{tag}mm"] == 1 for r in rows])
+        rel = np.array([_number(r, f"mode_relative_second_h{tag}mm") for r in rows])
+        rel_ge = np.array([r[f"second_relative_support_ge_0p25_h{tag}mm"] == 1 for r in rows])
+        second_finite = np.array([r[f"second_finite_h{tag}mm"] == 1 for r in rows])
+        sep = np.array([r[f"separated_2h_h{tag}mm"] == 1 for r in rows])
+        between = np.array([r[f"expected_between_h{tag}mm"] == 1 for r in rows])
+        best_err = np.array([_number(r, f"nn_best_{tag}mm") for r in rows])
+        second_err = np.array([_number(r, f"nn_second_{tag}mm") for r in rows])
+        expected_err = np.array([_number(r, "nn_expected_mm") for r in rows])
+        row = dict(scan=scan, view=view, bandwidth_mm=h, denominator_rays=n,
+            mode_converged=sum(x == "converged" for x in status),
+            mode_partial=sum(x == "partial" for x in status), mode_unknown=sum(x == "unknown" for x in status),
+            R_finite=int(np.isfinite(rvals).sum()), R_gt_1=int((rvals[np.isfinite(rvals)] > 1).sum()),
+            R_gt_1_converged=int(sum(np.isfinite(rvals[i]) and rvals[i] > 1 and status[i] == "converged" for i in range(n))),
+            R_gt_1_partial=int(sum(np.isfinite(rvals[i]) and rvals[i] > 1 and status[i] == "partial" for i in range(n))),
+            R_gt_1_unknown=int(sum(np.isfinite(rvals[i]) and rvals[i] > 1 and status[i] == "unknown" for i in range(n))),
+            second_finite=int(second_finite.sum()), separated_ge_2h=int(sep.sum()),
+            expected_between=int(between.sum()), candidate_n=int(candidates.sum()),
+            second_relative_support_ge_0p25=int(rel_ge.sum()),
+            second_relative_support_lt_0p25=int(np.sum(second_finite & np.isfinite(rel) & (rel < .25))),
+            candidate_relative_support_ge_0p25=int(np.sum(candidates & np.isfinite(rel) & (rel >= .25))),
+            candidate_relative_support_lt_0p25=int(np.sum(candidates & np.isfinite(rel) & (rel < .25))),
+            relative_support_finite=int(np.isfinite(rel).sum()),
+            mean_expected_nn_mm=float(np.nanmean(expected_err)) if np.isfinite(expected_err).any() else None,
+            mean_best_nn_mm=float(np.nanmean(best_err)) if np.isfinite(best_err).any() else None,
+            mean_second_nn_mm=float(np.nanmean(second_err)) if np.isfinite(second_err).any() else None)
+        out.append(row)
+    return out
+
+
+def audit_peak_geometry(args):
+    ray_root, input_root, influence_root, csv_path, out = map(Path,
+        (args.ray_root, args.input_root, args.influence_root, args.rays_csv, args.output))
+    if not out.is_absolute():
+        raise ValueError("--output must be an absolute independent directory")
+    if out.exists() and any(out.iterdir()):
+        raise FileExistsError(f"Refusing nonempty peak-geometry output: {out}")
+    v2_meta_path = csv_path.parent / "run_metadata.json"
+    v2_meta = json.loads(v2_meta_path.read_text(encoding="utf-8"))
+    if v2_meta.get("status") != "complete" or v2_meta.get("ray_count") != 3072 or \
+            v2_meta.get("source", {}).get("commit") != "7aba27a72929dd47ddf20dd7a91e9f6116062745":
+        raise ValueError("Expected the validated ray_support_v2 output and source commit")
+    with csv_path.open("r", newline="", encoding="utf-8-sig") as f:
+        source_rows = list(csv.DictReader(f))
+    keyed = {}
+    for r in source_rows:
+        key = (int(r["scan"]), r["view"], int(r["ray"]))
+        if key in keyed:
+            raise ValueError(f"Duplicate ray row in v2 CSV: {key}")
+        keyed[key] = r
+    if len(keyed) != 3072:
+        raise ValueError(f"Expected all 3072 v2 rows, got {len(keyed)}")
+    out.mkdir(parents=True, exist_ok=True)
+    started = time.time()
+    ray_rows, view_rows, scan_rows, input_hashes, examples = [], [], [], [], {"positive": [], "counterexample": []}
+    for scan in SCANS:
+        scan_data = _load_scan(scan, ray_root, input_root, influence_root)
+        gt = _load_gt(scan_data["gt"])
+        tree = _make_gt_tree(gt)
+        input_hashes.append(dict(scan=scan, model_sha256=sha256(scan_data["model"]),
+            cameras_sha256=sha256(scan_data["cameras"]), gt_sha256=sha256(scan_data["gt"]),
+            influence_metadata_sha256=sha256(scan_data["influence_meta_path"])))
+        scan_group_rows = []
+        for old_meta, vm, ray_file in scan_data["views"]:
+            name = vm["image_name"]
+            checks = _check_camera_projection(scan_data["cameras"], vm, scan_data["alignment"])
+            with np.load(ray_file) as ray_data:
+                xy = ray_data["pixel_xy"].astype(np.int32)
+                image_size = tuple(map(int, ray_data["image_size"]))
+            if len(xy) != 256 or image_size != tuple(vm["image_size"]):
+                raise ValueError(f"Unexpected saved rays or dimensions for scan{scan}/{name}")
+            items = [keyed.get((scan, name, i)) for i in range(len(xy))]
+            if any(x is None for x in items):
+                raise ValueError(f"Missing v2 rows for scan{scan}/{name}")
+            if any(int(r["x"]) != int(xy[i, 0]) or int(r["y"]) != int(xy[i, 1]) for i, r in enumerate(items)):
+                raise ValueError(f"v2 pixel identity mismatch for scan{scan}/{name}")
+            depths = {"expected": np.array([_number(r, "expected") for r in items])}
+            for h in MODE_BANDWIDTHS_MM:
+                tag = f"{h:g}"
+                method_tag = "0p5" if h == 0.5 else tag
+                depths[f"mode_{tag}"] = np.array([_number(r, f"kernel_mode_{method_tag}mm") for r in items])
+                depths[f"second_{tag}"] = np.array([_number(r, f"mode_second_h{tag}mm") for r in items])
+            errors = {}
+            for label, dmm in depths.items():
+                valid = np.isfinite(dmm) & (dmm > 0)
+                result = np.full(len(xy), np.nan)
+                if valid.any():
+                    points = _points_mm(xy[valid], dmm[valid] / scan_data["scale"], vm, scan_data["alignment"])
+                    result[valid] = _query_exact(points, tree)
+                errors[label] = result
+            # Confirm the repeated expected and best-mode NN values use precisely the v2 camera/GT coordinates.
+            for i, r in enumerate(items):
+                for label, key in (("expected", "nn_expected_mm"), ("mode_1", "nn_kernel_mode_1mm_mm")):
+                    saved, replay = _number(r, key), errors[label][i]
+                    if np.isfinite(saved) != np.isfinite(replay) or (np.isfinite(saved) and abs(saved-replay) > 1e-6):
+                        raise ValueError(f"NN re-projection mismatch scan{scan}/{name}/ray{i}/{label}")
+            local_rows = []
+            for i, base in enumerate(items):
+                row = dict(scan=scan, view=name, ray=i, x=int(xy[i, 0]), y=int(xy[i, 1]),
+                    expected_mm=depths["expected"][i], nn_expected_mm=errors["expected"][i],
+                    support_ratio_R_h1mm=_number(base, "support_ratio_R_h1mm"),
+                    source_ray_status=base["ray_status"],
+                    camera_rotation_max_abs=checks[0], camera_translation_max_abs=checks[1])
+                for h in MODE_BANDWIDTHS_MM:
+                    tag = f"{h:g}"
+                    best, second = depths[f"mode_{tag}"], depths[f"second_{tag}"]
+                    row[f"mode_status_h{tag}mm"] = base[f"mode_status_h{tag}mm"]
+                    rel = _number(base, f"mode_relative_second_h{tag}mm")
+                    d = _peak_diagnostics(depths["expected"][i], best[i], second[i],
+                        errors["expected"][i], errors[f"mode_{tag}"][i], errors[f"second_{tag}"][i], rel, h)
+                    row[f"best_{tag}mm"] = best[i]
+                    row[f"second_{tag}mm"] = second[i]
+                    row[f"nn_best_{tag}mm"] = errors[f"mode_{tag}"][i]
+                    row[f"nn_second_{tag}mm"] = errors[f"second_{tag}"][i]
+                    row[f"second_relative_support_{tag}mm"] = rel
+                    row[f"second_relative_support_ge_0p25_h{tag}mm"] = int(d["relative_support_ge_0p25"])
+                    row[f"second_finite_h{tag}mm"] = int(d["second_finite"])
+                    row[f"separation_h{tag}mm"] = d["separation_mm"]
+                    row[f"expected_between_h{tag}mm"] = int(d["expected_between"])
+                    row[f"separated_2h_h{tag}mm"] = int(d["separated_2h"])
+                    row[f"two_position_scan_geometry_candidate_h{tag}mm"] = int(d["two_position_scan_geometry_candidate"])
+                    if h == 1.0:
+                        row["candidate_relative_support_ge_0p25"] = int(d["two_position_scan_geometry_candidate"] and d["relative_support_ge_0p25"])
+                        row["candidate_relative_support_lt_0p25"] = int(d["two_position_scan_geometry_candidate"] and np.isfinite(rel) and rel < .25)
+                local_rows.append(row)
+            ray_rows.extend(local_rows)
+            scan_group_rows.extend(local_rows)
+            view_rows.extend(_summarize_peak_rows(local_rows, scan, name))
+            positives = [r for r in local_rows if r["two_position_scan_geometry_candidate_h1mm"] == 1]
+            negatives = [r for r in local_rows if r["separated_2h_h1mm"] == 1 and r["expected_between_h1mm"] == 1 and r["two_position_scan_geometry_candidate_h1mm"] == 0]
+            examples["positive"].extend(positives)
+            examples["counterexample"].extend(negatives)
+        scan_rows.extend(_summarize_peak_rows(scan_group_rows, scan, "scan_pooled_sample"))
+    scan_rows.extend(_summarize_peak_rows(ray_rows, "pooled", "all_3072_sampled_rays"))
+    if len(ray_rows) != 3072:
+        raise ValueError(f"Expected 3072 audited rays, got {len(ray_rows)}")
+    _write_csv(out / "rays.csv", ray_rows)
+    _write_csv(out / "view_summary.csv", view_rows)
+    _write_csv(out / "scan_summary.csv", scan_rows)
+    # Deterministic post-hoc examples are kept separate from the complete population summaries.
+    examples["positive"] = sorted(examples["positive"], key=lambda r: (-r["second_relative_support_1mm"], r["scan"], r["view"], r["ray"]))[:3]
+    examples["counterexample"] = sorted(examples["counterexample"], key=lambda r: (r["scan"], r["view"], r["ray"]))[:3]
+    (out / "examples.json").write_text(json.dumps(examples, indent=2, ensure_ascii=False, allow_nan=True), encoding="utf-8")
+    metadata = dict(status="complete", source=_source_provenance(), source_ray_csv=str(csv_path.resolve()),
+        source_ray_csv_sha256=sha256(csv_path), source_run_metadata_sha256=sha256(v2_meta_path),
+        ray_count=len(ray_rows), views=len(view_rows)//len(MODE_BANDWIDTHS_MM), scans=list(SCANS),
+        input_sha256=input_hashes, fixed_thresholds=dict(main_h_mm=1.0, separation_ge_2h=True,
+            peak_nn_le_mm=1.0, expected_nn_ge_mm=2.0, expected_between_peaks=True, relative_support_reporting_threshold=.25),
+        interpretation="Descriptive candidate for two scan-geometry-supported positions with a mean-depth gap; not proof of true surface, physical layer, visibility, or pixelwise ground truth. Sparse GT misses can affect nearest-neighbor distances. S(best) is selected to be high among converged search results by construction and is not correctness evidence. Partial search results are not called global maxima.",
+        convergence_counts={h: {s: sum(r[f"mode_status_h{h:g}mm"]==s for r in ray_rows) for s in ("converged","partial","unknown")} for h in MODE_BANDWIDTHS_MM},
+        R_gt_1_count=sum(np.isfinite(_number(r,"support_ratio_R_h1mm")) and _number(r,"support_ratio_R_h1mm")>1 for r in ray_rows),
+        R_finite_count=sum(np.isfinite(_number(r,"support_ratio_R_h1mm")) for r in ray_rows),
+        elapsed_seconds=time.time()-started, output=str(out.resolve()))
+    (out / "run_metadata.json").write_text(json.dumps(metadata, indent=2, ensure_ascii=False), encoding="utf-8")
+    return metadata
+
+
 def run(args):
     ray_root, input_root, influence_root, accuracy_root, out = map(Path,
         (args.ray_root, args.input_root, args.influence_root, args.accuracy_root, args.output))
@@ -607,7 +794,7 @@ def run(args):
     metadata["full_accuracy_map_crosschecks"] = crosschecks
     metadata["mechanism_thresholds"] = dict(main_bandwidth_mm=1.0, weak_expected_support_R_below=0.5,
         competing_peak_separation_at_least_mm=2.0,
-        note="R is S(expected)/S(global mode); the mode score is maximized by construction, so S(mode) alone is not evidence of correctness.")
+        note="R is S(expected)/S(best-scoring converged cluster found by the bounded search); partial searches are not global maxima. The selected mode score is high by construction and is not correctness evidence.")
     (out / "run_metadata.json").write_text(json.dumps(metadata, indent=2, ensure_ascii=False), encoding="utf-8")
     return metadata
 
@@ -644,6 +831,23 @@ def self_check():
     native_vals, _ = _ray_estimates(np.array([1., 2.]) * scale, np.array([.4, .6]),
                                     np.array([1., native_scene, 1.]) * scale)
     np.testing.assert_allclose(native_vals["native_median"] / scale, native_scene, rtol=0, atol=1e-12)
+    candidate = _peak_diagnostics(expected=5.0, best=0.0, second=5.0,
+        expected_nn=3.0, best_nn=.5, second_nn=1.0, relative_support=.3, h_mm=1.0)
+    assert candidate["two_position_scan_geometry_candidate"]
+    assert candidate["relative_support_ge_0p25"]
+    negative = _peak_diagnostics(expected=1.0, best=0.0, second=5.0,
+        expected_nn=1.0, best_nn=.5, second_nn=.5, relative_support=.2, h_mm=1.0)
+    assert not negative["two_position_scan_geometry_candidate"]
+    assert not negative["relative_support_ge_0p25"]
+    summary_row = dict(support_ratio_R_h1mm=1.1, nn_expected_mm=3., source_ray_status="finite")
+    for h in MODE_BANDWIDTHS_MM:
+        tag = f"{h:g}"
+        summary_row.update({f"mode_status_h{tag}mm":"partial", f"two_position_scan_geometry_candidate_h{tag}mm":0,
+            f"mode_relative_second_h{tag}mm":.3, f"second_relative_support_ge_0p25_h{tag}mm":1,
+            f"second_finite_h{tag}mm":1, f"separated_2h_h{tag}mm":0, f"expected_between_h{tag}mm":0,
+            f"nn_best_{tag}mm":1., f"nn_second_{tag}mm":2.})
+    sample_summary = _summarize_peak_rows([summary_row], "synthetic", "one")
+    assert len(sample_summary) == 3 and sample_summary[0]["R_gt_1_partial"] == 1
     print("CPU self-check passed: empty/single/one-peak/two-peak/scale/split/finite")
 
 
@@ -654,10 +858,20 @@ def main():
     parser.add_argument("--input-root", type=Path)
     parser.add_argument("--influence-root", type=Path)
     parser.add_argument("--accuracy-root", type=Path)
+    parser.add_argument("--audit-peak-geometry", action="store_true",
+                        help="Reproject saved v2 second/best peaks and audit their GT-nearest-neighbor geometry")
+    parser.add_argument("--rays-csv", type=Path, help="Saved ray_support_v2/rays.csv")
     parser.add_argument("--output", type=Path)
     args = parser.parse_args()
     if args.check:
         self_check()
+        return
+    if args.audit_peak_geometry:
+        if not all((args.ray_root, args.input_root, args.influence_root, args.rays_csv, args.output)):
+            parser.error("peak-geometry audit requires --ray-root --input-root --influence-root --rays-csv --output")
+        result = audit_peak_geometry(args)
+        print(json.dumps(dict(status=result["status"], ray_count=result["ray_count"], views=result["views"],
+                              elapsed_seconds=result["elapsed_seconds"], output=result["output"]), indent=2))
         return
     if not all((args.ray_root, args.input_root, args.influence_root, args.accuracy_root, args.output)):
         parser.error("real-data mode requires --ray-root --input-root --influence-root --accuracy-root --output")
