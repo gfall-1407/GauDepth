@@ -107,7 +107,15 @@ def run(input_root: Path, output_root: Path) -> None:
     retrieval = json.loads(retrieval_path.read_text(encoding="utf-8"))
     validation = json.loads(validation_path.read_text(encoding="utf-8"))
     retrieval.update(validation)
-    assert not output_root.exists(), f"Refusing to overwrite existing output: {output_root}"
+    expected_output_names = {"prefix_pair_shift_bins.csv", "prefix_pair_scan_summary.csv",
+                             "input_provenance.csv", "prefix_pair_audit.json"}
+    if output_root.exists():
+        existing = {p.name for p in output_root.iterdir()}
+        assert existing == expected_output_names, f"Refusing to replace unknown output contents: {existing}"
+        old_summary = json.loads((output_root / "prefix_pair_audit.json").read_text(encoding="utf-8"))
+        assert old_summary.get("status") == "complete"
+        assert old_summary.get("input_root") == str(input_root)
+        assert old_summary.get("run_commit") == EXPECTED_COMMIT
 
     source_rows = []
     view_rows = []
@@ -266,19 +274,22 @@ def run(input_root: Path, output_root: Path) -> None:
         bin_rows.append({"aggregation": "scan", "scan": scan, "method": method, "direction": direction,
             "abs_shift_bin_mm": label, "n": n,
             "camera_count": int(sum(1 for v in scan_totals[(method, direction, label)] if v["scan"] == scan and v["n"])),
+            "camera_names": ";".join(sorted({v["camera_names"] for v in scan_totals[(method, direction, label)]
+                                                   if v["scan"] == scan and v["n"]})),
             "mean_axial_shift_mm": r["shift_sum"] / n if n else None,
             "mean_abs_shift_mm": r["abs_shift_sum"] / n if n else None,
             "mean_baseline_nn_mm": r["base_error_sum"] / n if n else None,
             "mean_candidate_nn_mm": r["candidate_error_sum"] / n if n else None,
             "mean_delta_nn_mm": r["delta_error_sum"] / n if n else None,
             "improved": r["improved"], "worsened": r["worsened"], "tied": r["tied"]})
-    for method, _ in METHODS:
+    for _, method in METHODS:
         for d in ("near", "far", "zero"):
             for label in BIN_LABELS:
                 total = totals[(method, d, label)]
                 n = total["n"]
                 pool = {"aggregation": "pixel_pool", "scan": "ALL", "method": method, "direction": d,
                     "abs_shift_bin_mm": label, "n": n, "camera_count": len(total["cameras"]),
+                    "camera_names": ";".join(sorted(total["cameras"])),
                     "mean_axial_shift_mm": total["shift_sum"] / n if n else None,
                     "mean_abs_shift_mm": total["abs_shift_sum"] / n if n else None,
                     "mean_baseline_nn_mm": total["base_error_sum"] / n if n else None,
@@ -290,6 +301,7 @@ def run(input_root: Path, output_root: Path) -> None:
                               r["direction"] == d and r["abs_shift_bin_mm"] == label and r["n"] > 0]
                 equal = {"aggregation": "scan_equal", "scan": "MEAN_OF_SCAN_MEANS", "method": method,
                     "direction": d, "abs_shift_bin_mm": label, "n": n, "camera_count": len(total["cameras"]),
+                    "camera_names": ";".join(sorted(total["cameras"])),
                     "mean_axial_shift_mm": float(np.mean([x["mean_axial_shift_mm"] for x in candidates])) if candidates else None,
                     "mean_abs_shift_mm": float(np.mean([x["mean_abs_shift_mm"] for x in candidates])) if candidates else None,
                     "mean_baseline_nn_mm": float(np.mean([x["mean_baseline_nn_mm"] for x in candidates])) if candidates else None,
@@ -316,6 +328,7 @@ def run(input_root: Path, output_root: Path) -> None:
             for field in mean_fields:
                 agg[field] = sum((r[field] or 0.0) * r["n_pair"] for r in rows) / n if n else None
             agg["harm_pixels_fraction"] = agg["worsened"] / n if n else None
+            agg["improved_pixels_fraction"] = agg["improved"] / n if n else None
             harm, gain = agg["positive_harm_sum_mm"], agg["negative_gain_sum_mm"]
             agg["harm_share_of_absolute_net_motion"] = harm / (harm + gain) if harm + gain else None
             for threshold in (2, 5):
@@ -341,15 +354,35 @@ def run(input_root: Path, output_root: Path) -> None:
                     agg[field] = sum(r[field] * r["n_pair"] for r in rows if r[field] is not None) / n if n else None
                 else:
                     agg[field] = float(np.mean(vals)) if vals else None
-            agg["harm_pixels_fraction"] = agg["worsened"] / n if n else None
+            if aggregation == "pixel_pool":
+                agg["harm_pixels_fraction"] = agg["worsened"] / n if n else None
+                agg["improved_pixels_fraction"] = agg["improved"] / n if n else None
+            else:
+                harm_fracs = [r["harm_pixels_fraction"] for r in rows if r["harm_pixels_fraction"] is not None]
+                improve_fracs = [r["improved_pixels_fraction"] for r in rows if r["improved_pixels_fraction"] is not None]
+                agg["harm_pixels_fraction"] = float(np.mean(harm_fracs)) if harm_fracs else None
+                agg["improved_pixels_fraction"] = float(np.mean(improve_fracs)) if improve_fracs else None
             harm, gain = agg["positive_harm_sum_mm"], agg["negative_gain_sum_mm"]
-            agg["harm_share_of_absolute_net_motion"] = harm / (harm + gain) if harm + gain else None
+            if aggregation == "pixel_pool":
+                agg["harm_share_of_absolute_net_motion"] = harm / (harm + gain) if harm + gain else None
+            else:
+                shares = [r["harm_share_of_absolute_net_motion"] for r in rows
+                          if r["harm_share_of_absolute_net_motion"] is not None]
+                agg["harm_share_of_absolute_net_motion"] = float(np.mean(shares)) if shares else None
             for threshold in (2, 5):
                 count = agg[f"abs_shift_ge{threshold}_n"]
-                agg[f"abs_shift_ge{threshold}_nonimprove_fraction"] = (
-                    agg[f"abs_shift_ge{threshold}_nonimprove"] / count if count else None)
-                agg[f"abs_shift_ge{threshold}_mean_delta_nn_mm"] = (
-                    agg[f"abs_shift_ge{threshold}_delta_error_sum_mm"] / count if count else None)
+                if aggregation == "pixel_pool":
+                    agg[f"abs_shift_ge{threshold}_nonimprove_fraction"] = (
+                        agg[f"abs_shift_ge{threshold}_nonimprove"] / count if count else None)
+                    agg[f"abs_shift_ge{threshold}_mean_delta_nn_mm"] = (
+                        agg[f"abs_shift_ge{threshold}_delta_error_sum_mm"] / count if count else None)
+                else:
+                    frac_field = f"abs_shift_ge{threshold}_nonimprove_fraction"
+                    mean_field = f"abs_shift_ge{threshold}_mean_delta_nn_mm"
+                    agg[frac_field] = float(np.mean([r[frac_field] for r in rows if r[frac_field] is not None])) \
+                        if any(r[frac_field] is not None for r in rows) else None
+                    agg[mean_field] = float(np.mean([r[mean_field] for r in rows if r[mean_field] is not None])) \
+                        if any(r[mean_field] is not None for r in rows) else None
             scan_rows.append(agg)
     output_root.mkdir(parents=True)
     _write_csv(output_root / "prefix_pair_shift_bins.csv", bin_rows)
