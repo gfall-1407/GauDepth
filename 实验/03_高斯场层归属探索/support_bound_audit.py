@@ -251,7 +251,8 @@ def main() -> None:
                           saved_mode_score_le_final_lower=bool(saved_score <= result["lower_score"] + 1e-15),
                           original_expected_support=float(source_row[support_expected_field]),
                           original_mode_support=float(source_row[support_mode_field]),
-                          original_relative_support_R=float(source_row[f"support_ratio_R_h{int(h)}mm"]),
+                          original_relative_support_R=(float(source_row["support_ratio_R_h1mm"]) if h == 1.0 else
+                                                       float(source_row[support_expected_field]) / float(source_row[support_mode_field])),
                           peak_location_certified=False,
                           interval_count=result["interval_count"], converged_starts=converged_starts,
                           failed_starts=failed, solution_clusters=clusters, starts=starts,
