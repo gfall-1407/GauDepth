@@ -181,8 +181,8 @@ def load_scan(scan, args, neighbor_manifest):
         for line in f:
             row = json.loads(line)
             name, nearest = row["ref_name"], row["nearest_name"]
-            if name in neighbors or name not in cameras or len(nearest) != 8 or len(set(nearest)) != 8 or name in nearest or not set(nearest) <= set(cameras):
-                raise ValueError("Expected original eight unique non-self training neighbors")
+            if name in neighbors or name not in cameras or len(nearest) > 8 or len(set(nearest)) != len(nearest) or name in nearest or not set(nearest) <= set(cameras):
+                raise ValueError("Expected original up-to-eight unique non-self training neighbors")
             neighbors[name] = nearest
     if set(neighbors) != set(cameras):
         raise ValueError("Neighbor inventory differs from original training cameras")
@@ -289,7 +289,7 @@ def run(args):
         neighbor_manifest_sha256=cd.sha256(args.neighbor_manifest),
         args={key: str(value) if isinstance(value, Path) else value for key, value in vars(args).items()},
         fixed_rule=dict(pool=list(POOL), tie_mm=TIE_MM, minimum_common_neighbors=MIN_COMMON,
-            neighbors="Original multi_view.json eight neighbors, no self or reselection",
+            neighbors="Original multi_view.json up-to-eight neighbors, no self, filling or reselection; fewer than three common valid neighbors falls back",
             score="Median abs(projected camera-z minus bilinear neighbor expected depth), converted to DTU mm",
             validity="All four bilinear pixels finite positive; a neighbor is used only if all four pool candidates are valid",
             fallback="Huber1mm when fewer than three common neighbors; same first-pool preference for <=1e-9mm score ties"),
