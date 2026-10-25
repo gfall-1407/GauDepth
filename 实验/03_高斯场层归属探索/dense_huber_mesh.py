@@ -1,4 +1,4 @@
-"""Fixed scan24 dense 1mm Huber QA and paired tracked-native TSDF/Calibration pilot."""
+"""Fixed G1 dense 1mm Huber QA and paired tracked-native TSDF/Calibration checks."""
 from __future__ import annotations
 
 import argparse
@@ -25,10 +25,8 @@ from sample import atomic_json, forward, git, sha256
 from depth_accuracy import load_scene, coordinate_check
 from depth_holdout import huber_exact
 from pixel_contribution import retained_mask
+from night_depth_batch import FIXED
 
-SCAN = 24
-MODEL_SHA = "928670a2d4571cc9db9e221e77670d00c4ccf0add2526e87c839601de5b4388a"
-CFG_SHA = "b6def520fe83e1bf8179d537e5983260375f92d3238df2aa89401a0f8ad62b04"
 HOST_SHA = "f97dcd66f55d9ddbf673c1d467238fe6f983b9f0bf062645a87bb12d20aa91df"
 SEED = 20261026
 CHUNK = 32768
@@ -51,8 +49,8 @@ def source_provenance():
 
 
 def verify_originals(metadata, ply, cfg):
-    metadata.update(original_model_unchanged=sha256(ply) == MODEL_SHA,
-                    original_cfg_unchanged=sha256(cfg) == CFG_SHA)
+    metadata.update(original_model_unchanged=sha256(ply) == metadata["model_sha256"],
+                    original_cfg_unchanged=sha256(cfg) == metadata["cfg_sha256"])
     if not metadata["original_model_unchanged"] or not metadata["original_cfg_unchanged"]:
         raise ValueError("Protected original model/cfg changed")
 
@@ -251,6 +249,8 @@ def native_evaluate(host, dataset, gt_root, gaussians, scene):
 
 def run(args):
     provenance = source_provenance()
+    scan = args.scan
+    model_sha, cfg_sha, camera_count, _ = FIXED[scan]
     if socket.gethostname() != "autodl-container-d6a7459179-693ab6ee":
         raise ValueError("Only the explicitly verified G1 is authorized")
     output = args.output.resolve()
@@ -259,25 +259,25 @@ def run(args):
     for root in (args.model_root, args.source_root, args.gt_root):
         if output == root.resolve() or root.resolve() in output.parents:
             raise ValueError("Output cannot be inside protected input roots")
-    model = args.model_root / "scan24"
+    model = args.model_root / f"scan{scan}"
     cfg_path = model / "cfg_args"
     ply = model / "point_cloud/iteration_30000/point_cloud.ply"
     config = cfg_values(cfg_path)
-    if sha256(ply) != MODEL_SHA or sha256(cfg_path) != CFG_SHA:
-        raise ValueError("Fixed G1 scan24 model/cfg differ from verified baseline")
+    if sha256(ply) != model_sha or sha256(cfg_path) != cfg_sha:
+        raise ValueError(f"Fixed G1 scan{scan} model/cfg differ from verified baseline")
     if float(config["depth_ratio"]) != 0. or bool(config.get("eval", False)):
         raise ValueError("This pilot retains the original G1 ratio0 and training cameras")
     required = [args.gt_root / f"Calibration/cal18/pos_{i:03d}.txt" for i in range(1, 65)]
-    required += [args.gt_root / "Points/stl/stl024_total.ply", args.gt_root / "ObsMask/ObsMask24_10.mat", args.gt_root / "ObsMask/Plane24.mat"]
+    required += [args.gt_root / f"Points/stl/stl{scan:03d}_total.ply", args.gt_root / f"ObsMask/ObsMask{scan}_10.mat", args.gt_root / f"ObsMask/Plane{scan}.mat"]
     if not args.pilot_only:
         for path in required:
             if not path.is_file():
                 raise FileNotFoundError(path)
     output.mkdir(parents=True)
-    metadata = dict(status="partial", source=provenance, scan=SCAN, methods=list(METHODS), views=[], results={},
+    metadata = dict(status="partial", source=provenance, scan=scan, methods=list(METHODS), views=[], results={},
         args={k: str(v) if isinstance(v, Path) else v for k, v in vars(args).items()},
         instance_id="d6a7459179-693ab6ee", hostname=socket.gethostname(),
-        model_sha256=MODEL_SHA, cfg_sha256=CFG_SHA, depth_ratio=0., h_mm=1.,
+        model_sha256=model_sha, cfg_sha256=cfg_sha, depth_ratio=0., h_mm=1.,
         native_entry="tracked mesh_extract.py expected_depth path; not a strict historical mesh_extract_old.py reproduction",
         policy="Original GT mask and tracked native TSDF/Calibration are identical for both methods; only expected_depth is replaced by Huber for huber_1mm, native median remains separate and unchanged. No new alpha cutoff or method-dependent common-coverage mask.",
         interpretation="Frozen readout pilot only. Huber is a classical robust estimator, not a novelty claim. Mesh scores cannot be inferred from earlier sampled one-way NN results.")
@@ -295,9 +295,9 @@ def run(args):
         if sha256(_C.__file__) != HOST_SHA:
             raise ValueError("Installed original rasterizer binary changed; provenance must be reviewed")
         safe_state(False)
-        dataset, pipe, gaussians, cameras, loaded_ply, digest = load_scene(SCAN, output, args.model_root, args.source_root)
-        if digest != MODEL_SHA or len(cameras) != 49 or [c.image_name for c in cameras] != [f"{i:04d}" for i in range(49)]:
-            raise ValueError("Fixed scan24 model or exact49 training camera inventory changed")
+        dataset, pipe, gaussians, cameras, loaded_ply, digest = load_scene(scan, output, args.model_root, args.source_root)
+        if digest != model_sha or len(cameras) != camera_count or [c.image_name for c in cameras] != [f"{i:04d}" for i in range(camera_count)]:
+            raise ValueError(f"Fixed scan{scan} model or exact{camera_count} training camera inventory changed")
         transform, alignment = coordinate_check(dataset, cameras)
         scale = float(alignment["scale_to_dtu_mm"])
         build = HERE / "构建_huber_v1"
@@ -411,6 +411,7 @@ def self_check():
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path)
+    parser.add_argument("--scan", type=int, choices=(24, 37, 106), default=24)
     parser.add_argument("--pilot-only", action="store_true")
     parser.add_argument("--check", action="store_true")
     parser.add_argument("--model-root", type=Path, default=Path("/root/autodl-tmp/GauDepth/outtest"))
