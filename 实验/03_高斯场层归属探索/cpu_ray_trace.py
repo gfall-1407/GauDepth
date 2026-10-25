@@ -31,8 +31,32 @@ def _unit(x):
 
 
 def load_model(path):
-    from plyfile import PlyData
-    p = PlyData.read(str(path))['vertex'].data
+    # GaussianModel.save_ply writes one binary little-endian float vertex table.
+    # Refuse other formats instead of adding a broad PLY conversion dependency.
+    fields, count = [], None
+    with Path(path).open('rb') as stream:
+        if stream.readline().strip() != b'ply':
+            raise ValueError('Not a PLY file')
+        if stream.readline().strip() != b'format binary_little_endian 1.0':
+            raise ValueError('Expected original binary little-endian Gaussian PLY')
+        for _ in range(1024):
+            line = stream.readline().decode('ascii').strip().split()
+            if line == ['end_header']:
+                break
+            if not line or line[0] == 'comment':
+                continue
+            if line[:2] == ['element', 'vertex'] and count is None:
+                count = int(line[2])
+            elif line[:2] == ['property', 'float'] and count is not None and len(line) == 3:
+                fields.append((line[2], '<f4'))
+            else:
+                raise ValueError(f'Unsupported Gaussian PLY header line: {line}')
+        else:
+            raise ValueError('PLY header exceeds 1024 lines')
+        offset = stream.tell()
+    if count is None or not fields:
+        raise ValueError('Missing original vertex table')
+    p = np.memmap(path, dtype=np.dtype(fields), offset=offset, shape=(count,), mode='r')
     def cols(names):
         return np.stack([p[n] for n in names], axis=1).astype(np.float32)
     xyz = cols(('x', 'y', 'z'))
