@@ -123,8 +123,10 @@ def load_scan(scan, args, neighbor_manifest):
         raise ValueError("Sample model or cfg differs from checked inputs")
     accuracy_path = args.accuracy_root / f"scan{scan}" / "metadata.json"
     accuracy = json.loads(accuracy_path.read_text(encoding="utf-8"))
-    if accuracy.get("status") != "complete" or accuracy.get("model_group") != "G1_MV":
-        raise ValueError("Expected complete G1_MV full-mask expected maps")
+    if accuracy.get("status") != "complete" or accuracy.get("model_group") not in (None, "G1_MV"):
+        raise ValueError("Expected complete original G1 full-mask expected maps")
+    if accuracy.get("methods") != ["all", "top10pct_count", "top50pct_count", "cover90pct_weight"]:
+        raise ValueError("Unexpected original map method order; column zero must be all-member expected")
     for key, name in (("model_sha256", "point_cloud.ply"), ("cfg_sha256", "cfg_args"), ("cameras_npz_sha256", "cameras.npz")):
         if accuracy.get(key) != digests[name]:
             raise ValueError(f"Accuracy {key} differs from sampled model/cameras")
@@ -183,6 +185,8 @@ def load_scan(scan, args, neighbor_manifest):
         provenance=dict(scan=scan, input_sha256=digests, input_manifest=manifest_record,
             sample_metadata_sha256=cd.sha256(sample_path), sample_commit=sample["git_commit"],
             accuracy_metadata_sha256=cd.sha256(accuracy_path), neighbor_sha256=expected_sha,
+            accuracy_model_group_field=accuracy.get("model_group"),
+            accuracy_group_identity="Original accuracy_v1 schema may omit model_group; G1 identity is independently enforced by verified G1 input manifest and exact sample/accuracy model+cfg+camera SHA equality",
             camera_checks=camera_checks, principal_point="Camera.Cx=(W-1)/2,Cy=(H-1)/2; archive principal point is not substituted"))
 
 
