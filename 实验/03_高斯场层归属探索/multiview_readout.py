@@ -167,6 +167,11 @@ def load_scan(scan, args, neighbor_manifest):
         np.testing.assert_allclose(camera["w2c"], np.array(vm["world_view_transform"]).T, rtol=0, atol=2e-5)
         np.testing.assert_allclose(camera["c2w"][:3, 3], vm["camera_center"], rtol=0, atol=2e-5)
         np.testing.assert_allclose(camera["focal"], vm["focal"], rtol=0, atol=1e-3)
+        # Use the saved renderer pose/focal where available, exactly as _points_mm.
+        # Training JSON supplies the remaining neighbors, after the same pose QA.
+        saved_w2c = np.array(vm["world_view_transform"], dtype=np.float64).T
+        cameras[vm["image_name"]] = dict(image_size=(h, w), focal=tuple(vm["focal"]),
+            w2c=saved_w2c, c2w=np.linalg.inv(saved_w2c))
     neighbor_path = args.sample_root / f"scan{scan}" / "multi_view.json"
     expected_sha = neighbor_manifest.get(str(scan))
     if not isinstance(expected_sha, str) or len(expected_sha) != 64 or cd.sha256(neighbor_path) != expected_sha:
