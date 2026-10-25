@@ -367,6 +367,8 @@ def run(args):
                 write_csv(args.output / "summary.csv", all_summaries)
                 atomic_json(args.output / "metadata.json", metadata)
                 print(json.dumps(dict(scan=scan, view=vm["image_name"], rays=len(rows), elapsed_seconds=metadata["elapsed_seconds"])), flush=True)
+                if (args.output / "stop_after_view").exists():
+                    raise InterruptedError("Requested stop after a flushed and hashed complete view")
             all_summaries.extend(summaries(scan_rows, "scan", scan))
         all_summaries.extend(summaries(all_rows, "pooled"))
         all_summaries.extend(scan_equal([r for r in all_summaries if r["scope"] == "scan"]))
