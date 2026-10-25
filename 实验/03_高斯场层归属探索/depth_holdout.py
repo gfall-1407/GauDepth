@@ -148,13 +148,13 @@ def estimate(z, w, host, normals=None, normal_valid=None, ray_direction=None):
 
 def load_scan(scan, args):
     root = args.input_root / f"scan{scan}"
-    files = dict(model=root / "point_cloud.ply", cameras=root / "cameras.npz",
+    files = dict(model=root / "point_cloud.ply", cfg=root / "cfg_args", cameras=root / "cameras.npz",
                  gt=root / f"stl{scan:03d}_total.ply")
     impath = args.influence_root / f"scan{scan}" / "metadata.json"
     imeta = json.loads(impath.read_text(encoding="utf-8"))
     if imeta.get("status") != "complete" or imeta.get("model_group") != "G1_MV":
         raise ValueError(f"Expected complete G1_MV metadata: {impath}")
-    keys = dict(model="model_sha256", cameras="cameras_npz_sha256", gt="gt_sha256")
+    keys = dict(model="model_sha256", cfg="cfg_sha256", cameras="cameras_npz_sha256", gt="gt_sha256")
     digests = {key: cd.sha256(path) for key, path in files.items()}
     for key, digest in digests.items():
         if digest != imeta.get(keys[key]):
@@ -173,6 +173,8 @@ def load_scan(scan, args):
         meta = json.loads(mp.read_text(encoding="utf-8"))
         if meta.get("model_sha256") != digests["model"] or meta.get("git_remote") != REMOTE:
             raise ValueError(f"Ray model/origin mismatch: {mp}")
+        if meta.get("cfg_sha256") != digests["cfg"]:
+            raise ValueError(f"Ray cfg SHA differs: {mp}; sample={meta.get('cfg_sha256')}, input={digests['cfg']}, influence={imeta.get('cfg_sha256')}")
         if meta.get("git_status"):
             raise ValueError(f"Ray sample recorded dirty source: {mp}")
         lineage.append(dict(path=str(mp.resolve()), sha256=cd.sha256(mp),
@@ -278,6 +280,11 @@ def summaries(rows, scope, scan="all", view="all"):
                 bounded_solver_unknown_n=sum(r["bounded_status"] != "certified_score" for r in rows),
                 geometry_fallback_n=sum(r["geometry_fallback"] for r in rows),
                 reference_mean_nn_mm=mean(a[mask]), candidate_mean_nn_mm=mean(b[mask]),
+                reference_p95_nn_mm=float(np.quantile(a[mask], .95)) if mask.any() else None,
+                reference_p99_nn_mm=float(np.quantile(a[mask], .99)) if mask.any() else None,
+                candidate_p95_nn_mm=float(np.quantile(b[mask], .95)) if mask.any() else None,
+                candidate_p99_nn_mm=float(np.quantile(b[mask], .99)) if mask.any() else None,
+                reference_ge20mm_n=int((a[mask] >= 20.).sum()), candidate_ge20mm_n=int((b[mask] >= 20.).sum()),
                 delta_mean_nn_mm=mean(delta), improved_n=int((delta < -1e-12).sum()), worsened_n=int((delta > 1e-12).sum()),
                 worsened_ge1mm_n=int((delta >= 1.).sum()), worsened_ge5mm_n=int((delta >= 5.).sum()),
                 delta_p95_mm=float(np.quantile(delta, .95)) if len(delta) else None,
@@ -322,6 +329,14 @@ def run(args):
     metadata = dict(status="partial", args={k: str(v) if isinstance(v, Path) else v for k, v in vars(args).items()},
         source=source, methods=list(METHODS), references=list(REFERENCES), completed_views=[], inputs=[],
         sample_role=args.sample_role,
+        method_definitions=dict(expected="Original accepted Talpha weights normalized within the full ray; float64 sum(w*z)/sum(w), verified against host replay and existing full-map expected.",
+            native_median="Unmodified saved host_target median, converted from scene camera-z to DTU mm; not redefined as normalized accepted-weight median.",
+            weighted_median="Smallest accepted z whose depth-sorted cumulative original w reaches 50% of total original accepted w.",
+            top10="Ceil(0.10*N) accepted members in stable decreasing original-w order, original-w normalized mean.",
+            top50="Ceil(0.50*N) accepted members in stable decreasing original-w order, original-w normalized mean.",
+            cover90="Shortest stable decreasing original-w prefix reaching 90% total original w, original-w normalized mean.",
+            C_original="Original 64-step multi-start mean-shift at h=1mm; replace expected only when R<0.5, every start converged, and no saved secondary peak or secondary/primary score<0.5; otherwise expected.",
+            bounded_mode_1mm="Maximize fixed h=1mm S using interval score upper bound gap<=1e-6, 200000-interval/2s default bound budget. Accept lower-bound location only on certified score; otherwise expected fallback. No peak-location uniqueness certificate."),
         parameters=dict(h_mm=1., support_gap=bound.TOL_SCORE, bound_seconds=args.bound_seconds,
             max_intervals=bound.MAX_INTERVALS, original_C_mean_shift_iterations=cd.MAX_ITER,
             original_C_mean_shift_tol_mm=cd.TOL_MM, peak_location_certified=False),
