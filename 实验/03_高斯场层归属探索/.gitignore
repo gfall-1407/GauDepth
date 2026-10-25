@@ -1,5 +1,6 @@
 构建/
 构建_pixel_stats/
+构建_huber_v1/
 结果/
 __pycache__/
 *.npz

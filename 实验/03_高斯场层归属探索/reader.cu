@@ -107,8 +107,10 @@ std::vector<torch::Tensor> read_pixel_stats(torch::Tensor geom,torch::Tensor bin
 __device__ double huber_derivative(const float* records,int count,double d,double h){
  double sum=0.0,correction=0.0;
  for(int j=0;j<count;++j){
-  double residual=d-static_cast<double>(records[j*8]);
-  double clipped=fmin(h,fmax(-h,residual));
+  // Divide the derivative by its common positive h. Saturated terms then
+  // multiply by exactly +/-1, preserving balanced zero intervals across units.
+  double residual=(d-static_cast<double>(records[j*8]))/h;
+  double clipped=fmin(1.0,fmax(-1.0,residual));
   double term=__dmul_rn(static_cast<double>(records[j*8+1]),clipped);
   double next=__dadd_rn(sum,term);
   // Neumaier compensation follows the CPU math.fsum definition closely, including

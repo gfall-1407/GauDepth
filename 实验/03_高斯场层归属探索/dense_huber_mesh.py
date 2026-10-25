@@ -125,8 +125,15 @@ def gpu_synthetic_check(extension):
         pass
     else:
         raise AssertionError("CUDA reader silently accepted counts>K")
+    scaled = torch.zeros((1, 3, 8), dtype=torch.float32, device="cuda")
+    scaled[0, :, 0] = torch.tensor([0., 0., 10.], device="cuda")
+    scaled[0, :, 1] = torch.tensor([.125, .25, .375], device="cuda")
+    value, _, interval = extension.read_huber(scaled, torch.tensor([3], dtype=torch.int32, device="cuda"), 1./37.)
+    torch.testing.assert_close(value, torch.tensor([5.], dtype=torch.float64, device="cuda"), rtol=0, atol=1e-12)
+    torch.testing.assert_close(interval, torch.tensor([10.-2./37.], dtype=torch.float64, device="cuda"), rtol=0, atol=1e-12)
     return dict(status="PASS", tests=["single_point", "nonunique_zero_interval_midpoint",
-        "empty_zero_status", "nonfinite_depth_unknown", "zero_weight_unknown", "overflow_rejected"])
+        "empty_zero_status", "nonfinite_depth_unknown", "zero_weight_unknown", "overflow_rejected",
+        "balanced_zero_interval_nonunit_bandwidth"])
 
 
 def dense_view(camera, gaussians, pipe, dataset, extension, scale, qa_first):
