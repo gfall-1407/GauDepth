@@ -50,6 +50,13 @@ def source_provenance():
                 remote=git("remote", "get-url", "origin"))
 
 
+def verify_originals(metadata, ply, cfg):
+    metadata.update(original_model_unchanged=sha256(ply) == MODEL_SHA,
+                    original_cfg_unchanged=sha256(cfg) == CFG_SHA)
+    if not metadata["original_model_unchanged"] or not metadata["original_cfg_unchanged"]:
+        raise ValueError("Protected original model/cfg changed")
+
+
 def extract_source(source):
     edits = {
         "gaussians = GaussianModel(dataset.sh_degree)": "gaussians = frozen_gaussians",
@@ -323,12 +330,13 @@ def run(args):
                 atomic_json(output / "metadata.json", metadata)
                 print(json.dumps(dict(stage="dense", view=camera.image_name, seconds=qa["seconds"], cpu_qa_max_error_mm=qa["cpu_qa_max_error_mm"])), flush=True)
                 if (output / "stop_after_stage").exists():
+                    verify_originals(metadata, loaded_ply, cfg_path)
                     metadata["status"] = "stopped_after_view"
                     atomic_json(output / "metadata.json", metadata)
                     return metadata
         if args.pilot_only:
-            metadata.update(status="pilot_complete", original_model_unchanged=sha256(loaded_ply) == MODEL_SHA,
-                original_cfg_unchanged=sha256(cfg_path) == CFG_SHA)
+            verify_originals(metadata, loaded_ply, cfg_path)
+            metadata["status"] = "pilot_complete"
             atomic_json(output / "metadata.json", metadata)
             return metadata
         metadata["status"] = "dense_complete"
@@ -365,11 +373,11 @@ def run(args):
             atomic_json(output / "metadata.json", metadata)
             print(json.dumps(dict(stage="mesh", method=method, scores=scores)), flush=True)
             if (output / "stop_after_stage").exists():
+                verify_originals(metadata, loaded_ply, cfg_path)
                 metadata["status"] = "stopped_after_method"
                 atomic_json(output / "metadata.json", metadata)
                 return metadata
-        if sha256(loaded_ply) != MODEL_SHA or sha256(cfg_path) != CFG_SHA:
-            raise ValueError("Protected original model/cfg changed")
+        verify_originals(metadata, loaded_ply, cfg_path)
         metadata.update(status="complete", original_model_unchanged=True, original_cfg_unchanged=True)
         atomic_json(output / "metadata.json", metadata)
         return metadata
