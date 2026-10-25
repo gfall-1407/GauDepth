@@ -5,6 +5,8 @@
 #include <c10/cuda/CUDAException.h>
 #include <c10/cuda/CUDAStream.h>
 #include <c10/cuda/CUDAGuard.h>
+#include <cmath>
+#include <limits>
 #include <vector>
 
 template<class T> T* take(char*& p, size_t n) {
@@ -100,4 +102,87 @@ std::vector<torch::Tensor> read_pixel_stats(torch::Tensor geom,torch::Tensor bin
  pixel_stats<<<(W*H+127)/128,128,0,c10::cuda::getCurrentCUDAStream()>>>(ranges,ids,xy,conic,host_last,W,H,counts.data_ptr<int>(),weights.data_ptr<float>());
  C10_CUDA_KERNEL_LAUNCH_CHECK();return {counts,weights};
 }
-PYBIND11_MODULE(TORCH_EXTENSION_NAME,m){m.def("read_rays",&read_rays);m.def("read_pixel_stats",&read_pixel_stats);}
+// Derivative of the fixed weighted Huber objective. These are the saved original
+// accepted weights; neither transmittance nor a new compositing pass is used.
+__device__ double huber_derivative(const float* records,int count,double d,double h){
+ double sum=0.0,correction=0.0;
+ for(int j=0;j<count;++j){
+  double residual=d-static_cast<double>(records[j*8]);
+  double clipped=fmin(h,fmax(-h,residual));
+  double term=__dmul_rn(static_cast<double>(records[j*8+1]),clipped);
+  double next=__dadd_rn(sum,term);
+  // Neumaier compensation follows the CPU math.fsum definition closely, including
+  // balanced separated supports whose minimizer is an interval rather than a point.
+  double error=(fabs(sum)>=fabs(term))?
+   __dadd_rn(__dsub_rn(sum,next),term):__dadd_rn(__dsub_rn(term,next),sum);
+  correction=__dadd_rn(correction,error);sum=next;
+ }
+ return __dadd_rn(sum,correction);
+}
+
+__global__ void huber_readout(const float* records,const int* counts,int N,int K,
+ double h,double* depth,int* status,double* width){
+ int r=blockIdx.x*blockDim.x+threadIdx.x;if(r>=N)return;
+ int count=counts[r];
+ if(count==0){depth[r]=0.0;status[r]=0;width[r]=0.0;return;}
+ const float* ray=records+static_cast<int64_t>(r)*K*8;
+ double lo=static_cast<double>(ray[0]),hi=lo;
+ for(int j=0;j<count;++j){
+  double z=static_cast<double>(ray[j*8]),w=static_cast<double>(ray[j*8+1]);
+  if(!isfinite(z)||!isfinite(w)||!(w>0.0)){
+   depth[r]=nan("");status[r]=2;width[r]=nan("");return;
+  }
+  lo=fmin(lo,z);hi=fmax(hi,z);
+ }
+ double left_lo=lo,left_hi=hi,right_lo=lo,right_hi=hi;
+ for(int it=0;it<64;++it){
+  double mid=left_lo+(left_hi-left_lo)*0.5;
+  if(mid==left_lo||mid==left_hi)break;
+  if(huber_derivative(ray,count,mid,h)>=0.0)left_hi=mid;else left_lo=mid;
+ }
+ for(int it=0;it<64;++it){
+  double mid=right_lo+(right_hi-right_lo)*0.5;
+  if(mid==right_lo||mid==right_hi)break;
+  if(huber_derivative(ray,count,mid,h)<=0.0)right_lo=mid;else right_hi=mid;
+ }
+ double left=left_hi,right=right_lo;
+ if(right<left){double temp=left;left=right;right=temp;}
+ depth[r]=left+(right-left)*0.5;status[r]=1;width[r]=right-left;
+}
+
+// Return [float64 depth[N], int32 status[N], float64 minimizer_width[N]].
+// Status: 0=empty (depth and width are zero), 1=finite nonempty, 2=invalid member.
+// Overflowed or negative counts are a hard API error, never a truncated estimate.
+std::vector<torch::Tensor> read_huber(torch::Tensor records,torch::Tensor counts,double h_scene){
+ TORCH_CHECK(records.is_cuda()&&counts.is_cuda(),"CUDA required");
+ TORCH_CHECK(records.is_contiguous()&&counts.is_contiguous(),"Contiguous records/counts required");
+ TORCH_CHECK(records.device()==counts.device(),"Same device required");
+ TORCH_CHECK(records.scalar_type()==torch::kFloat32&&records.dim()==3&&records.size(2)==8,
+  "records must be float32 [N,K,8]");
+ TORCH_CHECK(counts.scalar_type()==torch::kInt32&&counts.dim()==1&&counts.size(0)==records.size(0),
+  "counts must be int32 [N]");
+ TORCH_CHECK(std::isfinite(h_scene)&&h_scene>0.0,"h_scene must be finite and positive");
+ TORCH_CHECK(records.size(0)<=std::numeric_limits<int>::max()&&records.size(1)>0&&
+  records.size(1)<=std::numeric_limits<int>::max(),"Invalid N or K");
+ c10::cuda::CUDAGuard guard(records.device());
+ int N=static_cast<int>(records.size(0)),K=static_cast<int>(records.size(1));
+ if(N){
+  TORCH_CHECK(counts.min().item<int>()>=0&&counts.max().item<int>()<=K,
+   "counts outside [0,K]; retry read_rays with enough capacity before read_huber");
+ }
+ auto depth=torch::empty({N},records.options().dtype(torch::kFloat64));
+ auto status=torch::empty({N},records.options().dtype(torch::kInt32));
+ auto width=torch::empty({N},records.options().dtype(torch::kFloat64));
+ if(N){
+  huber_readout<<<(N+127)/128,128,0,c10::cuda::getCurrentCUDAStream()>>>(
+   records.data_ptr<float>(),counts.data_ptr<int>(),N,K,h_scene,
+   depth.data_ptr<double>(),status.data_ptr<int>(),width.data_ptr<double>());
+  C10_CUDA_KERNEL_LAUNCH_CHECK();
+ }
+ return {depth,status,width};
+}
+
+PYBIND11_MODULE(TORCH_EXTENSION_NAME,m){
+ m.def("read_rays",&read_rays);m.def("read_pixel_stats",&read_pixel_stats);
+ m.def("read_huber",&read_huber);
+}
