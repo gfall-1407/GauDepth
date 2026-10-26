@@ -184,7 +184,108 @@ std::vector<torch::Tensor> read_huber(torch::Tensor records,torch::Tensor counts
  return {depth,status,width};
 }
 
+// Separate gap-Huber API; the original reader/Huber contracts remain unchanged.
+// A proposal-support gap is not physical empty space. Original render weights
+// are used as objective weights, not interpreted as physical probabilities.
+__global__ void gap_huber_readout(const float* records,const int* counts,
+ const float* native_expected,int N,int K,double h,double* selected,
+ int* status,double* min_gap){
+ int r=blockIdx.x*blockDim.x+threadIdx.x;if(r>=N)return;
+ double native=static_cast<double>(native_expected[r]);
+ bool native_valid=isfinite(native)&&native>0.0;
+ selected[r]=native_valid?native:nan("");status[r]=2;min_gap[r]=nan("");
+ int count=counts[r];
+ if(count==0){
+  // A positive native value with an empty replay is unknown, not a valid empty ray.
+  if(isfinite(native)&&native==0.0){selected[r]=native;status[r]=0;}
+  return;
+ }
+ if(!native_valid)return;
+ const float* ray=records+static_cast<int64_t>(r)*K*8;
+ double total=0.0,numerator=0.0,lo=INFINITY,hi=-INFINITY;
+ for(int j=0;j<count;++j){
+  double z=static_cast<double>(ray[j*8]),w=static_cast<double>(ray[j*8+1]);
+  // Match the CPU gap candidate: zero weight is allowed; invalid members are
+  // never silently filtered, including a nonpositive/nonfinite zero-weight depth.
+  if(!isfinite(z)||!(z>0.0)||!isfinite(w)||w<0.0)return;
+  total=__dadd_rn(total,w);
+  numerator=__dadd_rn(numerator,__dmul_rn(w,z));
+  if(w>0.0){lo=fmin(lo,z);hi=fmax(hi,z);}
+ }
+ if(!isfinite(total)||!(total>0.0)||!isfinite(numerator))return;
+ double expected=numerator/total;
+ if(!isfinite(expected)||!(expected>0.0))return;
+ double gap=INFINITY;
+ for(int j=0;j<count;++j){
+  if(ray[j*8+1]>0.0f)
+   gap=fmin(gap,fabs(__dsub_rn(static_cast<double>(ray[j*8]),expected)));
+ }
+ min_gap[r]=gap; // Camera-z scene units, identical to h_scene (not mm unless scaled).
+ if(gap<=h){
+  // Preserve the supplied original float32 expected exactly after float64
+  // promotion and eventual float32 storage. E64 above is only the gate center.
+  selected[r]=native;status[r]=1;return;
+ }
+ // Only gap rays enter either derivative loop; no all-ray Huber precomputation.
+ double left_lo=lo,left_hi=hi,right_lo=lo,right_hi=hi;
+ for(int it=0;it<80;++it){
+  double mid=left_lo+(left_hi-left_lo)*0.5;
+  if(mid==left_lo||mid==left_hi)break;
+  if(huber_derivative(ray,count,mid,h)>=0.0)left_hi=mid;else left_lo=mid;
+ }
+ for(int it=0;it<80;++it){
+  double mid=right_lo+(right_hi-right_lo)*0.5;
+  if(mid==right_lo||mid==right_hi)break;
+  if(huber_derivative(ray,count,mid,h)<=0.0)right_lo=mid;else right_hi=mid;
+ }
+ double left=left_hi,right=right_lo;
+ if(right<left){double temp=left;left=right;right=temp;}
+ double value=left+(right-left)*0.5;
+ if(!isfinite(value)||!(value>0.0))return;
+ selected[r]=value;status[r]=3;
+}
+
+// Return [float64 selected[N], int32 status[N], float64 min_gap[N]].
+// 0=empty with native zero; 1=no gap, exact supplied native value retained;
+// 2=unknown (positive finite native fallback, otherwise NaN); 3=gap, Huber solved.
+// min_gap is NaN for undefined/invalid input, otherwise the E64 support distance.
+// The caller must supply original _C expected and verify its render/source
+// provenance; tensor validation cannot authenticate the producer of a value.
+std::vector<torch::Tensor> read_gap_huber(torch::Tensor records,torch::Tensor counts,
+ torch::Tensor native_expected,double h_scene){
+ TORCH_CHECK(records.is_cuda()&&counts.is_cuda()&&native_expected.is_cuda(),"CUDA required");
+ TORCH_CHECK(records.is_contiguous()&&counts.is_contiguous()&&native_expected.is_contiguous(),
+  "Contiguous records/counts/native_expected required");
+ TORCH_CHECK(records.device()==counts.device()&&records.device()==native_expected.device(),"Same device required");
+ TORCH_CHECK(records.scalar_type()==torch::kFloat32&&records.dim()==3&&records.size(2)==8,
+  "records must be float32 [N,K,8]");
+ TORCH_CHECK(counts.scalar_type()==torch::kInt32&&counts.dim()==1&&counts.size(0)==records.size(0),
+  "counts must be int32 [N]");
+ TORCH_CHECK(native_expected.scalar_type()==torch::kFloat32&&native_expected.dim()==1&&
+  native_expected.size(0)==records.size(0),"native_expected must be float32 [N]");
+ TORCH_CHECK(std::isfinite(h_scene)&&h_scene>0.0,"h_scene must be finite and positive");
+ TORCH_CHECK(records.size(0)<=std::numeric_limits<int>::max()&&records.size(1)>0&&
+  records.size(1)<=std::numeric_limits<int>::max(),"Invalid N or K");
+ c10::cuda::CUDAGuard guard(records.device());
+ int N=static_cast<int>(records.size(0)),K=static_cast<int>(records.size(1));
+ if(N){
+  TORCH_CHECK(counts.min().item<int>()>=0&&counts.max().item<int>()<=K,
+   "counts outside [0,K]; retry read_rays with enough capacity before read_gap_huber");
+ }
+ auto selected=torch::empty({N},records.options().dtype(torch::kFloat64));
+ auto status=torch::empty({N},records.options().dtype(torch::kInt32));
+ auto gap=torch::empty({N},records.options().dtype(torch::kFloat64));
+ if(N){
+  gap_huber_readout<<<(N+127)/128,128,0,c10::cuda::getCurrentCUDAStream()>>>(
+   records.data_ptr<float>(),counts.data_ptr<int>(),native_expected.data_ptr<float>(),N,K,h_scene,
+   selected.data_ptr<double>(),status.data_ptr<int>(),gap.data_ptr<double>());
+  C10_CUDA_KERNEL_LAUNCH_CHECK();
+ }
+ return {selected,status,gap};
+}
+
 PYBIND11_MODULE(TORCH_EXTENSION_NAME,m){
  m.def("read_rays",&read_rays);m.def("read_pixel_stats",&read_pixel_stats);
  m.def("read_huber",&read_huber);
+ m.def("read_gap_huber",&read_gap_huber);
 }
