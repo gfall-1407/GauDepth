@@ -12,6 +12,70 @@ from photo_surface_probe import HERE, REPO, sha256, save, source_info
 from consensus_depth import _check_camera_projection
 
 
+def audit_surface(args):
+    """Post-decision symmetric local-plane diagnostic, never a depth selector."""
+    from scipy.spatial import cKDTree
+    from plyfile import PlyData
+    out=args.output.resolve();target=out/"surface_audit.json"
+    if target.exists():raise ValueError("Do not overwrite surface audit")
+    report=dict(status="partial",source=source_info(),k_per_method=20,completed=[],
+        limitation="Post-hoc diagnostic only; local PCA plane is not pixel GT. Identical symmetric union of E/D nearest-neighbor sets defines each comparison plane. All points retained; no planarity-based selection. Same SfM cameras/training data; repeated tracks are not independent.")
+    spec=importlib.util.spec_from_file_location("sfm_surface_loader",REPO/"scene/colmap_loader.py")
+    loader=importlib.util.module_from_spec(spec);sys.modules[spec.name]=loader;spec.loader.exec_module(loader)
+    verified=json.loads((args.observation_root.parent/"selected_local_verified.json").read_text())
+    for rel,v in verified["files"].items():assert sha256(args.observation_root/rel)==v["sha256"]
+    started=time.monotonic();all_delta=[];ids_by={37:[],40:[]};accepted_ids={37:[],40:[]}
+    for scan in (37,40):
+        cache=(HERE/"结果/20261026_夜间深度方法/dense_confirm_v1/scan37_v1" if scan==37 else HERE/"结果/20261026_Huber全场景/scan40_v1")
+        cached=json.loads((cache/"metadata.json").read_text(encoding="utf-8"));vm={v["name"]:v for v in cached["views"]};transform=np.asarray(cached["alignment"]["transform"])
+        gt=HERE/f"结果/20261026_夜间深度方法/inputs/scan{scan}/stl{scan:03d}_total.ply"
+        assert sha256(gt)==cached["gt_inputs_sha256"][f"Points/stl/stl{scan:03d}_total.ply"]
+        vertex=PlyData.read(str(gt))["vertex"];points=np.column_stack([np.asarray(vertex[k],float) for k in ("x","y","z")]);tree=cKDTree(points)
+        source=args.observation_root/f"scan{scan}";intr=loader.read_intrinsics_binary(source/"sparse/0/cameras.bin")
+        extr={Path(v.name).stem:v for v in loader.read_extrinsics_binary(source/"sparse/0/images.bin").values()}
+        with np.load(args.observation_root.parent/f"sfm_interval_v1/scan{scan}_view0000/decisions.npz") as f:old_ids=f["point_ids"].copy()
+        for ref in ("0012","0024","0036","0048"):
+            if time.monotonic()-started>args.max_seconds or (out/"stop_after_score").exists():raise InterruptedError("Finite audit deadline/score stop")
+            meta=json.loads((out/f"ref{ref}/metadata.json").read_text(encoding="utf-8"));assert meta["status"]=="complete"
+            row=next(r for r in meta["completed"] if r["scan"]==scan);scene=out/f"ref{ref}/scan{scan}_view{ref}"
+            assert sha256(scene/"decisions.npz")==row["decisions_sha256"]
+            with np.load(scene/"decisions.npz") as f:d={k:f[k].copy() for k in f.files}
+            assert not np.intersect1d(d["point_ids"],old_ids).size
+            r=extr[ref];k=intr[r.camera_id];h,w=vm[ref]["image_size"];fx,fy,cx,cy=k.params;sx,sy=w/k.width,h/k.height
+            K=np.array([[sx*fx,0,sx*cx-.5],[0,sy*fy,sy*cy-.5],[0,0,1.]])
+            w2c=np.eye(4);w2c[:3,:3]=r.qvec2rotmat();w2c[:3,3]=r.tvec;pose=np.linalg.inv(w2c.astype(np.float32).astype(float))
+            rays=np.column_stack((d["xy"],np.ones(len(d["E"]))))@np.linalg.inv(K).T
+            xyz=[]
+            for depth in (d["E"],d["selected"]):
+                world=rays*depth[:,None]@pose[:3,:3].T+pose[:3,3];xyz.append(world@transform[:3,:3].T+transform[:3,3])
+            nn=[];indices=[]
+            for x in xyz:
+                distance,index=tree.query(x,k=20,workers=1);nn.append(distance[:,0]);indices.append(index)
+            plane=np.empty((2,len(d["E"])));quality=np.empty(len(d["E"]));roughness=quality.copy()
+            for i in range(len(d["E"])):
+                cloud=points[np.unique(np.r_[indices[0][i],indices[1][i]])];center=cloud.mean(axis=0)
+                eigen,vec=np.linalg.eigh((cloud-center).T@(cloud-center)/len(cloud));normal=vec[:,0]
+                plane[:,i]=[abs((x[i]-center)@normal) for x in xyz]
+                quality[i]=eigen[0]/max(eigen.sum(),1e-30);roughness[i]=np.sqrt(max(eigen[0],0.))
+            for label,values in zip(("expected","sfm_bounded"),nn):
+                np.testing.assert_allclose(np.mean(values),row["nn_proxy"][label]["mean"],rtol=0,atol=1e-10)
+            delta=nn[1]-nn[0];all_delta.extend(delta);accept=d["accept"]
+            ids_by[scan].extend(d["point_ids"].tolist());accepted_ids[scan].extend(d["point_ids"][accept].tolist())
+            result=dict(scan=scan,view=ref,n=len(delta),accepted=int(accept.sum()),decision_sha256=row["decisions_sha256"],gt_sha256=sha256(gt),decision_source=meta["source"],
+                nn_means=[float(np.mean(x)) for x in nn],plane_abs_means=[float(x.mean()) for x in plane],
+                changed_nn_mean_delta=float(delta[accept].mean()),changed_plane_mean_delta=float((plane[1]-plane[0])[accept].mean()),
+                changed_nn_worse_fraction=float((delta[accept]>0).mean()),changed_plane_worse_fraction=float((plane[1,accept]>plane[0,accept]).mean()),
+                plane_eigen_ratio_median=float(np.median(quality)),plane_eigen_ratio_p95=float(np.quantile(quality,.95)),plane_roughness_median_mm=float(np.median(roughness)))
+            audit=scene/"geometry_audit.npz"
+            if audit.exists():raise ValueError("Do not overwrite geometry audit")
+            np.savez_compressed(audit,nn=np.array(nn),local_plane_abs=plane,plane_eigen_ratio=quality,plane_roughness_mm=roughness,accept=accept)
+            result["geometry_audit_sha256"]=sha256(audit);report["completed"].append(result);save(target,report);print(json.dumps(result),flush=True)
+            assert sha256(scene/"decisions.npz")==row["decisions_sha256"]
+    delta=np.asarray(all_delta)
+    report.update(status="complete",n=len(delta),nn_delta_mean=float(delta.mean()),nn_improvement_sum_mm=float(-delta[delta<0].sum()),nn_worsening_sum_mm=float(delta[delta>0].sum()),largest_single_improvement_mm=float(-delta.min()),nn_delta_mean_without_largest_improvement=float((delta.sum()-delta.min())/(len(delta)-1)),unique_feature_ids={str(k):len(set(v)) for k,v in ids_by.items()},unique_changed_ids={str(k):len(set(v)) for k,v in accepted_ids.items()},seconds=time.monotonic()-started)
+    save(target,report)
+
+
 def check_coordinates(args):
     """Original full-resolution double SfM versus current cached camera convention."""
     out=args.output.resolve();target=out/"coordinate_parity.json"
@@ -310,6 +374,10 @@ if __name__ == "__main__":
     p.add_argument("--diagnose-only",action="store_true",help="No new depth decisions/GT; explain sealed all-track intervals")
     p.add_argument("--coordinate-check",action="store_true",help="No new depth decisions/GT; original raw SfM versus current coordinate convention")
     p.add_argument("--reference",default="0000",help="Nonzero references exclude original 0000 probe feature IDs")
+    p.add_argument("--surface-audit",action="store_true",help="Post-hoc local-plane/paired-NN audit of fixed four-reference holdout; never selects depth")
     p.add_argument("--joint-constraints",action="store_true",help="Same five decision roles, joint feasible-set projection instead of fit-then-gate")
     args=p.parse_args()
-    check_coordinates(args) if args.coordinate_check else (diagnose(args) if args.diagnose_only else run(args))
+    if args.surface_audit:audit_surface(args)
+    elif args.coordinate_check:check_coordinates(args)
+    elif args.diagnose_only:diagnose(args)
+    else:run(args)
