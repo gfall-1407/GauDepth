@@ -156,6 +156,42 @@ def project_joint_intervals(E, lower, upper, valid):
     return dict(selected=selected,accept=change,lo=lo,hi=hi,fit_n=good[:3].sum(axis=0),reason=reason)
 
 
+def reference_noise_counterexample():
+    """Exact cameras/plane, bounded per-image errors, but shared-reference bias.
+
+    This does not contradict the projection theorem: per-image error <= .5px
+    does not imply total error <= .5px after anchoring a noisy reference ray.
+    """
+    K=np.array([[160.,0,63.5],[0,160.,47.5],[0,0,1.]])
+    def camera(x):
+        pose=np.eye(4);pose[0,3]=x
+        return dict(K=K,c2w=pose,w2c=np.linalg.inv(pose),image_size=(96,128))
+    ci=camera(0);xy_true=np.array([[63.5,47.5]]);xy=xy_true+np.array([.45,0.])
+    E=np.array([2.]);low=[];high=[];valid=[];low_total=[];high_total=[];valid_total=[]
+    for baseline in (.3,.25,.22,.15,.18):
+        cj=camera(baseline);q,_=ray_projection(xy_true,E,ci,cj);q-=np.array([.45,0.])
+        lo,hi,ok=depth_interval(xy,E,q,ci,cj,tau=.5);low.append(lo);high.append(hi);valid.append(ok)
+        # For these rectified equal-focal cameras, reference-to-target pixel
+        # Jacobian is exactly I at any depth. Triangle inequality gives .5+.5.
+        lo,hi,ok=depth_interval(xy,E,q,ci,cj,tau=1.);low_total.append(lo);high_total.append(hi);valid_total.append(ok)
+    biased=project_joint_intervals(E,np.array(low),np.array(high),np.array(valid))
+    propagated=project_joint_intervals(E,np.array(low_total),np.array(high_total),np.array(valid_total))
+    assert biased["accept"][0] and abs(biased["selected"][0]-E[0])>.03
+    np.testing.assert_array_equal(propagated["selected"],E)
+    assert all(lo[0]<=E[0]<=hi[0] for lo,hi in zip(low_total,high_total))
+    audit_before=[];audit_after=[]
+    for baseline in (.2,.16):
+        cj=camera(baseline);q,_=ray_projection(xy_true,E,ci,cj);q-=np.array([.45,0.])
+        before,_=ray_projection(xy,E,ci,cj);after,_=ray_projection(xy,biased["selected"],ci,cj)
+        audit_before.append(float(np.linalg.norm(before-q)));audit_after.append(float(np.linalg.norm(after-q)))
+    assert np.all(np.array(audit_after)<audit_before)
+    return dict(status="PASS_constructed_failure",true_plane_depth=2.,accurate_E=2.,wrong_selected=float(biased["selected"][0]),
+        actual_each_image_feature_error_px=.45,assumed_each_image_bound_px=.5,actual_fixed_reference_total_error_px=.9,
+        original_total_bound_px=.5,audit_before_px=audit_before,audit_after_px=audit_after,
+        rectified_propagated_total_bound_px=1.,propagated_selected=float(propagated["selected"][0]),
+        limitation="A counterexample, not attribution of real DTU errors. Unknown real per-image/calibration bounds cannot be certified by this test. Correct 3D feature position and nominal-pixel surface depth are distinct targets.")
+
+
 def synthetic_check():
     import cv2
     K = np.array([[160., 0, 63.5], [0, 160., 47.5], [0, 0, 1.]])
@@ -222,6 +258,7 @@ def synthetic_check():
     print(json.dumps(dict(status="PASS", synthetic_only=True,
         true_in_intervals=True, correct_baseline_unchanged=True, wrong_baseline_moved_toward_truth=True,
         zero_baseline="unknown", off_epipolar="unknown", pure_colour="unknown", LK_translation="PASS",joint_projection="PASS",
+        shared_reference_noise=reference_noise_counterexample(),
         limitation="Conditional <=.5px correspondence/calibration error bound, NOT certified by LK/FB")))
 
 
