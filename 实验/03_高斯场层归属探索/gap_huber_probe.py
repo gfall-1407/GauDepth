@@ -98,7 +98,7 @@ def teacher_band(root,scan,name,xy,size,scale,results):
     if cal["valid"]:
         a,b,q=cal["a"],cal["b"],cal["q"]
         if not np.isfinite([a,b,q]).all() or a<=0 or q<0: raise ValueError("Invalid teacher calibration")
-        mu=a*raw[xy[:,1],xy[:,0]]+b
+        mu=a*raw[xy[:,1],xy[:,0]].astype(np.float64)+b
         valid=np.isfinite(mu)&(mu-q>0)&np.isfinite(mu+q)
         bands[valid,0]=scale/(mu[valid]+q); bands[valid,1]=scale/(mu[valid]-q)
     return bands,hashes,cal
@@ -111,7 +111,7 @@ def run(args):
     canonical_path=HERE/"G1_Huber全场景输入参考.json"
     canonical=json.loads(canonical_path.read_text(encoding="utf-8"))["scans"]
     state=dict(status="partial",source=source,h_mm=1.,scans=args.scans,views=args.views,completed=[],canonical_sha256=sha256(canonical_path),
-               limitation="Fixed proposal-support gap is not physical empty space or a correctness guarantee. Teacher bands are empirical veto only. Scan NN is not pixel GT/mesh/Overall. Unknown rays preserve host E and are explicitly excluded from the predeclared common valid-ray evaluation; no member pruning or GT-based gate selection.")
+               limitation="Fixed proposal-support gap is not physical empty space or a correctness guarantee. Teacher bands are empirical veto only. Scan NN is not pixel GT/mesh/Overall. Unknown rays with finite positive host E preserve it and remain in the paired denominator; empty or nonpositive/undefined native depth is separately counted. No member pruning or GT-based gate selection. Prediction timing includes all baseline H solves, not an optimized deployment benchmark.")
     save(output/"metadata.json",state)
     def check():
         if time.monotonic()-start>args.max_seconds or (output/"stop_after_view").exists(): raise InterruptedError("Finite deadline/stop")
@@ -146,7 +146,8 @@ def run(args):
                     predictions.append([record[m] for m in methods])
                     if record["status"]=="valid": np.testing.assert_allclose(record["E"]/scale,host[i,0],rtol=sample["replay_tolerance"]["rtol"],atol=sample["replay_tolerance"]["atol"])
                 seconds=time.monotonic()-tick; predictions=np.asarray(predictions,float); status=np.array([v["status"] for v in details]); nonempty=np.diff(offsets)>0
-                paired=(~qualitative)&nonempty&(status=="valid")&np.isfinite(predictions[:,0])&(predictions[:,0]>0)
+                paired=(~qualitative)&nonempty&np.isfinite(predictions[:,0])&(predictions[:,0]>0)
+                if not np.isfinite(predictions[paired]).all() or np.any(predictions[paired]<=0):raise ValueError("All methods must retain the same finite positive denominator")
                 scene=output/f"scan{scan}_view{name}"; scene.mkdir()
                 np.savez_compressed(scene/"decisions.npz",pixel_xy=xy,methods=methods,depth_mm=predictions,paired=paired,status=status,gap=np.array([v["gap"] for v in details]),min_distance_mm=np.array([v["min_distance_mm"] for v in details]),teacher_band_mm=bands if bands is not None else np.empty((0,2)))
                 sealed=sha256(scene/"decisions.npz")
