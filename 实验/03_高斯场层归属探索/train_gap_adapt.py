@@ -125,6 +125,7 @@ def run(args):
     if not math.isfinite(g.spatial_lr_scale) or g.spatial_lr_scale<=0:raise ValueError('Invalid nonzero position LR scale')
     scene.model_path=dataset.model_path=str(out)
     g.training_setup(opt)
+    torch.cuda.reset_peak_memory_stats()
     (out/'cfg_args').write_text(str(argparse.Namespace(**vars(dataset))),encoding='utf-8')
     parameters={name:getattr(g,'_'+name) for name in ('xyz','scaling','rotation','opacity')}
     tracked=dict(parameters,features_dc=g._features_dc,features_rest=g._features_rest,filter_3D=g.filter_3D,appearance=g._appearance_embeddings)
@@ -160,6 +161,8 @@ def run(args):
             raise ValueError('Protected original/teacher metadata changed')
         state.update(status=status,iteration=iteration,checkpoint_sha256=sha256(checkpoint),ply_sha256=sha256(dest),
             final_tensor_sha256={k:tensor_sha(v) for k,v in tracked.items() if v is not None},seconds=time.monotonic()-started)
+        state.update(gpu=torch.cuda.get_device_name(),cuda_peak_allocated_bytes=torch.cuda.max_memory_allocated(),
+                     cuda_peak_reserved_bytes=torch.cuda.max_memory_reserved())
         state['changed_tensors']={k:state['final_tensor_sha256'][k]!=v for k,v in initial.items()}
         save(out/'metadata.json',state)
     try:
@@ -182,6 +185,11 @@ def run(args):
                 if not math.isfinite(xyz_lr) or xyz_lr<=0:raise ValueError('Zero/nonfinite position LR')
                 pkg=render(camera,g,pipe,bg,dataset.kernel_size,require_depth=True)
                 D=pkg['expected_depth'];normal=depth_to_normal(camera,D)
+                if local==1:
+                    current=D.detach().cpu().numpy()
+                    if not np.array_equal(current,expected_np,equal_nan=True):
+                        raise ValueError('Warm-start native expected differs from the pinned teacher initial expected')
+                    state['initial_expected_teacher_bitwise']='PASS'
                 rgb=(1-opt.lambda_dssim)*L1_loss_appearance(pkg['render'],camera.original_image.cuda(),g,camera.uid)+opt.lambda_dssim*(1-ssim(pkg['render'].unsqueeze(0),camera.original_image.cuda().unsqueeze(0)))
                 norm=(1-torch.linalg.vecdot(pkg['normal'],normal,dim=0)).mean()
                 ncc,geo=patchmatch(g,pkg,camera,cameras[ni] if ni is not None else None,30000+local,normal)
