@@ -38,11 +38,14 @@ def estimate(z, w, host_expected, teacher_band=None):
     return out
 
 
-def locate_sample(results,scan):
+def locate_sample(results,scan,view=None):
     base=results/"20261026_夜间深度方法"
     roots=[base/name/f"scan{scan}" for name in ("confirm_v1","samples_v2","challenge_106_114_v1")]
     if scan in (24,65,105,110):roots.append(results/f"20261022_夜间/scan{scan}")
+    if scan in (24,105):roots.append(results/f"20261022_夜间/scan{scan}_more")
     present=[p for p in roots if (p/"metadata.json").is_file()]
+    if view is not None:
+        present=[p for p in present if any(v["view_index"]==view for v in json.loads((p/"metadata.json").read_text(encoding="utf-8"))["views"])]
     if len(present)!=1: raise ValueError(f"Ambiguous/missing sample roots for scan{scan}: {present}")
     return present[0]
 
@@ -125,13 +128,16 @@ def run(args):
         if time.monotonic()-start>args.max_seconds or (output/"stop_after_view").exists(): raise InterruptedError("Finite deadline/stop")
     try:
         for scan in args.scans:
-            check(); root=locate_sample(results,scan); mp=root/"metadata.json"; sample=json.loads(mp.read_text(encoding="utf-8")); reference=canonical[str(scan)]
-            if sample["status"]!="complete" or sample["git_remote"]!="git@github.com:gfall-1407/GauDepth.git" or sample.get("git_status"):
-                raise ValueError("Invalid sampling lineage")
-            if any(sample[k]!=reference[k] for k in ("model_sha256","cfg_sha256")): raise ValueError("Sample model/cfg mismatch")
-            alignment,scale,camera,lineage=geometry(results,scan,reference,sample)
-            lineage.update(sample_metadata=str(mp),sample_metadata_sha256=sha256(mp),sample_commit=sample["git_commit"],model_sha256=sample["model_sha256"],cfg_sha256=sample["cfg_sha256"])
             for view in args.views:
+                check(); root=locate_sample(results,scan,view); mp=root/"metadata.json"; sample=json.loads(mp.read_text(encoding="utf-8")); reference=canonical[str(scan)]
+                legacy=scan in (24,65,105,110) and sample.get("status") is None
+                declared=[int(v) for v in str(sample["args"]["views"]).split(",")]
+                complete=sample.get("status")=="complete" or (legacy and sorted(declared)==sorted(v["view_index"] for v in sample["views"]))
+                if not complete or sample["git_remote"]!="git@github.com:gfall-1407/GauDepth.git" or sample.get("git_status"):
+                    raise ValueError("Invalid/incomplete sampling lineage")
+                if any(sample[k]!=reference[k] for k in ("model_sha256","cfg_sha256")): raise ValueError("Sample model/cfg mismatch")
+                alignment,scale,camera,lineage=geometry(results,scan,reference,sample)
+                lineage.update(sample_metadata=str(mp),sample_metadata_sha256=sha256(mp),sample_commit=sample["git_commit"],model_sha256=sample["model_sha256"],cfg_sha256=sample["cfg_sha256"],legacy_complete_by_declared_views_and_npz_hash=legacy)
                 check(); matches=[v for v in sample["views"] if v["view_index"]==view]
                 if len(matches)!=1: raise ValueError("Missing/ambiguous sampled view")
                 vm=matches[0]; name=vm["image_name"]; path=root/vm["file"]
