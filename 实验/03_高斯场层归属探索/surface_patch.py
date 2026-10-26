@@ -118,6 +118,36 @@ def triangulate_track(observations, cameras, excluded_reference):
     return result
 
 
+def surface_failure_controls():
+    """Exact counterexamples: empirical LOO stability is not surface coverage."""
+    angle=np.arange(16)*2*np.pi/16
+    radius=.5;curvature=.4;true_depth=2.
+    cloud=np.column_stack((radius*np.cos(angle),radius*np.sin(angle),np.full(16,true_depth+curvature*radius**2)))
+    def plane_depth(points):
+        center=points.mean(axis=0);_,_,v=np.linalg.svd(points-center,full_matrices=False)
+        n=v[-1];return float(n@center/n[2]),float(np.sqrt(np.mean(((points-center)@n)**2)))
+    full,residual=plane_depth(cloud)
+    deleted=np.array([plane_depth(np.delete(cloud,i,axis=0))[0] for i in range(16)])
+    assert abs(full-2.1)<1e-12 and residual<1e-12 and np.ptp(deleted)<1e-12
+    assert full-true_depth>.09
+    # The central ray is inside the ring's projected convex hull, but its
+    # true curved-surface intersection is not identified by the anchor plane.
+    K=np.array([[160.,0,63.5],[0,160.,47.5],[0,0,1.]])
+    cameras={};biased={};obs={};point=np.array([.12,-.08,2.])
+    for i,xy in enumerate(((0,0),(-.4,0),(.4,0),(0,-.4),(0,.4))):
+        c2w=np.eye(4);c2w[:2,3]=xy;w2c=np.linalg.inv(c2w);name=str(i)
+        cameras[name]=dict(K=K,c2w=c2w,w2c=w2c)
+        q=K@(w2c@np.r_[point,1.])[:3];obs[name]=q[:2]/q[2]
+        wrong=K.copy();wrong[0,0]*=1.001;wrong[1,1]*=1.001
+        biased[name]=dict(K=wrong,c2w=c2w,w2c=w2c)
+    anchor=triangulate_track(obs,biased,"0")
+    assert anchor["valid"] and abs(anchor["xyz"][2]-2.002)<1e-10
+    assert anchor["max_loo_displacement"]<1e-10
+    return dict(status="PASS_constructed_failures",ring=dict(true_query_depth=true_depth,proposed_plane_depth=full,fit_rms=residual,delete_one_depth_range=float(np.ptp(deleted)),query_inside_convex_hull=True),
+        shared_focal_bias=dict(relative_focal_error=.001,true_depth=2.,triangulated_depth=anchor["xyz"][2],max_loo_displacement=anchor["max_loo_displacement"]),
+        limitation="These refute empirical-LOO-as-coverage, not attribute DTU errors. Curvature, holes, surface membership and calibration bounds are additional assumptions.")
+
+
 def _check():
     K = np.array([[700., 0, 320], [0, 680., 240], [0, 0, 1]])
     xyz = np.array([.12, -.08, 3.])
@@ -159,6 +189,7 @@ def _check():
     print(json.dumps(dict(check="PASS", exact_xyz=exact["xyz"],
                           noisy_max_loo_displacement=noisy["max_loo_displacement"],
                           zero_baseline_reason=zero["reason"], behind_reason=back["reason"],
+                          surface_failures=surface_failure_controls(),
                           limitation="LOO displacement is empirical stability, not a true error bound"), indent=2))
 
 
