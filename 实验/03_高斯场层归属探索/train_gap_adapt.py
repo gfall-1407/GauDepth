@@ -74,8 +74,8 @@ def run(args):
     if (tm['status'] != 'cache_complete' or tm['scan'] != args.scan or tm['h_mm'] != 1. or
         tm['model_sha256'] != ref['model_sha256'] or tm['cfg_sha256'] != ref['cfg_sha256']):
         raise ValueError("Teacher is not the completed canonical fixed1mm gap cache")
-    if tm['source']['commit'] != 'db7dbf75ef1e473478249c2cff1b5a844ba2eea6' or 'gap_huber' not in tm['methods']:
-        raise ValueError("Teacher source/method differs from predeclared scan40 cache")
+    if tm['source']['commit'] != args.teacher_commit or 'gap_huber' not in tm['methods']:
+        raise ValueError("Teacher source/method differs from the explicitly pinned cache")
     if [v['name'] for v in tm['views']] != [v['name'] for v in ref['views']]:
         raise ValueError("Teacher camera order/inventory mismatch")
     for v in tm['views']:
@@ -233,7 +233,9 @@ def cli():
     p.add_argument('--model-root',type=Path,default=Path('/root/GauDepth_HuberRepair_20261026/inputs_G1/outtest'))
     p.add_argument('--source-root',type=Path,default=Path('/root/autodl-tmp/DTU'))
     p.add_argument('--teacher-root',type=Path,default=Path('/root/GauDepth_Gap_20261027/scan40_v1/cache40'))
-    p.add_argument('--output',type=Path);p.add_argument('--scan',type=int,choices=(40,),default=40)
+    from night_depth_batch import FIXED
+    p.add_argument('--output',type=Path);p.add_argument('--scan',type=int,choices=tuple(FIXED),default=40)
+    p.add_argument('--teacher-commit',default='db7dbf75ef1e473478249c2cff1b5a844ba2eea6',help='Exact authorized source commit recorded in completed teacher metadata')
     p.add_argument('--steps',type=int,default=1000);p.add_argument('--smoke-steps',type=int,default=0)
     p.add_argument('--lambda-gap',type=float,default=.01);p.add_argument('--seed',type=int,default=20261027)
     p.add_argument('--max-seconds',type=float,default=900);p.add_argument('--check',action='store_true')

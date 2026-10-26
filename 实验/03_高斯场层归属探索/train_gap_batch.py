@@ -60,9 +60,9 @@ def main(args):
     def check():
         if (root/"stop_batch").exists():raise InterruptedError("Guard requested boundary stop")
     def train(name,weight,smoke=False):
-        check();command=[sys.executable,str(HERE/"train_gap_adapt.py"),"--scan","40","--model-root",str(args.model_root),
+        check();command=[sys.executable,str(HERE/"train_gap_adapt.py"),"--scan",str(args.scan),"--model-root",str(args.model_root),
             "--source-root",str(args.source_root),"--teacher-root",str(args.teacher_root),"--output",str(root/name),
-            "--lambda-gap",str(weight),"--steps","1000","--seed","20261027","--max-seconds","900"]
+            "--lambda-gap",str(weight),"--steps","1000","--seed","20261027","--max-seconds","900","--teacher-commit",args.teacher_commit]
         if smoke:command.extend(["--smoke-steps","10"])
         record("running",active=name,command=command)
         with (root/(name+".log")).open("xb") as f:r=subprocess.run(command,stdout=f,stderr=subprocess.STDOUT)
@@ -101,6 +101,9 @@ if __name__=="__main__":
     p.add_argument("--teacher-root",type=Path,default=Path("/root/GauDepth_Gap_20261027/scan40_v1/cache40"))
     p.add_argument("--gt-root",type=Path,default=Path("/root/autodl-tmp/DTU_MVS_Data"))
     p.add_argument("--evaluate-model",type=Path)
+    from night_depth_batch import FIXED
+    p.add_argument("--scan",type=int,choices=tuple(FIXED),default=40)
+    p.add_argument("--teacher-commit",default="db7dbf75ef1e473478249c2cff1b5a844ba2eea6")
     a=p.parse_args()
     if a.evaluate_model:evaluate(a.evaluate_model,a.output,a.gt_root)
     else:main(a)
