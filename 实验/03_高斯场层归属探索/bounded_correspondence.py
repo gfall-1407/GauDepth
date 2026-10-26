@@ -134,6 +134,28 @@ def solve_intervals(E, lower, upper, valid, fit=(0, 2, 4, 6), gate=(1, 3)):
     return dict(selected=selected, accept=accept, lo=lo, hi=hi, fit_n=fit_n, reason=reason)
 
 
+def project_joint_intervals(E, lower, upper, valid):
+    """Closest feasible depth for ALL five decision constraints; audit stays unused.
+
+    Conditional on true depth belonging to this intersection, convex projection
+    cannot increase scalar depth error. Matching/calibration bounds are not certified.
+    """
+    E=np.asarray(E,dtype=np.float64);lower,upper=np.asarray(lower),np.asarray(upper)
+    valid=np.asarray(valid,dtype=bool)
+    if lower.shape!=(5,len(E)) or upper.shape!=lower.shape or valid.shape!=lower.shape:
+        raise ValueError("Exactly five preassigned decision intervals required")
+    good=valid&np.isfinite(lower)&np.isfinite(upper)&(lower>0)&(lower<=upper)
+    complete=good.all(axis=0)
+    lo=np.max(np.where(good,lower,-np.inf),axis=0);hi=np.min(np.where(good,upper,np.inf),axis=0)
+    feasible=complete&(lo<=hi)&np.isfinite(lo)&np.isfinite(hi)
+    change=feasible&((E<lo-1e-12)|(E>hi+1e-12))
+    selected=E.copy();selected[change]=np.clip(E,lo,hi)[change]
+    reason=np.full(len(E),"insufficient_joint_constraints",dtype="<U32")
+    reason[complete]="incompatible_joint_intervals";reason[feasible]="baseline_inside_joint";reason[change]="projected_to_joint"
+    lo[~complete]=np.nan;hi[~complete]=np.nan
+    return dict(selected=selected,accept=change,lo=lo,hi=hi,fit_n=good[:3].sum(axis=0),reason=reason)
+
+
 def synthetic_check():
     import cv2
     K = np.array([[160., 0, 63.5], [0, 160., 47.5], [0, 0, 1.]])
@@ -182,9 +204,24 @@ def synthetic_check():
     tracked = track_pair(textured, shifted, tracked_xy, tracked_xy+[3., 0.])
     assert tracked["valid"].all()
     np.testing.assert_allclose(tracked["q"], tracked_xy+[3., 0.], rtol=0, atol=.05)
+    # The nearest fit boundary may fail a gate even when the joint set is nonempty.
+    jl=np.array([[1.],[1.],[1.],[2.],[2.]])
+    ju=np.array([[3.],[3.],[3.],[4.],[4.]])
+    jv=np.ones((5,1),bool)
+    assert not solve_intervals(np.array([.5]),jl,ju,jv,fit=[0,1,2],gate=[3,4])["accept"][0]
+    joint=project_joint_intervals(np.array([.5]),jl,ju,jv)
+    np.testing.assert_array_equal(joint["selected"],[2.])
+    for truth in np.linspace(2.,3.,21):
+        for start in np.linspace(.5,4.5,21):
+            value=project_joint_intervals(np.array([start]),jl,ju,jv)["selected"][0]
+            assert abs(value-truth)<=abs(start-truth)+1e-12
+    jl_bad=jl.copy();jl_bad[4]=3.5
+    assert not project_joint_intervals(np.array([.5]),jl_bad,ju,jv)["accept"][0]
+    jv[4]=False
+    assert not project_joint_intervals(np.array([.5]),jl,ju,jv)["accept"][0]
     print(json.dumps(dict(status="PASS", synthetic_only=True,
         true_in_intervals=True, correct_baseline_unchanged=True, wrong_baseline_moved_toward_truth=True,
-        zero_baseline="unknown", off_epipolar="unknown", pure_colour="unknown", LK_translation="PASS",
+        zero_baseline="unknown", off_epipolar="unknown", pure_colour="unknown", LK_translation="PASS",joint_projection="PASS",
         limitation="Conditional <=.5px correspondence/calibration error bound, NOT certified by LK/FB")))
 
 

@@ -6,10 +6,57 @@ import json
 import sys
 import time
 import numpy as np
-from bounded_correspondence import depth_interval, solve_intervals, ray_projection, _ray_terms
+from bounded_correspondence import depth_interval, solve_intervals, ray_projection, _ray_terms, project_joint_intervals
 from photo_objective import bilinear
 from photo_surface_probe import HERE, REPO, sha256, save, source_info
 from consensus_depth import _check_camera_projection
+
+
+def check_coordinates(args):
+    """Original full-resolution double SfM versus current cached camera convention."""
+    out=args.output.resolve();target=out/"coordinate_parity.json"
+    if target.exists():raise ValueError("Do not overwrite coordinate parity")
+    meta=json.loads((out/"metadata.json").read_text(encoding="utf-8"));assert meta["status"]=="complete"
+    spec=importlib.util.spec_from_file_location("sfm_parity_loader",REPO/"scene/colmap_loader.py")
+    loader=importlib.util.module_from_spec(spec);sys.modules[spec.name]=loader;spec.loader.exec_module(loader)
+    verified=json.loads((args.observation_root.parent/"selected_local_verified.json").read_text())
+    for rel,v in verified["files"].items():assert sha256(args.observation_root/rel)==v["sha256"]
+    report=dict(status="partial",source=source_info(),decision_source=meta["source"],scans=[],limitation="No GT/no new decisions. Full-resolution coordinates and original K/pose compared, no K replacement or tau tuning.")
+    def perpendicular(xy,E,q,ci,cj):
+        p,_=ray_projection(xy,E,ci,cj);a,b=_ray_terms(xy,ci,cj)
+        direction=(a[:,:2]*b[2]-b[:2]*a[:,2,None])*np.diag(cj["K"])[:2]
+        unit=direction/np.maximum(np.linalg.norm(direction,axis=1)[:,None],1e-30)
+        diff=q-p;return np.linalg.norm(diff-unit*np.sum(diff*unit,axis=1)[:,None],axis=1),p
+    for row in meta["completed"]:
+        scan=row["scan"];path=out/f"scan{scan}_view0000/decisions.npz"
+        assert sha256(path)==row["decisions_sha256"]
+        with np.load(path) as f:d={k:f[k].copy() for k in f.files}
+        base=args.observation_root/f"scan{scan}"
+        intr=loader.read_intrinsics_binary(base/"sparse/0/cameras.bin")
+        extr={Path(v.name).stem:v for v in loader.read_extrinsics_binary(base/"sparse/0/images.bin").values()}
+        cache=(HERE/"结果/20261026_夜间深度方法/dense_confirm_v1/scan37_v1" if scan==37 else HERE/"结果/20261026_Huber全场景/scan40_v1")
+        cached=json.loads((cache/"metadata.json").read_text(encoding="utf-8"));vm={v["name"]:v for v in cached["views"]}
+        raw,half,scales={},{},{}
+        for name in ["0000",*d["camera_names"].tolist()]:
+            r=extr[name];k=intr[r.camera_id];fx,fy,cx,cy=k.params;h,w=vm[name]["image_size"]
+            sx,sy=w/k.width,h/k.height;assert abs(sx-sy)<1e-12
+            scales[name]=sx;K=np.array([[fx,0,cx],[0,fy,cy],[0,0,1.]])
+            w2c=np.eye(4);w2c[:3,:3]=r.qvec2rotmat();w2c[:3,3]=r.tvec
+            raw[name]=dict(K=K,w2c=w2c,c2w=np.linalg.inv(w2c))
+            Kh=K.copy();Kh[:2]*=sx;Kh[:2,2]-=.5
+            wh=w2c.astype(np.float32).astype(float);half[name]=dict(K=Kh,w2c=wh,c2w=np.linalg.inv(wh))
+        raw_values=[];half_values=[];projection_deltas=[]
+        for j,name in enumerate(d["camera_names"].tolist()):
+            q=d["q"][j];use=np.isfinite(q).all(axis=1)
+            if not use.any():continue
+            s=scales[name]
+            rp,uv=perpendicular((d["xy"]+.5)/scales["0000"],d["E"],(q+.5)/s,raw["0000"],raw[name])
+            hp,hv=perpendicular(d["xy"],d["E"],q,half["0000"],half[name])
+            raw_values.extend((rp*s)[use]);half_values.extend(hp[use]);projection_deltas.extend(np.linalg.norm(uv*s-.5-hv,axis=1)[use])
+        rv,hv,pd=map(np.asarray,(raw_values,half_values,projection_deltas))
+        report["scans"].append(dict(scan=scan,pairs=len(rv),raw_scaled_perpendicular_median_px=float(np.median(rv)),current_perpendicular_median_px=float(np.median(hv)),max_perpendicular_difference_px=float(np.max(np.abs(rv-hv))),max_projection_difference_px=float(pd.max()),half_pixel_classification_disagreements=int(((rv>.5)!=(hv>.5)).sum()),decision_sha256=row["decisions_sha256"]))
+        assert sha256(path)==row["decisions_sha256"];save(target,report)
+    report["status"]="complete";save(target,report);print(json.dumps(report),flush=True)
 
 
 def diagnose(args):
@@ -96,11 +143,14 @@ def run(args):
     state = dict(status="partial", source=source_info(), completed=[], parameters=dict(
         scans=[37, 40], reference="0000", samples=512, tau_pixels=.5,
         fit=[0, 2, 4, 6], gate=[1, 3], audit=[5, 7], seed=20261026,
-        all_track_views=args.all_track_views),
+        all_track_views=args.all_track_views,joint_constraints=args.joint_constraints),
         limitation="Sparse SfM feature observations already used for model initialization, not new training holdout or depth truth. E is bilinearly sampled at fractional feature coordinates, not a native pixel rerender. Scan NN is a diagnostic, not pixel GT or mesh gain. Total true matching/calibration bound .5px remains an assumption.")
     if args.all_track_views:
         state["parameters"].update(fit="3 largest geometric parallax among observed tracks",
             gate="next2 geometric parallax",audit="all remaining observed tracks",minimum_available_nonref_views=6)
+    if args.joint_constraints:
+        if not args.all_track_views:raise ValueError("Joint variant only on identical all-track roles")
+        state["parameters"]["estimator"]="nearest E in joint intersection of all five valid decision intervals; no gate preprojection heuristic"
     save(out/"metadata.json", state)
     started = time.monotonic()
     verified = json.loads((args.observation_root.parent/"selected_local_verified.json").read_text())
@@ -199,7 +249,8 @@ def run(args):
                     use = roles[slot]==j
                     lower[slot,use],upper[slot,use],valid[slot,use] = lo[use],hi[use],(ok & inside & (mask>=1-1e-9))[use]
             q_all[j] = q
-        result = solve_intervals(E,lower,upper,valid,fit=fit_roles,gate=gate_roles)
+        result = (project_joint_intervals(E,lower,upper,valid) if args.joint_constraints
+                  else solve_intervals(E,lower,upper,valid,fit=fit_roles,gate=gate_roles))
         D,accept = result["selected"],result["accept"]
         scene = out/f"scan{scan}_view0000";scene.mkdir()
         np.savez_compressed(scene/"decisions.npz",point_ids=ids,xy=xy,E=E,selected=D,accept=accept,
@@ -251,5 +302,7 @@ if __name__ == "__main__":
     p.add_argument("--output",type=Path,required=True);p.add_argument("--max-seconds",type=int,default=900)
     p.add_argument("--all-track-views",action="store_true",help="Same interval rule; geometry-only fit3/gate2 among all available tracks, reserve audit")
     p.add_argument("--diagnose-only",action="store_true",help="No new depth decisions/GT; explain sealed all-track intervals")
+    p.add_argument("--coordinate-check",action="store_true",help="No new depth decisions/GT; original raw SfM versus current coordinate convention")
+    p.add_argument("--joint-constraints",action="store_true",help="Same five decision roles, joint feasible-set projection instead of fit-then-gate")
     args=p.parse_args()
-    diagnose(args) if args.diagnose_only else run(args)
+    check_coordinates(args) if args.coordinate_check else (diagnose(args) if args.diagnose_only else run(args))
