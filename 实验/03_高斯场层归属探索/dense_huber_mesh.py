@@ -567,7 +567,7 @@ def main():
     parser.add_argument("--output", type=Path)
     parser.add_argument("--scan", type=int, choices=tuple(FIXED), default=24,
                         help="One of the 15 SHA-pinned G1 frozen scenes; unchanged fixed1mm protocol")
-    parser.add_argument("--instance-id", choices=("d6a7459179-693ab6ee", "26a34fbbce-406e74f8"),
+    parser.add_argument("--instance-id", choices=("d6a7459179-693ab6ee", "26a34fbbce-406e74f8", "5d5147b55f-67549ee6"),
                         default="d6a7459179-693ab6ee", help="Approved execution instance, not model origin")
     parser.add_argument("--pilot-only", action="store_true")
     parser.add_argument("--cache-only", action="store_true", help="Complete dense cache only; no mesh or score")

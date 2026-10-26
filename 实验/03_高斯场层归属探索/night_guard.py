@@ -17,6 +17,8 @@ from zoneinfo import ZoneInfo
 
 
 ALLOWED_IDENTITIES = {
+    # User manually started G0; console and SSH verified 2026-10-26.
+    "5d5147b55f-67549ee6": "autodl-container-5d5147b55f-67549ee6",
     "d6a7459179-693ab6ee": "autodl-container-d6a7459179-693ab6ee",
     # Console verified 2026-10-26 after user authorized another execution host.
     # This entry does not replace the required host-specific real shutdown test.
@@ -187,7 +189,7 @@ def command_run(args):
 
     atomic_json(deadline_path, {"deadline": deadline, "hard_stop": hard_stop})
     atomic_json(state_path, {
-        "mode": "dry-run" if args.dry_run else "real",
+        "mode": "dry-run" if args.dry_run else ("child-deadline-test-no-poweroff" if args.self_test_no_shutdown else "real"),
         "guard_pid": os.getpid(),
         "hostname": observed or socket.gethostname(),
         "instance_id": args.instance_id,
@@ -269,6 +271,14 @@ def command_run(args):
         if argv != [b"/bin/supervisord", b"-c", b"/init/supervisor/supervisor.ini"]:
             log_event(state_path, "shutdown_failed", shutdown_error="supervisord identity changed before signal")
             return 1
+        if args.self_test_no_shutdown:
+            if child is None or child.poll() is None or process_group_exists(child.pid):
+                raise ValueError("managed child/process group did not stop")
+            os.kill(pid, 0)
+            log_event(state_path, "child_deadline_test_passed_poweroff_not_executed",
+                      supervisor_pid=pid, child_returncode=child.returncode)
+            print("Real managed child stopped; supervisor identity/permission verified; poweroff NOT tested", flush=True)
+            return 0
         log_event(state_path, "shutdown_term_sent", supervisor_pid=pid)
         os.kill(pid, signal.SIGTERM)
         log_event(state_path, "shutdown_signal_sent", supervisor_pid=pid)
@@ -320,6 +330,8 @@ def build_parser():
     run.add_argument("--instance-id", required=True)
     run.add_argument("--shutdown-command", nargs="+", help=argparse.SUPPRESS)
     run.add_argument("--dry-run", action="store_true")
+    run.add_argument("--self-test-no-shutdown", action="store_true",
+                     help="Real child deadline test only; verify supervisor but do not power off")
     run.add_argument("--simulate-hostname", help="仅供本地 dry-run 的身份模拟")
     run.add_argument("--deadline-at", type=float, help="显式 Unix 截止时间；仍受硬截止约束")
     run.add_argument("command", nargs=argparse.REMAINDER)
