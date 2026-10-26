@@ -312,6 +312,9 @@ def run_cached(args):
         raise ValueError("Require absolute cache and new independent output")
     if output == cache_root or cache_root in output.parents:
         raise ValueError("Do not write inside the frozen cache")
+    for root in (args.model_root, args.source_root, args.gt_root):
+        if output == root.resolve() or root.resolve() in output.parents:
+            raise ValueError("Output cannot be inside protected input roots")
     methods = args.methods or ["soft_tail_1mm"]
     if len(set(methods)) != len(methods) or args.pilot_only:
         raise ValueError("Do not repeat methods or use pilot-only in cache replay")
