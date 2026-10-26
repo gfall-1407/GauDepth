@@ -108,9 +108,77 @@ def run(args):
         raise
 
 
+def run_training(args):
+    """Repeat the scorer on transferred fixed training meshes, without rerendering."""
+    if git('status','--porcelain') or git('remote','get-url','origin')!='git@github.com:gfall-1407/GauDepth.git':
+        raise ValueError('Require clean committed approved source')
+    out=args.output.resolve()
+    if not args.output.is_absolute() or out.exists():raise ValueError('New independent output required')
+    batch=args.training_batch.resolve();manifest=json.loads(args.transfer_manifest.read_text(encoding='utf-8'))
+    if Path(manifest['root']).name!=batch.name:raise ValueError('Transferred batch root differs')
+    source_files={x['file']:x['sha256'] for x in manifest['files']}
+    arms=args.training_arms;prepared={};scan=None
+    evaluator=ROOT/'dtu_eval/eval.py'
+    normalized=__import__('hashlib').sha256(evaluator.read_text(encoding='utf-8').encode()).hexdigest()
+    teacher=json.loads(args.teacher_metadata.read_text(encoding='utf-8'))
+    if teacher['dtu_eval_sha256']!=normalized:raise ValueError('Native evaluation source differs')
+    for arm in arms:
+        training=json.loads((batch/arm/'metadata.json').read_text(encoding='utf-8'))
+        if training['status']!='complete' or training['actual_updates']!=1000:raise ValueError('Partial training')
+        this_scan=int(training['args']['scan'])
+        if scan is not None and scan!=this_scan:raise ValueError('Mixed scenes in batch')
+        scan=this_scan;relative=f'{arm}_native/recon_aligned.ply';mesh=batch/relative
+        if sha256(mesh)!=source_files[relative]:raise ValueError('Transferred aligned mesh SHA differs')
+        primary_path=batch/f'{arm}_native/metadata.json'
+        if sha256(primary_path)!=source_files[f'{arm}_native/metadata.json']:raise ValueError('Primary result metadata differs')
+        prepared[arm]=(mesh,json.loads(primary_path.read_text(encoding='utf-8'))['scores'])
+    canonical=json.loads((HERE/'G1_Huber全场景输入参考.json').read_text(encoding='utf-8'))['scans'][str(scan)]
+    for rel in (f'Points/stl/stl{scan:03d}_total.ply',f'ObsMask/ObsMask{scan}_10.mat',f'ObsMask/Plane{scan}.mat'):
+        if sha256(args.root/rel)!=canonical['gt_inputs'][rel]:raise ValueError('Canonical scoring input differs')
+    out.mkdir();state=dict(status='partial',source_commit=git('rev-parse','HEAD'),scan=scan,seeds=list(SEEDS),
+        arms=arms,jobs=[],evaluator_normalized_sha256=normalized,transfer_manifest_sha256=sha256(args.transfer_manifest),
+        protocol='Fixed transferred Calibration-aligned meshes; original scorer with fixed RNG and Windows ordered ThreadPool8, visualization disabled. No model or mesh update. Every seed26 arm must reproduce its remote primary within1e-9 before other-seed evidence is accepted.')
+    atomic_json(out/'metadata.json',state);deadline=time.monotonic()+args.max_seconds
+    try:
+        for seed in SEEDS:
+            for arm,(mesh,primary) in prepared.items():
+                remaining=deadline-time.monotonic()
+                if remaining<10 or (out/'stop_after_score').exists():raise TimeoutError('Full-score boundary stop/deadline')
+                dest=out/f'scan{scan}_{arm}_{seed}';dest.mkdir()
+                command=[sys.executable,'-c',CHILD,str(evaluator),str(seed),'--data',str(mesh),'--scan',str(scan),
+                    '--mode','mesh','--dataset_dir',str(args.root),'--vis_out_dir',str(dest)]
+                with (dest/'evaluation.log').open('w') as log:
+                    child=subprocess.Popen(command,cwd=ROOT,stdin=subprocess.DEVNULL,stdout=log,stderr=subprocess.STDOUT)
+                    state['active']=dict(seed=seed,arm=arm,pid=child.pid);atomic_json(out/'metadata.json',state)
+                    try:code=child.wait(timeout=min(600,remaining))
+                    except subprocess.TimeoutExpired:
+                        child.kill();child.wait();raise TimeoutError('One independent scorer child timed out')
+                if code:raise RuntimeError('Scoring failed '+str(dest))
+                score=json.loads((dest/'results.json').read_text(encoding='utf-8'))
+                row=dict(scan=scan,arm=arm,seed=seed,**score,mesh_sha256=sha256(mesh),
+                    results_sha256=sha256(dest/'results.json'),primary_overall=primary['overall'])
+                state['jobs'].append(row);atomic_json(out/'metadata.json',state)
+                if seed==20261026 and any(abs(score[k]-primary[k])>1e-9 for k in ('mean_d2s','mean_s2d','overall')):
+                    raise ValueError('Local seed26/remote primary differs; do not mix scorer backends')
+                print(json.dumps(row),flush=True)
+        state.update(status='complete',active=None);atomic_json(out/'metadata.json',state)
+        with (out/'scores.csv').open('w',encoding='utf-8-sig',newline='') as f:
+            writer=csv.DictWriter(f,fieldnames=list(state['jobs'][0]));writer.writeheader();writer.writerows(state['jobs'])
+    except BaseException as exc:
+        state.update(status='partial',error=repr(exc));atomic_json(out/'metadata.json',state);raise
+
+
 if __name__ == "__main__":
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--root", type=Path, required=True)
     p.add_argument("--output", type=Path, required=True)
     p.add_argument("--max-seconds", type=float, default=3600.)
-    run(p.parse_args())
+    p.add_argument('--training-batch',type=Path)
+    p.add_argument('--transfer-manifest',type=Path)
+    p.add_argument('--teacher-metadata',type=Path)
+    p.add_argument('--training-arms',nargs='+',default=['control','gap_train','xyz_train'])
+    a=p.parse_args()
+    if a.training_batch:
+        if not a.transfer_manifest or not a.teacher_metadata:p.error('Transferred manifest and teacher metadata required')
+        run_training(a)
+    else:run(a)
