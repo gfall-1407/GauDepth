@@ -268,9 +268,17 @@ def dense_view(camera, gaussians, pipe, dataset, extension, scale, qa_first, met
             n = int(counts[row].item())
             rec = records[row, :n].cpu().numpy().astype(np.float64)
             if not n:
-                if result[row].item() != 0 or status[row].item() != 0:
-                    raise ValueError("Empty ray output must match native zero depth")
-                cpu_rows.append(dict(pixel=pixel, members=0, cpu_mm=None, gpu_mm=0., abs_error_mm=0.))
+                if method == "gap_huber":
+                    native_value = float(expected.reshape(-1)[pixel].item())
+                    cpu_value, cpu_state, _ = gap_reference(rec, native_value, 1./scale)
+                    if status[row].item() != cpu_state or result[row].item() != cpu_value:
+                        raise ValueError("Empty gap ray disagrees with native-zero/unknown-fallback policy")
+                    cpu_rows.append(dict(pixel=pixel, members=0, cpu_mm=cpu_value*scale,
+                                         gpu_mm=float(result[row].item())*scale, abs_error_mm=0.))
+                else:
+                    if result[row].item() != 0 or status[row].item() != 0:
+                        raise ValueError("Empty ray output must match native zero depth")
+                    cpu_rows.append(dict(pixel=pixel, members=0, cpu_mm=None, gpu_mm=0., abs_error_mm=0.))
             else:
                 if method == "gap_huber":
                     value_scene, cpu_status, cpu_gap = gap_reference(rec, float(expected.reshape(-1)[pixel].item()), 1./scale)
