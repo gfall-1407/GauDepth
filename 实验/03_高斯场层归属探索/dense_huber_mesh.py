@@ -411,7 +411,8 @@ def self_check():
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path)
-    parser.add_argument("--scan", type=int, choices=(24, 37, 106), default=24)
+    parser.add_argument("--scan", type=int, choices=tuple(FIXED), default=24,
+                        help="One of the 15 SHA-pinned G1 frozen scenes; unchanged fixed1mm protocol")
     parser.add_argument("--pilot-only", action="store_true")
     parser.add_argument("--check", action="store_true")
     parser.add_argument("--model-root", type=Path, default=Path("/root/autodl-tmp/GauDepth/outtest"))
