@@ -233,6 +233,8 @@ def evaluate(args):
         limitation=state["limitation"],
         denominator=f"Per scan: fixed seed maximum {args.nn_per_group} per view and changed/control stratum; pooled diagnostic sample, not full-mask or scene-equal Overall.",
         evaluation_source=evaluation_source, completed_scores=evaluated))
+    save(args.output/"nn_sample_progress.json", dict(status="complete", source=evaluation_source,
+        max_per_view_group=args.nn_per_group, completed=evaluated))
     state["status"] = "complete"; save(args.output/"metadata.json", state)
     print(json.dumps(summary))
 
