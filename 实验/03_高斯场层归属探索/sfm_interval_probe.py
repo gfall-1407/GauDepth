@@ -6,10 +6,86 @@ import json
 import sys
 import time
 import numpy as np
-from bounded_correspondence import depth_interval, solve_intervals, ray_projection
+from bounded_correspondence import depth_interval, solve_intervals, ray_projection, _ray_terms
 from photo_objective import bilinear
 from photo_surface_probe import HERE, REPO, sha256, save, source_info
 from consensus_depth import _check_camera_projection
+
+
+def diagnose(args):
+    """No new decisions/GT: explain the sealed all-track failure funnel."""
+    out = args.output.resolve()
+    meta = json.loads((out/"metadata.json").read_text(encoding="utf-8"))
+    assert meta["status"] == "complete" and meta["parameters"]["all_track_views"]
+    target = out/"diagnostics.json"
+    if target.exists():raise ValueError("Do not overwrite completed diagnostics")
+    report = dict(source=source_info(), decision_source=meta["source"], status="partial", scans=[],
+        limitation="No scan GT loaded. Same calibrated SfM solution; not independent matching truth. Solver-invalid can be unbounded rather than impossible. No threshold/view/output change.")
+    spec = importlib.util.spec_from_file_location("sfm_diagnostic_loader", REPO/"scene/colmap_loader.py")
+    loader = importlib.util.module_from_spec(spec);sys.modules[spec.name] = loader;spec.loader.exec_module(loader)
+    frozen = json.loads((HERE/"G1_Huber原缓存SHA.json").read_text(encoding="utf-8"))
+    verified = json.loads((args.observation_root.parent/"selected_local_verified.json").read_text())
+    for rel,v in verified["files"].items():assert sha256(args.observation_root/rel)==v["sha256"]
+    def summary(v):
+        v = np.asarray(v);v = v[np.isfinite(v)]
+        return dict(n=len(v),median=float(np.median(v)),p95=float(np.quantile(v,.95)),fraction_le_half=float((v<=.5).mean())) if len(v) else dict(n=0)
+    for row in meta["completed"]:
+        scan = row["scan"]; scene = out/f"scan{scan}_view0000"
+        assert sha256(scene/"decisions.npz")==row["decisions_sha256"]
+        with np.load(scene/"decisions.npz") as f:d={k:f[k].copy() for k in f.files}
+        source = args.observation_root/f"scan{scan}"
+        intr = loader.read_intrinsics_binary(source/"sparse/0/cameras.bin")
+        extr = {Path(v.name).stem:v for v in loader.read_extrinsics_binary(source/"sparse/0/images.bin").values()}
+        cache = (HERE/"结果/20261026_夜间深度方法/dense_confirm_v1/scan37_v1" if scan==37 else HERE/"结果/20261026_Huber全场景/scan40_v1")
+        cached = json.loads((cache/"metadata.json").read_text(encoding="utf-8"));vm={v["name"]:v for v in cached["views"]}
+        cameras={};masks={};tracks={};names=d["camera_names"].tolist()
+        for name in ["0000",*names]:
+            frame=cache/vm[name]["file"];assert sha256(frame)==frozen[str(scan)][vm[name]["file"]]
+            with np.load(frame) as f:masks[name]=f["gt_mask"].copy().squeeze().astype(float)
+            r=extr[name];k=intr[r.camera_id];assert k.model=="PINHOLE"
+            h,w=vm[name]["image_size"];sx,sy=w/k.width,h/k.height;fx,fy,cx,cy=k.params
+            K=np.array([[sx*fx,0,sx*cx-.5],[0,sy*fy,sy*cy-.5],[0,0,1.]])
+            w2c=np.eye(4);w2c[:3,:3]=r.qvec2rotmat();w2c[:3,3]=r.tvec;w2c=w2c.astype(np.float32).astype(float)
+            cameras[name]=dict(K=K,w2c=w2c,c2w=np.linalg.inv(w2c),image_size=(h,w))
+            ids,count=np.unique(r.point3D_ids[r.point3D_ids>=0],return_counts=True)
+            tracks[name]=set(ids[count==1].tolist())
+        xy,E,roles=d["xy"],d["E"],d["role_views"];assigned=(roles>=0).all(axis=0)
+        available=np.array([sum(int(pid) in tracks[name] for name in names) for pid in d["point_ids"]])
+        geometry=np.zeros(roles.shape,bool);maskok=geometry.copy();off=geometry.copy()
+        residual=np.full(roles.shape,np.nan);perp=residual.copy()
+        for j,name in enumerate(names):
+            use=np.any(roles==j,axis=0)
+            if not use.any():continue
+            q=d["q"][j];p0,z=ray_projection(xy,E,cameras["0000"],cameras[name])
+            a,b=_ray_terms(xy,cameras["0000"],cameras[name])
+            direction=(a[:,:2]*b[2]-b[:2]*a[:,2,None])*np.diag(cameras[name]["K"])[:2]
+            unit=direction/np.maximum(np.linalg.norm(direction,axis=1)[:,None],1e-30)
+            diff=q-p0;pd=np.linalg.norm(diff-unit*np.sum(diff*unit,axis=1)[:,None],axis=1)
+            _,_,ok=depth_interval(xy,E,q,cameras["0000"],cameras[name],tau=.5)
+            m,inside=bilinear(masks[name],q);mok=inside&(m>=1-1e-9)
+            for slot in range(5):
+                take=roles[slot]==j
+                geometry[slot,take]=ok[take];maskok[slot,take]=mok[take]
+                off[slot,take]=pd[take]>.5+1e-8
+                residual[slot,take]=np.linalg.norm(diff[take],axis=1);perp[slot,take]=pd[take]
+        np.testing.assert_array_equal(geometry&maskok,d["valid"])
+        def funnel(slots):
+            use=roles[slots]>=0;g,m=geometry[slots],maskok[slots]
+            return dict(assigned_pairs=int(use.sum()),valid_pairs=int((g&m&use).sum()),solver_only_reject=int((~g&m&use).sum()),mask_only_reject=int((g&~m&use).sum()),both_reject=int((~g&~m&use).sum()),off_epipolar_half_px=int((off[slots]&use).sum()),solver_reject_without_off_epipolar=int((~g&~off[slots]&use).sum()),E_residual_px=summary(residual[slots][use]),perpendicular_residual_px=summary(perp[slots][use]))
+        valid=d["valid"];lower,upper=d["lower"],d["upper"]
+        candidate=np.clip(E,d["lo"],d["hi"])
+        gv=valid[3:].all(axis=0)
+        insideD=((candidate>=lower[3:]-1e-12)&(candidate<=upper[3:]+1e-12)).all(axis=0)
+        excludesE=((E<lower[3:]-1e-12)|(E>upper[3:]+1e-12)).any(axis=0)
+        gate_reject=d["reason"]=="gate_unverified"
+        joint_lo=np.maximum(d["lo"],np.max(lower[3:],axis=0));joint_hi=np.minimum(d["hi"],np.min(upper[3:],axis=0))
+        notref=d["reason"]=="baseline_not_refuted"
+        insideE=gv&((E>=lower[3:]-1e-12)&(E<=upper[3:]+1e-12)).all(axis=0)
+        reason=dict(zip(*np.unique(d["reason"],return_counts=True)))
+        data=dict(scan=scan,samples=len(E),decision_sha256=row["decisions_sha256"],role_assigned=int(assigned.sum()),raw_tracks_below_six=int((~assigned&(available<6)).sum()),raw_tracks_six_but_geometry_role_short=int((~assigned&(available>=6)).sum()),assigned_but_fit_below_three=int((assigned&(d["fit_n"]<3)).sum()),reason_counts={k:int(v) for k,v in reason.items()},fit=funnel([0,1,2]),gate=funnel([3,4]),gate_reject=dict(total=int(gate_reject.sum()),invalid_interval=int((gate_reject&~gv).sum()),valid_but_candidate_outside=int((gate_reject&gv&~insideD).sum()),valid_contains_candidate_but_E_not_excluded=int((gate_reject&gv&insideD&~excludesE).sum()),candidate_outside_but_joint_intersection_nonempty=int((gate_reject&gv&~insideD&(joint_lo<=joint_hi)).sum())),baseline_in_fit=dict(n=int(notref.sum()),also_in_both_valid_gate=int((notref&insideE).sum())),raw_track_count_histogram={str(k):int((available==k).sum()) for k in np.unique(available)})
+        report["scans"].append(data);save(target,report);print(json.dumps(data),flush=True)
+        assert sha256(scene/"decisions.npz")==row["decisions_sha256"]
+    report["status"]="complete";save(target,report)
 
 
 def run(args):
@@ -174,4 +250,6 @@ if __name__ == "__main__":
     p=argparse.ArgumentParser(description=__doc__);p.add_argument("--observation-root",type=Path,required=True)
     p.add_argument("--output",type=Path,required=True);p.add_argument("--max-seconds",type=int,default=900)
     p.add_argument("--all-track-views",action="store_true",help="Same interval rule; geometry-only fit3/gate2 among all available tracks, reserve audit")
-    run(p.parse_args())
+    p.add_argument("--diagnose-only",action="store_true",help="No new depth decisions/GT; explain sealed all-track intervals")
+    args=p.parse_args()
+    diagnose(args) if args.diagnose_only else run(args)
