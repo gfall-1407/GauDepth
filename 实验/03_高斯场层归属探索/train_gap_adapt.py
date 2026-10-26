@@ -33,6 +33,38 @@ def tensor_sha(value):
     return hashlib.sha256(value.detach().cpu().contiguous().numpy().tobytes()).hexdigest()
 
 
+def apply_loss_backward(base, weighted_gap, parameters, route, verify=False):
+    """Route only the added term; the full baseline still updates every leaf."""
+    import torch
+    if route == 'full':
+        (base+weighted_gap).backward()
+        return None
+    if route != 'xyz': raise ValueError('Unknown gradient route')
+    base.backward(retain_graph=True)
+    before = {k:None if p.grad is None else p.grad.detach().clone()
+              for k,p in parameters.items()} if verify else None
+    xyz=parameters['xyz']
+    extra=torch.autograd.grad(weighted_gap,xyz,allow_unused=True)[0]
+    if extra is None or not bool(torch.isfinite(extra).all()):
+        raise ValueError('Added xyz gradient missing or nonfinite')
+    if xyz.grad is None: xyz.grad=extra.detach().clone()
+    else: xyz.grad.add_(extra)
+    if not verify: return None
+    for name,param in parameters.items():
+        if name=='xyz': continue
+        previous=before[name]
+        if (previous is None) != (param.grad is None) or (previous is not None and not torch.equal(previous,param.grad)):
+            raise ValueError('Added term wrote a forbidden parameter gradient: '+name)
+    expected=extra if before['xyz'] is None else before['xyz']+extra
+    if not torch.equal(xyz.grad,expected): raise ValueError('xyz gradient sum differs')
+    b=before['xyz'];bn=0. if b is None else float(b.norm());en=float(extra.norm())
+    cosine=None if b is None or bn==0 or en==0 else float((b*extra).sum())/(bn*en)
+    return dict(status='PASS_exact_direct_route',forbidden=('scaling','rotation','opacity'),
+        forbidden_gradient_bitwise_unchanged=True,xyz_addition_bitwise_equal=True,
+        baseline_xyz_norm=bn,weighted_extra_xyz_norm=en,baseline_extra_xyz_cosine=cosine,
+        limitation='Only the direct added gradient is restricted; later shared-geometry and baseline gradients may change. Not proof of physical displacement.')
+
+
 def check():
     import torch
     d = torch.tensor([2., 2.], requires_grad=True)
@@ -45,7 +77,18 @@ def check():
     (0.*gap_loss(d, t, mask, mask, 1.)).backward()
     assert torch.equal(d.grad, torch.zeros_like(d))
     assert gap_loss(d.detach()-.01, t, mask, mask, 1.) < gap_loss(d.detach(), t, mask, mask, 1.)
+    for route in ('full','xyz'):
+        parameters={k:torch.tensor(float(i+1),requires_grad=True) for i,k in enumerate(('xyz','scaling','rotation','opacity'))}
+        x,s,r,o=parameters.values();base=(x+s+r+o)**2;term=.25*(x*s+r*o)**2
+        bg=torch.autograd.grad(base,list(parameters.values()),retain_graph=True)
+        tg=torch.autograd.grad(term,list(parameters.values()),retain_graph=True)
+        qa=apply_loss_backward(base,term,parameters,route,verify=route=='xyz')
+        for i,param in enumerate(parameters.values()):
+            expected=bg[i]+tg[i] if route=='full' or i==0 else bg[i]
+            assert torch.equal(param.grad,expected)
+        if route=='xyz':assert qa['forbidden_gradient_bitwise_unchanged']
     print("CPU smooth-L1 direction/gate-zero/teacher-detach/lambda-zero: PASS")
+    print("CPU full baseline retained; added term full/xyz route and forbidden gradients: PASS")
 
 
 def run(args):
@@ -153,7 +196,7 @@ def run(args):
         g.save_ply(str(dest))
         checkpoint=out/'last_checkpoint.pth';temp=out/'last_checkpoint.pth.tmp'
         torch.save(dict(capture=g.capture(),filter_3D=g.filter_3D.detach(),iteration=iteration,
-            source=source,teacher_metadata_sha256=teacher_meta_sha,options=vars(opt),
+            source=source,teacher_metadata_sha256=teacher_meta_sha,options=vars(opt),gap_gradient_route=args.gap_gradient_route,
             random_state=random.getstate(),numpy_state=np.random.get_state(),torch_state=torch.get_rng_state(),
             cuda_state=torch.cuda.get_rng_state_all(),schedule=schedule),temp)
         os.replace(temp,checkpoint)
@@ -211,7 +254,10 @@ def run(args):
                     qa_done=True;save(out/'metadata.json',state)
                 loss=base+args.lambda_gap*gap
                 if not bool(torch.isfinite(loss).all()):raise ValueError('Nonfinite training loss')
-                loss.backward()
+                route_qa=apply_loss_backward(base,args.lambda_gap*gap,parameters,args.gap_gradient_route,
+                    verify=args.gap_gradient_route=='xyz' and 'gradient_route_qa' not in state and bool(gate.any()))
+                if route_qa is not None:
+                    state['gradient_route_qa']=route_qa;save(out/'metadata.json',state)
                 for name,param in parameters.items():
                     if param.grad is not None and not bool(torch.isfinite(param.grad).all()):raise ValueError('Nonfinite '+name+' gradient')
                 g.optimizer.step();g.optimizer.zero_grad(set_to_none=True)
@@ -219,7 +265,7 @@ def run(args):
                 if local==1 or local%100==0 or local==count:
                     row=dict(step=local,iteration=30000+local,camera=camera.image_name,neighbour=ni,xyz_lr=xyz_lr,
                         rgb=float(rgb.detach()),normal=float(norm.detach()),ncc=float(ncc.detach()),geo=float(geo.detach()),
-                        gap_unweighted=float(gap.detach()),gap_weighted=float((args.lambda_gap*gap).detach()),gap_pixels=int(gate.sum()),foreground_pixels=int(mask.sum()))
+                        gap_unweighted=float(gap.detach()),gap_weighted=float((args.lambda_gap*gap).detach()),gap_pixels=int(gate.sum()),foreground_pixels=int(mask.sum()),gap_gradient_route=args.gap_gradient_route)
                     log.write(json.dumps(row)+'\n');log.flush();os.fsync(log.fileno());state['last_loss']=row;save(out/'metadata.json',state)
             completed=state['actual_updates']==count
             # A completed smoke must demonstrate real updates, including position.
@@ -246,6 +292,7 @@ def cli():
     p.add_argument('--teacher-commit',default='db7dbf75ef1e473478249c2cff1b5a844ba2eea6',help='Exact authorized source commit recorded in completed teacher metadata')
     p.add_argument('--steps',type=int,default=1000);p.add_argument('--smoke-steps',type=int,default=0)
     p.add_argument('--lambda-gap',type=float,default=.01);p.add_argument('--seed',type=int,default=20261027)
+    p.add_argument('--gap-gradient-route',choices=('full','xyz'),default='full')
     p.add_argument('--max-seconds',type=float,default=900);p.add_argument('--check',action='store_true')
     a=p.parse_args()
     if not 1<=a.steps<=2000 or not 0<=a.smoke_steps<=2000 or not math.isfinite(a.lambda_gap) or a.lambda_gap<0 or not math.isfinite(a.max_seconds) or a.max_seconds<=0:p.error('Invalid bounded steps/lambda/time')
