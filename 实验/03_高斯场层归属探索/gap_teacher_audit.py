@@ -272,6 +272,49 @@ def truncation_audit(args):
     print(json.dumps(rows))
 
 
+def native_alignment_audit(args):
+    """Recover the already applied native camera alignment from exact mesh IDs.
+
+    No GT fitting/ICP: source and destination are the SAME preserved mesh before
+    and after native Calibration transformation. Refuse differing face indices.
+    """
+    import trimesh
+    source=source_info();records=[]
+    for scan in args.scans:
+        root=args.cache_root/f'scan{scan}_v1';meta=json.loads((root/f'cache{scan}/metadata.json').read_text())
+        archive=np.asarray(meta['alignment']['transform'],dtype=float);transforms=[]
+        for method in ('native_expected','gap_huber'):
+            p=root/f'native{scan}'/method
+            before=trimesh.load(p/'recon_post.ply',process=True)
+            after=trimesh.load(p/'recon_aligned.ply',process=False)
+            if before.vertices.shape!=after.vertices.shape or not np.array_equal(before.faces,after.faces):
+                raise ValueError('Exact native vertex/face correspondence unavailable; no ICP fallback')
+            ids=np.linspace(0,len(before.vertices)-1,min(512,len(before.vertices)),dtype=int)
+            x=np.column_stack((np.asarray(before.vertices)[ids],np.ones(len(ids))))
+            coefficients=np.linalg.lstsq(x,np.asarray(after.vertices)[ids],rcond=None)[0]
+            transform=np.eye(4);transform[:3]=coefficients.T
+            residual=np.linalg.norm(np.asarray(before.vertices)@transform[:3,:3].T+transform[:3,3]-np.asarray(after.vertices),axis=1)
+            if float(residual.max())>5e-4:
+                raise ValueError('Recovered native transformation exceeds fixed float32 PLY rounding budget')
+            singular=np.linalg.svd(transform[:3,:3],compute_uv=False)
+            if np.linalg.det(transform[:3,:3])<=0 or singular.max()/singular.min()>1.00001:
+                raise ValueError('Expected the native camera-based positive similarity')
+            transforms.append(transform)
+            records.append(dict(scan=scan,method=method,n_vertices=len(before.vertices),
+                native_camera_transform=transform.tolist(),archive_transform=archive.tolist(),
+                transform_max_abs_difference=float(np.abs(transform-archive).max()),
+                correspondence_fit_max_mm=float(residual.max()),source_mesh_sha256=sha256(p/'recon_post.ply'),
+                aligned_mesh_sha256=sha256(p/'recon_aligned.ply')))
+            del before,after
+        if not np.allclose(transforms[0],transforms[1],atol=5e-4,rtol=0):
+            raise ValueError('Native camera transform should be method independent within PLY rounding')
+    path=args.output/'native_alignment_diagnostic.json'
+    if path.exists():raise ValueError('Do not overwrite completed alignment diagnostic')
+    save(path,dict(status='complete',source=source,rows=records,
+        limitation='Transformation is recovered only from exact native mesh correspondences, not GT. It does not make area-weighted mesh scoring and ray-weighted NN equivalent.'))
+    print(json.dumps(records))
+
+
 if __name__ == "__main__":
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--output", type=Path, required=True)
@@ -282,7 +325,9 @@ if __name__ == "__main__":
     p.add_argument("--nn-per-group", type=int, default=256)
     p.add_argument("--evaluate", action="store_true")
     p.add_argument('--truncation-audit',action='store_true')
+    p.add_argument('--native-alignment-audit',action='store_true')
     a = p.parse_args()
-    if a.truncation_audit:truncation_audit(a)
+    if a.native_alignment_audit:native_alignment_audit(a)
+    elif a.truncation_audit:truncation_audit(a)
     elif a.evaluate: evaluate(a)
     else: diagnose(a)
