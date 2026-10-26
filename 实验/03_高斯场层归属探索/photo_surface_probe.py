@@ -60,6 +60,9 @@ def export_observations(args):
                 for relative, digest in ref["source_inputs"].items():
                     if sha256(root / relative) != digest:
                         raise ValueError("Camera/source mismatch: " + relative)
+                    p = root / relative
+                    tar.add(p, arcname=relative, recursive=False)
+                    manifest["files"].append(dict(relative=relative, bytes=p.stat().st_size, sha256=digest))
                 images = root / f"scan{scan}/images"
                 paths = {}
                 for p in images.iterdir():
