@@ -251,8 +251,9 @@ def run(args):
     provenance = source_provenance()
     scan = args.scan
     model_sha, cfg_sha, camera_count, _ = FIXED[scan]
-    if socket.gethostname() != "autodl-container-d6a7459179-693ab6ee":
-        raise ValueError("Only the explicitly verified G1 is authorized")
+    expected_host = "autodl-container-" + args.instance_id
+    if socket.gethostname() != expected_host:
+        raise ValueError("Execution hostname must match the explicitly approved instance; models remain fixed G1")
     output = args.output.resolve()
     if not args.output.is_absolute() or output.exists():
         raise ValueError("Require a new absolute independent output directory")
@@ -276,7 +277,7 @@ def run(args):
     output.mkdir(parents=True)
     metadata = dict(status="partial", source=provenance, scan=scan, methods=list(METHODS), views=[], results={},
         args={k: str(v) if isinstance(v, Path) else v for k, v in vars(args).items()},
-        instance_id="d6a7459179-693ab6ee", hostname=socket.gethostname(),
+        instance_id=args.instance_id, hostname=socket.gethostname(),
         model_sha256=model_sha, cfg_sha256=cfg_sha, depth_ratio=0., h_mm=1.,
         native_entry="tracked mesh_extract.py expected_depth path; not a strict historical mesh_extract_old.py reproduction",
         policy="Original GT mask and tracked native TSDF/Calibration are identical for both methods; only expected_depth is replaced by Huber for huber_1mm, native median remains separate and unchanged. No new alpha cutoff or method-dependent common-coverage mask.",
@@ -413,6 +414,8 @@ def main():
     parser.add_argument("--output", type=Path)
     parser.add_argument("--scan", type=int, choices=tuple(FIXED), default=24,
                         help="One of the 15 SHA-pinned G1 frozen scenes; unchanged fixed1mm protocol")
+    parser.add_argument("--instance-id", choices=("d6a7459179-693ab6ee", "26a34fbbce-406e74f8"),
+                        default="d6a7459179-693ab6ee", help="Approved execution instance, not model origin")
     parser.add_argument("--pilot-only", action="store_true")
     parser.add_argument("--check", action="store_true")
     parser.add_argument("--model-root", type=Path, default=Path("/root/autodl-tmp/GauDepth/outtest"))

@@ -18,6 +18,9 @@ from zoneinfo import ZoneInfo
 
 ALLOWED_IDENTITIES = {
     "d6a7459179-693ab6ee": "autodl-container-d6a7459179-693ab6ee",
+    # Console verified 2026-10-26 after user authorized another execution host.
+    # This entry does not replace the required host-specific real shutdown test.
+    "26a34fbbce-406e74f8": "autodl-container-26a34fbbce-406e74f8",
     # Console and SSH hostname both verified on 2026-10-23; deployment still
     # requires an independent Linux shutdown test on each host.
     "8209458d70-897b4075": "autodl-container-8209458d70-897b4075",
