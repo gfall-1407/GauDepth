@@ -224,6 +224,7 @@ def dense_view(camera, gaussians, pipe, dataset, extension, scale, qa_first, met
         raise ValueError("Expected at least 64 fixed random mask QA pixels")
     qa_pixels = set(map(int, rng.choice(eligible, size=64, replace=False))) if qa_first else set()
     cpu_rows = []
+    gap_qa_remaining = 8 if method == "gap_huber" else 0
     huber = np.empty(h*w, dtype=np.float64)
     statuses = np.empty(h*w, dtype=np.int32)
     widths = np.empty(h*w, dtype=np.float64)
@@ -263,7 +264,12 @@ def dense_view(camera, gaussians, pipe, dataset, extension, scale, qa_first, met
         if (method != "gap_huber" and bool((status == 2).any())) or not bool(torch.isfinite(result).all()):
             raise ValueError("Nonfinite/invalid accepted records; do not hide them as zero depth")
         huber[start:stop], statuses[start:stop], widths[start:stop] = result.cpu().numpy(), status.cpu().numpy(), width.cpu().numpy()
-        for pixel in sorted(qa_pixels.intersection(range(start, stop))):
+        qa_now = qa_pixels.intersection(range(start, stop))
+        if gap_qa_remaining:
+            extra = np.flatnonzero((statuses[start:stop] == 3) & mask.ravel()[start:stop])[:gap_qa_remaining]
+            qa_now.update(map(int, extra + start))
+            gap_qa_remaining -= len(extra)
+        for pixel in sorted(qa_now):
             row = pixel-start
             n = int(counts[row].item())
             rec = records[row, :n].cpu().numpy().astype(np.float64)
@@ -293,7 +299,17 @@ def dense_view(camera, gaussians, pipe, dataset, extension, scale, qa_first, met
                 error = abs(gpu-value)
                 if error > 1e-4:
                     raise ValueError(f"CPU/GPU Huber discrepancy {error}mm at pixel{pixel}")
-                cpu_rows.append(dict(pixel=pixel, members=n, cpu_mm=value, gpu_mm=gpu, abs_error_mm=error))
+                row_qa = dict(pixel=pixel, members=n, cpu_mm=value, gpu_mm=gpu, abs_error_mm=error)
+                if method == "gap_huber" and cpu_status in (1, 3):
+                    z_mm, weights = rec[:, 0]*scale, rec[:, 1]
+                    e_mm = float(np.sum(z_mm*weights, dtype=np.float64)/np.sum(weights, dtype=np.float64))
+                    gap_mm = float(np.min(np.abs(z_mm[weights > 0]-e_mm)))
+                    if (gap_mm > 1.) != (cpu_status == 3):
+                        raise ValueError("Scene/mm reduction changed the exact 1mm research gate; stop bridge")
+                    row_qa.update(native_E_mm=float(expected.reshape(-1)[pixel].item())*scale,
+                                  weighted_E64_mm=e_mm, research_min_gap_mm=gap_mm,
+                                  research_gate_matches=True, gap_status=cpu_status)
+                cpu_rows.append(row_qa)
         del records, ids, counts, replay, result, status, width, pixels
     qa["empty_pixels"] = int((statuses == 0).sum())
     qa["invalid_pixels"] = int((statuses == 2).sum())
