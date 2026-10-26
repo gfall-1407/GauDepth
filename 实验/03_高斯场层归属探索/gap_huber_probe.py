@@ -41,6 +41,7 @@ def estimate(z, w, host_expected, teacher_band=None):
 def locate_sample(results,scan):
     base=results/"20261026_夜间深度方法"
     roots=[base/name/f"scan{scan}" for name in ("confirm_v1","samples_v2","challenge_106_114_v1")]
+    if scan in (24,65,105,110):roots.append(results/f"20261022_夜间/scan{scan}")
     present=[p for p in roots if (p/"metadata.json").is_file()]
     if len(present)!=1: raise ValueError(f"Ambiguous/missing sample roots for scan{scan}: {present}")
     return present[0]
