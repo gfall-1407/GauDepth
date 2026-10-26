@@ -136,12 +136,14 @@ def diagnose(args):
 
 
 def run(args):
+    ref = args.reference
+    if len(ref)!=4 or not ref.isdigit():raise ValueError("Four-digit reference required")
     out = args.output.resolve()
     if not args.output.is_absolute() or out.exists():
         raise ValueError("New independent output required")
     out.mkdir(parents=True)
     state = dict(status="partial", source=source_info(), completed=[], parameters=dict(
-        scans=[37, 40], reference="0000", samples=512, tau_pixels=.5,
+        scans=[37, 40], reference=ref, samples=512, exclude_original_probe_features=(ref!="0000"), tau_pixels=.5,
         fit=[0, 2, 4, 6], gate=[1, 3], audit=[5, 7], seed=20261026,
         all_track_views=args.all_track_views,joint_constraints=args.joint_constraints),
         limitation="Sparse SfM feature observations already used for model initialization, not new training holdout or depth truth. E is bilinearly sampled at fractional feature coordinates, not a native pixel rerender. Scan NN is a diagnostic, not pixel GT or mesh gain. Total true matching/calibration bound .5px remains an assumption.")
@@ -171,14 +173,14 @@ def run(args):
         intr = loader.read_intrinsics_binary(source/"sparse/0/cameras.bin")
         extr = {Path(v.name).stem:v for v in loader.read_extrinsics_binary(source/"sparse/0/images.bin").values()}
         names = next(json.loads(line)["nearest_name"] for line in (cache/"multi_view.json").read_text().splitlines()
-                     if json.loads(line)["ref_name"] == "0000")
+                     if json.loads(line)["ref_name"] == ref)
         if args.all_track_views:
-            names = sorted(name for name in extr if name != "0000")
+            names = sorted(name for name in extr if name != ref)
         frames, cameras, features = {}, {}, {}
         transform = np.asarray(meta["alignment"]["transform"])
         scale = float(meta["alignment"]["scale_to_dtu_mm"])
         vm_by = {v["name"]:v for v in meta["views"]}
-        for name in ["0000", *names]:
+        for name in [ref, *names]:
             vm = vm_by[name];assert sha256(cache/vm["file"]) == frozen[str(scan)][vm["file"]]
             with np.load(cache/vm["file"]) as f:
                 frames[name] = {k:f[k].copy().squeeze() for k in ("expected", "gt_mask")}
@@ -197,16 +199,20 @@ def run(args):
             unique, counts = np.unique(ids[good], return_counts=True)
             allowed = set(unique[counts==1].tolist())
             features[name] = {int(pid):uv for pid,uv in zip(ids,xy) if int(pid) in allowed}
-        ids = np.array(sorted(features["0000"]),dtype=np.int64)
-        xy = np.array([features["0000"][int(pid)] for pid in ids])
-        E, valid = bilinear(frames["0000"]["expected"],xy)
-        mask, inside = bilinear(frames["0000"]["gt_mask"].astype(float),xy)
-        eligible = np.flatnonzero(valid & inside & np.isfinite(E) & (E>0) & (mask>=1-1e-9))
+        ids = np.array(sorted(features[ref]),dtype=np.int64)
+        xy = np.array([features[ref][int(pid)] for pid in ids])
+        E, valid = bilinear(frames[ref]["expected"],xy)
+        mask, inside = bilinear(frames[ref]["gt_mask"].astype(float),xy)
+        unseen=np.ones(len(ids),bool)
+        if ref!="0000":
+            with np.load(args.observation_root.parent/f"sfm_interval_v1/scan{scan}_view0000/decisions.npz") as old:
+                unseen=~np.isin(ids,old["point_ids"])
+        eligible = np.flatnonzero(valid & inside & np.isfinite(E) & (E>0) & (mask>=1-1e-9) & unseen)
         take = np.sort(np.random.default_rng(20261026+scan).choice(eligible,size=min(512,len(eligible)),replace=False))
         ids,xy,E = ids[take],xy[take],E[take].astype(float)
         if len(ids) == 0:raise ValueError("No foreground sparse observations")
-        if args.all_track_views:
-            previous = out.parent/f"sfm_interval_v1/scan{scan}_view0000/decisions.npz"
+        if args.all_track_views and ref == "0000":
+            previous = args.observation_root.parent/f"sfm_interval_v1/scan{scan}_view0000/decisions.npz"
             with np.load(previous) as old:
                 np.testing.assert_array_equal(ids,old["point_ids"])
                 np.testing.assert_array_equal(xy,old["xy"])
@@ -219,8 +225,8 @@ def run(args):
             parallax = np.zeros(seen.shape)
             step = np.maximum(np.abs(E), 1.)*1e-5
             for j, name in enumerate(names):
-                p0,z0 = ray_projection(xy,E,cameras["0000"],cameras[name])
-                p1,z1 = ray_projection(xy,E+step,cameras["0000"],cameras[name])
+                p0,z0 = ray_projection(xy,E,cameras[ref],cameras[name])
+                p1,z1 = ray_projection(xy,E+step,cameras[ref],cameras[name])
                 score = np.linalg.norm(p1-p0,axis=1)/step
                 parallax[j] = np.where(seen[j] & np.isfinite(score) & (z0>0) & (z1>0),score,0.)
             roles = np.full((5,len(ids)),-1,dtype=int)
@@ -240,7 +246,7 @@ def run(args):
             name = names[j]
             used = np.any(roles==j,axis=0) if roles is not None else np.ones(len(ids),bool)
             q = np.array([features[name].get(int(pid),[np.nan,np.nan]) if take else [np.nan,np.nan] for pid,take in zip(ids,used)])
-            lo,hi,ok = depth_interval(xy,E,q,cameras["0000"],cameras[name],tau=.5)
+            lo,hi,ok = depth_interval(xy,E,q,cameras[ref],cameras[name],tau=.5)
             mask,inside = bilinear(frames[name]["gt_mask"].astype(float),q)
             if roles is None:
                 lower[j],upper[j],valid[j] = lo,hi,ok & inside & (mask>=1-1e-9)
@@ -252,7 +258,7 @@ def run(args):
         result = (project_joint_intervals(E,lower,upper,valid) if args.joint_constraints
                   else solve_intervals(E,lower,upper,valid,fit=fit_roles,gate=gate_roles))
         D,accept = result["selected"],result["accept"]
-        scene = out/f"scan{scan}_view0000";scene.mkdir()
+        scene = out/f"scan{scan}_view{ref}";scene.mkdir()
         np.savez_compressed(scene/"decisions.npz",point_ids=ids,xy=xy,E=E,selected=D,accept=accept,
                             lower=lower,upper=upper,valid=valid,q=q_all,
                             role_views=roles if roles is not None else np.empty((0,len(ids)),int),
@@ -265,7 +271,7 @@ def run(args):
             unused = ~np.any(roles==j,axis=0) if roles is not None else np.ones(len(ids),bool)
             q = np.array([features[name].get(int(pid),[np.nan,np.nan]) if take else [np.nan,np.nan] for pid,take in zip(ids,unused)])
             audit_available += int((accept & np.isfinite(q).all(axis=1)).sum())
-            pE,_ = ray_projection(xy,E,cameras["0000"],cameras[name]);pD,_ = ray_projection(xy,D,cameras["0000"],cameras[name])
+            pE,_ = ray_projection(xy,E,cameras[ref],cameras[name]);pD,_ = ray_projection(xy,D,cameras[ref],cameras[name])
             audit_errors.append(np.column_stack((np.linalg.norm(pE-q,axis=1),np.linalg.norm(pD-q,axis=1))))
         error = np.stack(audit_errors);audit_take = accept[None,:] & np.isfinite(error).all(axis=2)
         assert sha256(scene/"decisions.npz") == sealed
@@ -274,14 +280,14 @@ def run(args):
         gt = results/f"20261026_夜间深度方法/inputs/scan{scan}/stl{scan:03d}_total.ply"
         assert sha256(gt) == meta["gt_inputs_sha256"][f"Points/stl/stl{scan:03d}_total.ply"]
         vertex = PlyData.read(str(gt))["vertex"];tree = cKDTree(np.column_stack([np.asarray(vertex[k],float) for k in ("x","y","z")]))
-        rays = np.column_stack((xy,np.ones(len(xy)))) @ np.linalg.inv(cameras["0000"]["K"]).T
-        pose = cameras["0000"]["c2w"];errors = {}
+        rays = np.column_stack((xy,np.ones(len(xy)))) @ np.linalg.inv(cameras[ref]["K"]).T
+        pose = cameras[ref]["c2w"];errors = {}
         for label,depth in (("expected",E),("sfm_bounded",D)):
             world = (rays*depth[:,None]) @ pose[:3,:3].T+pose[:3,3]
             points = world @ transform[:3,:3].T+transform[:3,3]
             errors[label] = tree.query(points,k=1,eps=0,workers=1)[0]
         keys,counts = np.unique(result["reason"],return_counts=True)
-        row = dict(scan=scan,view="0000",samples=len(ids),accepted=int(accept.sum()),
+        row = dict(scan=scan,view=ref,samples=len(ids),accepted=int(accept.sum()),
             reason_counts=dict(zip(keys.tolist(),counts.astype(int).tolist())),decisions_sha256=sealed,
             audit_pairs=int(audit_take.sum()),audit_available_track_pairs=audit_available,
             audit_coverage=float(audit_take.sum()/audit_available) if audit_available else None,
@@ -303,6 +309,7 @@ if __name__ == "__main__":
     p.add_argument("--all-track-views",action="store_true",help="Same interval rule; geometry-only fit3/gate2 among all available tracks, reserve audit")
     p.add_argument("--diagnose-only",action="store_true",help="No new depth decisions/GT; explain sealed all-track intervals")
     p.add_argument("--coordinate-check",action="store_true",help="No new depth decisions/GT; original raw SfM versus current coordinate convention")
+    p.add_argument("--reference",default="0000",help="Nonzero references exclude original 0000 probe feature IDs")
     p.add_argument("--joint-constraints",action="store_true",help="Same five decision roles, joint feasible-set projection instead of fit-then-gate")
     args=p.parse_args()
     check_coordinates(args) if args.coordinate_check else (diagnose(args) if args.diagnose_only else run(args))
