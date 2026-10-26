@@ -144,11 +144,12 @@ def observation_probe(args):
             neighbor_rows = [json.loads(line) for line in (cache / "multi_view.json").read_text().splitlines()]
             names = next(row["nearest_name"] for row in neighbor_rows if row["ref_name"] == "0000")
             assert len(names) == 8
+            fit, hold, audit = [0, 2, 4, 6], [1, 3], [5, 7]
             files = {vm["name"]: vm for vm in meta["views"]}
             intrinsics = loader.read_intrinsics_binary(args.observation_root / f"scan{scan}/sparse/0/cameras.bin")
             extrinsics = {Path(row.name).stem: row for row in loader.read_extrinsics_binary(
                 args.observation_root / f"scan{scan}/sparse/0/images.bin").values()}
-            images, frames, cameras = {}, {}, {}
+            images, frames, cameras, photo_paths = {}, {}, {}, {}
             source_checks = []
             for name in ["0000", *names]:
                 check()
@@ -174,12 +175,14 @@ def observation_probe(args):
                 cameras[name] = dict(K=K, w2c=w2c, c2w=np.linalg.inv(w2c), image_size=(height, width))
                 image_paths = [p for p in (args.observation_root / f"scan{scan}/images").iterdir() if p.stem == name]
                 assert len(image_paths) == 1
+                photo_paths[name] = image_paths[0]
                 with Image.open(image_paths[0]) as photo:
                     assert photo.size == (camera_row.width, camera_row.height)
-                    rgb = np.asarray(photo.convert("RGB").resize((width, height)), dtype=float) / 255.
-                gray = rgb @ np.array([.299, .587, .114])
-                gray[~frames[name]["gt_mask"].astype(bool)] = np.nan
-                images[name] = gray
+                    if name == "0000" or name in [names[j] for j in fit+hold]:
+                        rgb = np.asarray(photo.convert("RGB").resize((width, height)), dtype=float) / 255.
+                        gray = rgb @ np.array([.299, .587, .114])
+                        gray[~frames[name]["gt_mask"].astype(bool)] = np.nan
+                        images[name] = gray
                 source_checks.append(dict(name=name, camera_id=image_row.camera_id, K=K.tolist(),
                     pose_rotation_max_abs=re, pose_translation_max_abs_scene=te,
                     image_sha256=sha256(image_paths[0]), frame_sha256=vm["sha256"]))
@@ -194,7 +197,8 @@ def observation_probe(args):
             index = np.sort(rng.choice(eligible, size=512, replace=False))
             y, x = np.divmod(index, w); xy = np.column_stack((x, y)).astype(float)
             E, H = e_map.ravel()[index], h_map.ravel()[index]
-            soft = E + np.sign(H-E) * np.maximum(np.abs(H-E)*scale-1., 0.)/scale
+            delta_mm = (H.astype(float)-E.astype(float))*scale
+            soft = (E.astype(float)+np.sign(delta_mm)*np.maximum(np.abs(delta_mm)-1., 0.)/scale).astype(np.float32)
             Kinv = np.linalg.inv(ci["K"])
             def ray_at(xx, yy):
                 return np.column_stack((xx, yy, np.ones_like(xx))) @ Kinv.T
@@ -225,12 +229,11 @@ def observation_probe(args):
             profile = E[:, None] + span[:, None] * np.linspace(-1., 1., 17)
             profile[profile <= 0] = np.nan
             candidates = np.column_stack((E, H, soft, profile))
-            costs = []
-            for name in names:
+            costs = np.full((8, len(index), candidates.shape[1]), np.nan)
+            for j in fit+hold:
                 check()
-                costs.append(photo_cost(images["0000"], images[name], xy, candidates, normals, ci, cameras[name], radius=2))
-            costs = np.stack(costs)
-            fit, hold, audit = [0, 2, 4, 6], [1, 3], [5, 7]
+                name = names[j]
+                costs[j] = photo_cost(images["0000"], images[name], xy, candidates, normals, ci, cameras[name], radius=2)
             pcost = costs[:, :, 3:]
             common = np.isfinite(pcost[fit+hold]).all(axis=(0, 2)) & np.isfinite(costs[fit+hold, :, 0]).all(axis=0)
             fit_loss = np.mean(np.where(np.isfinite(pcost[fit]), pcost[fit], np.inf), axis=0)
@@ -241,12 +244,23 @@ def observation_probe(args):
             held_E = costs[hold, :, 0]
             gain = held_E - held_best
             accept = common & (best > 0) & (best < 16) & (best != 8) & ~tied & (gain > 1e-8).all(axis=0)
-            D = E.copy(); D[accept] = profile[np.arange(len(index)), best][accept]
+            D = E.astype(np.float64, copy=True); D[accept] = profile[np.arange(len(index)), best][accept]
             scene = output / f"scan{scan}_view0000"; scene.mkdir()
             # Decisions are persisted BEFORE any independent scan cloud is loaded.
             np.savez_compressed(scene / "decisions.npz", index=index, xy=xy, E=E, H=H, soft=soft,
                 profile=profile, best=best, common=common, accept=accept, selected=D, costs=costs,
                 max_neighbor_EH_displacement_px=np.max(eh_displacements, axis=0))
+            sealed_decision_sha = sha256(scene/"decisions.npz")
+            # Audit RGB is decoded and scored only after D and its SHA are sealed.
+            for j in audit:
+                check()
+                name = names[j]
+                with Image.open(photo_paths[name]) as photo:
+                    rgb = np.asarray(photo.convert("RGB").resize((w, h)), dtype=float) / 255.
+                gray = rgb @ np.array([.299, .587, .114])
+                gray[~frames[name]["gt_mask"].astype(bool)] = np.nan
+                costs[j] = photo_cost(images["0000"], gray, xy, candidates, normals, ci, cameras[name], radius=2)
+            assert sha256(scene/"decisions.npz") == sealed_decision_sha
             audit_best = pcost[audit][:, np.arange(len(index)), best]
             audit_E = costs[audit, :, 0]
             audit_take = accept[None, :] & np.isfinite(audit_best) & np.isfinite(audit_E)
@@ -254,11 +268,14 @@ def observation_probe(args):
             scene_record = dict(scan=scan, view="0000", samples=len(index), common6_profile=int(common.sum()),
                 accepted=int(accept.sum()), unknown_or_unchanged=int((~accept).sum()),
                 independent_inference_audit_pairs=int(audit_take.sum()),
+                independent_inference_audit_coverage_fraction=float(audit_take.sum()/(2*accept.sum())) if accept.any() else None,
                 independent_inference_audit_delta_mean=float(audit_delta[audit_take].mean()) if audit_take.any() else None,
                 independent_inference_audit_worse_fraction=float((audit_delta[audit_take]>0).mean()) if audit_take.any() else None,
                 EH_max_neighbor_displacement_median_px=float(np.median(np.max(eh_displacements, axis=0))),
                 EH_max_neighbor_displacement_lt0p02_fraction=float((np.max(eh_displacements, axis=0) < .02).mean()),
-                source_checks=source_checks, decisions_sha256=sha256(scene/"decisions.npz"))
+                source_checks=source_checks, decisions_sha256=sealed_decision_sha,
+                decision_dtype=str(D.dtype), audit_read_only_after_decision=True)
+            np.savez_compressed(scene/"audit.npz", costs=costs[audit], valid_pairs=audit_take, selected_delta=audit_delta)
             save(scene / "metadata.json", scene_record)
             from scipy.spatial import cKDTree
             from plyfile import PlyData
