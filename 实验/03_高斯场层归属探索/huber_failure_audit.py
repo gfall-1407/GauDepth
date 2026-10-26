@@ -178,12 +178,73 @@ def audit(scan, args, reference, state, deadline):
     return row
 
 
+def topology(args):
+    """Compare saved pre/post-filter meshes; distances are a common-GT proxy, not DTU scores."""
+    import open3d as o3d
+    from scipy.io import loadmat
+    out = args.output; out.mkdir(parents=True)
+    state = dict(status="partial", source_commit=git("rev-parse", "HEAD"), rows=[],
+        protocol="Saved raw and post meshes only, no new reconstruction. Recover original Calibration affine map from paired post/aligned vertices, not fitting GT. Fixed32768 GT samples/scene seed20261026+scan. Continuous-triangle CPU distance, clip20mm common denominator, no ObsMask bbox crop; apply original Plane only when a local exact-SHA copy exists, flagged per row. This is not official DTU scoring. Joint raw<=1mm subset is selected before filtering.")
+    planes = {sha256(p): p for p in RESULTS.rglob('Plane*.mat')}
+    deadline = time.monotonic()+args.max_seconds; atomic_json(out / "metadata.json", state)
+    try:
+        for scan in args.scans:
+            check(out, deadline)
+            path = (NIGHT / ("dense_pilot_v1" if scan == 24 else f"dense_confirm_v1/scan{scan}_v1")
+                    if scan in (24,37,106) else CURRENT / f"scan{scan}_v1")
+            m = json.loads((path / "metadata.json").read_text(encoding="utf-8")); assert m["status"] == "complete"
+            root = NIGHT / f"inputs/scan{scan}"
+            if not root.exists(): root = RESULTS / f"20261023_一致深度支持/inputs/scan{scan}"
+            gt = root / f"stl{scan:03d}_total.ply"; assert sha256(gt) == m["gt_inputs_sha256"][f"Points/stl/stl{scan:03d}_total.ply"]
+            v = PlyData.read(str(gt))["vertex"]; xyz = np.column_stack([np.asarray(v[k], dtype=float) for k in ("x","y","z")])
+            plane = planes.get(m['gt_inputs_sha256'][f'ObsMask/Plane{scan}.mat'])
+            if plane is not None: xyz = xyz[(np.c_[xyz,np.ones(len(xyz))] @ loadmat(plane)['P'].reshape(-1)) > 0]
+            index = np.random.default_rng(20261026+scan).choice(len(xyz), size=min(32768,len(xyz)), replace=False)
+            queries = o3d.core.Tensor(xyz[index].astype(np.float32)); distances = {}; row = dict(scan=scan,original_plane_applied=plane is not None); coefficients=[]
+            for method, key in (("native_expected","e"),("huber_1mm","h")):
+                directory = path / method
+                assert sha256(directory/'recon_post.ply') == m['results'][method]['mesh_sha256']
+                assert sha256(directory/'recon_aligned.ply') == m['results'][method]['aligned_sha256']
+                post = o3d.io.read_triangle_mesh(str(directory/'recon_post.ply')); aligned = o3d.io.read_triangle_mesh(str(directory/'recon_aligned.ply'))
+                a, b = np.asarray(post.vertices), np.asarray(aligned.vertices)
+                assert a.shape == b.shape and np.array_equal(np.asarray(post.triangles),np.asarray(aligned.triangles))
+                ids = np.linspace(0,len(a)-1,min(32768,len(a)),dtype=int)
+                affine, _, rank, _ = np.linalg.lstsq(np.c_[a[ids],np.ones(len(ids))],b[ids],rcond=None); assert rank == 4
+                error = float(np.max(np.linalg.norm(np.c_[a,np.ones(len(a))]@affine-b,axis=1))); assert error < .002
+                coefficients.append(affine); row[key+'_alignment_max_error_mm']=error
+                raw = o3d.io.read_triangle_mesh(str(directory/'recon.ply'))
+                cluster, sizes, areas = raw.cluster_connected_triangles(); sizes=np.asarray(sizes);areas=np.asarray(areas)
+                keep = sizes >= max(int(sizes.max()),50)
+                row.update({key+'_raw_triangles':len(raw.triangles),key+'_post_triangles':len(post.triangles),
+                            key+'_components':len(sizes),key+'_removed_area_fraction':float(1-areas[keep].sum()/areas.sum()),
+                            key+'_raw_mesh_sha256':sha256(directory/'recon.ply')})
+                raw.vertices = o3d.utility.Vector3dVector(np.c_[np.asarray(raw.vertices),np.ones(len(raw.vertices))]@affine)
+                for mesh, stage in ((raw,'raw'),(aligned,'post')):
+                    scene = o3d.t.geometry.RaycastingScene(); scene.add_triangles(o3d.t.geometry.TriangleMesh.from_legacy(mesh))
+                    d = scene.compute_distance(queries).numpy().astype(float); assert np.isfinite(d).all()
+                    distances[key+'_'+stage]=d
+                    row[key+'_'+stage+'_commonGT_clip20_mm']=float(np.minimum(d,20).mean())
+            shared = (distances['e_raw']<=1)&(distances['h_raw']<=1);row['common_raw_le1mm_n']=int(shared.sum())
+            for k,d in distances.items():row[k+'_common_raw_le1mm_clip20_mm']=float(np.minimum(d[shared],20).mean())
+            row['affine_e_h_max_abs']=float(np.max(np.abs(coefficients[0]-coefficients[1])))
+            row['differential_post_damage_mm']=(row['h_post_commonGT_clip20_mm']-row['h_raw_commonGT_clip20_mm'])-(row['e_post_commonGT_clip20_mm']-row['e_raw_commonGT_clip20_mm'])
+            row['differential_post_damage_near_mm']=(row['h_post_common_raw_le1mm_clip20_mm']-row['h_raw_common_raw_le1mm_clip20_mm'])-(row['e_post_common_raw_le1mm_clip20_mm']-row['e_raw_common_raw_le1mm_clip20_mm'])
+            with (out/f'scan{scan}_distances.npz').open('wb') as f:np.savez_compressed(f,gt_index=index,**distances)
+            state['rows'].append(row);atomic_json(out/'metadata.json',state);print(json.dumps(row),flush=True)
+        with (out/'diagnostics.csv').open('w',encoding='utf-8-sig',newline='') as f:
+            writer=csv.DictWriter(f,fieldnames=list(state['rows'][0]));writer.writeheader();writer.writerows(state['rows'])
+        state['status']='complete';atomic_json(out/'metadata.json',state)
+    except BaseException as exc:
+        state['error']=repr(exc);atomic_json(out/'metadata.json',state);raise
+
+
 def main(args):
     global STOP
     if git("status", "--short") or git("remote", "get-url", "origin") != "git@github.com:gfall-1407/GauDepth.git":
         raise ValueError("Require clean committed approved source")
     if not args.output.is_absolute() or args.output.exists(): raise ValueError("Require new absolute output")
     if len(set(args.scans)) != len(args.scans): raise ValueError("Do not repeat scenes")
+    if args.topology_only: return topology(args)
     args.output.mkdir(parents=True); signal.signal(signal.SIGTERM, lambda *_: globals().__setitem__("STOP", True))
     reference = json.loads((HERE / "G1_Huber全场景输入参考.json").read_text(encoding="utf-8"))["scans"]
     state = dict(status="partial", source_commit=git("rev-parse", "HEAD"), rows=[], scans=args.scans,
@@ -204,4 +265,5 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__); parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--scans", nargs="+", type=int, default=[40,63,83,97,105,24,37,55,65,69,106,110,114,118,122])
     parser.add_argument("--max-seconds", type=float, default=1800.)
+    parser.add_argument("--topology-only", action="store_true")
     main(parser.parse_args())
