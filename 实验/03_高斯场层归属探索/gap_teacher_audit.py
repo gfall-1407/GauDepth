@@ -169,7 +169,10 @@ def evaluate(args):
     if state["status"] != "predictions_sealed":
         raise ValueError("Only fully sealed diagnostic predictions may read scanned geometry")
     # No prediction function receives a scanned-geometry array or its error.
-    summary = []
+    summary = []; started = time.monotonic(); evaluation_source = source_info()
+    legacy_path = args.output/"nn_census_partial.json"
+    legacy = {r["file"]: r for r in json.loads(legacy_path.read_text())["files"]} if legacy_path.exists() else {}
+    evaluated = []
     for scan in args.scans:
         meta, cameras, _, _, _ = checked_scan(scan, args)
         gt = args.input_root/f"scan{scan}/stl{scan:03d}_total.ply"
@@ -180,17 +183,41 @@ def evaluate(args):
         tree = cd._make_gt_tree(cd._load_gt(gt)); joined = []
         transform = np.array(meta["alignment"]["transform"], dtype=float)
         for row in [r for r in state["completed"] if r["scan"] == scan]:
+            if time.monotonic()-started > args.max_seconds or (args.output/"stop_after_view").exists():
+                raise InterruptedError("Finite NN phase deadline/request at score boundary")
             f = args.output/row["file"]
             if sha256(f) != row["sha256"]: raise ValueError("Sealed prediction changed")
             with np.load(f) as z: d = {k: z[k] for k in z.files}
+            # Fixed selection uses only view/group/index and seed, never scanned error.
+            rng = np.random.default_rng(20261027+10000*scan+int(row["view"]))
+            selection = np.concatenate([np.sort(rng.choice(np.flatnonzero(d["changed"] == g),
+                min(args.nn_per_group, np.sum(d["changed"] == g)), replace=False)) for g in (True, False)])
+            previous = args.output/f"scan{scan}_{row['view']}_nn.npz"
+            cached_nn = None
+            if previous.exists():
+                record = legacy.get(previous.name)
+                if not record or sha256(previous) != record["sha256"] or record["prediction_sha256"] != row["sha256"]:
+                    raise ValueError("Unverified prior complete NN file")
+                with np.load(previous) as z:
+                    if z["nn_mm"].shape != (len(d["index"]), 2) or not np.isfinite(z["nn_mm"]).all():
+                        raise ValueError("Prior NN array shape/finite check failed")
+                    cached_nn = z["nn_mm"][selection]
+            d = {k: v[selection] for k, v in d.items()}
             h, w = cameras[row["view"]]["image_size"]; y, x = np.divmod(d["index"], w)
             xy = np.column_stack((x, y)); errors = []
-            for k in range(2):
-                points = world(xy, d["depth"][:, k], cameras[row["view"]])
-                points = points@transform[:3, :3].T+transform[:3, 3]
-                errors.append(cd._query_exact(points, tree))
-            d["nn_mm"] = np.array(errors).T; joined.append(d)
-            np.savez_compressed(args.output/f"scan{scan}_{row['view']}_nn.npz", nn_mm=d["nn_mm"])
+            if cached_nn is None:
+                for k in range(2):
+                    points = world(xy, d["depth"][:, k], cameras[row["view"]])
+                    points = points@transform[:3, :3].T+transform[:3, 3]
+                    errors.append(cd._query_exact(points, tree))
+                cached_nn = np.array(errors).T
+            d["nn_mm"] = cached_nn; joined.append(d)
+            score_file = args.output/f"scan{scan}_{row['view']}_nn_sampled.npz"
+            np.savez_compressed(score_file, selection=selection, index=d["index"], nn_mm=d["nn_mm"])
+            evaluated.append(dict(scan=scan, view=row["view"], file=score_file.name, sha256=sha256(score_file),
+                prediction_sha256=row["sha256"], reused_previous=previous.exists(), sampled_n=len(selection)))
+            save(args.output/"nn_sample_progress.json", dict(status="partial", source=evaluation_source,
+                max_per_view_group=args.nn_per_group, completed=evaluated))
         for changed in (True, False):
             nn = np.concatenate([x["nn_mm"][x["changed"] == changed] for x in joined])
             geo = np.concatenate([x["median_abs_depth_mm"][x["changed"] == changed] for x in joined])
@@ -203,7 +230,9 @@ def evaluate(args):
                     diagnostic_selected_NN_mm=float(selected.mean()) if len(a) else None,
                     H_better=int(np.sum(a[:, 1] < a[:, 0])), H_worse=int(np.sum(a[:, 1] > a[:, 0]))))
     save(args.output/"summary.json", dict(status="complete", rows=summary,
-        limitation=state["limitation"], denominator="Per scan/changed stratum; all foreground changed pixels plus fixed equal-size unchanged controls, never mixed as full-mask or scene-equal Overall."))
+        limitation=state["limitation"],
+        denominator=f"Per scan: fixed seed maximum {args.nn_per_group} per view and changed/control stratum; pooled diagnostic sample, not full-mask or scene-equal Overall.",
+        evaluation_source=evaluation_source, completed_scores=evaluated))
     state["status"] = "complete"; save(args.output/"metadata.json", state)
     print(json.dumps(summary))
 
@@ -215,6 +244,7 @@ if __name__ == "__main__":
     p.add_argument("--cache-root", type=Path, default=HERE/"结果/20261027_Gap原生验证")
     p.add_argument("--scans", type=int, nargs="+", default=[40, 63])
     p.add_argument("--max-seconds", type=float, default=600)
+    p.add_argument("--nn-per-group", type=int, default=256)
     p.add_argument("--evaluate", action="store_true")
     a = p.parse_args()
     if a.evaluate: evaluate(a)
