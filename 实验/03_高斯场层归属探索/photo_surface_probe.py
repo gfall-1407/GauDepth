@@ -110,10 +110,16 @@ def observation_probe(args):
         raise ValueError("Require a new independent output")
     output.mkdir(parents=True)
     started = time.monotonic()
-    state = dict(status="partial", source=info, completed=[], parameters=dict(scans=[37, 40],
+    state = dict(status="partial", source=info, algorithm=args.method, completed=[], parameters=dict(scans=[37, 40],
         reference="0000", samples=512, seed=20261026, patch_radius=2, profile_steps=17,
-        profile_halfwidth_pixels=1., fit_neighbors=[0, 2, 4, 6], gate_neighbors=[1, 3], audit_neighbors=[5, 7]),
-        limitation="Exploratory inference with already-trained-on RGB. Photo/profile and scan-point NN are proxies, not pixel GT, new training holdout, calibrated uncertainty, or native reconstruction evidence. Unknown returns E; no GT enters the decision.")
+        profile_halfwidth_pixels=1., fit_neighbors=[0, 2, 4, 6], gate_neighbors=[1, 3], audit_neighbors=[5, 7],
+        bounded_pixel_radius=.5, bounded_min_fit=3),
+        limitation="Exploratory inference with already-trained-on RGB and fixed DTU foreground masks. Photo/profile and scan-point NN are proxies, not pixel GT, new training holdout, calibrated uncertainty, or native reconstruction evidence. Unknown returns E; no scanned-geometry GT enters the decision.")
+    if args.method == "bounded":
+        import cv2
+        cv2.setNumThreads(1)
+        state["opencv_version"] = cv2.__version__
+        state["bound_assumption"] = "Total true correspondence/calibration error <=.5 pixel is an assumption, not established by LK or FB. Projection onto a true-containing interval cannot increase scalar depth error; neither membership nor mesh improvement is certified."
     save(output / "metadata.json", state)
     selected = json.loads((args.observation_root.parent / "selected_local_verified.json").read_text())
     if selected["status"] != "selected_subset_complete":
@@ -230,28 +236,52 @@ def observation_probe(args):
             profile[profile <= 0] = np.nan
             candidates = np.column_stack((E, H, soft, profile))
             costs = np.full((8, len(index), candidates.shape[1]), np.nan)
-            for j in fit+hold:
-                check()
-                name = names[j]
-                costs[j] = photo_cost(images["0000"], images[name], xy, candidates, normals, ci, cameras[name], radius=2)
-            pcost = costs[:, :, 3:]
-            common = np.isfinite(pcost[fit+hold]).all(axis=(0, 2)) & np.isfinite(costs[fit+hold, :, 0]).all(axis=0)
-            fit_loss = np.mean(np.where(np.isfinite(pcost[fit]), pcost[fit], np.inf), axis=0)
-            best = np.argmin(fit_loss, axis=1)
-            best_score = fit_loss[np.arange(len(index)), best]
-            tied = np.sum(np.isfinite(fit_loss) & np.isclose(fit_loss, best_score[:, None], rtol=0, atol=1e-8), axis=1) > 1
-            held_best = pcost[hold][:, np.arange(len(index)), best]
-            held_E = costs[hold, :, 0]
-            gain = held_E - held_best
-            accept = common & (best > 0) & (best < 16) & (best != 8) & ~tied & (gain > 1e-8).all(axis=0)
-            D = E.astype(np.float64, copy=True); D[accept] = profile[np.arange(len(index)), best][accept]
+            extras = {}
+            if args.method == "profile":
+                for j in fit+hold:
+                    check()
+                    name = names[j]
+                    costs[j] = photo_cost(images["0000"], images[name], xy, candidates, normals, ci, cameras[name], radius=2)
+                pcost = costs[:, :, 3:]
+                common = np.isfinite(pcost[fit+hold]).all(axis=(0, 2)) & np.isfinite(costs[fit+hold, :, 0]).all(axis=0)
+                fit_loss = np.mean(np.where(np.isfinite(pcost[fit]), pcost[fit], np.inf), axis=0)
+                best = np.argmin(fit_loss, axis=1)
+                best_score = fit_loss[np.arange(len(index)), best]
+                tied = np.sum(np.isfinite(fit_loss) & np.isclose(fit_loss, best_score[:, None], rtol=0, atol=1e-8), axis=1) > 1
+                held_best = pcost[hold][:, np.arange(len(index)), best]
+                gain = costs[hold, :, 0] - held_best
+                accept = common & (best > 0) & (best < 16) & (best != 8) & ~tied & (gain > 1e-8).all(axis=0)
+                D = E.astype(np.float64, copy=True); D[accept] = profile[np.arange(len(index)), best][accept]
+            else:
+                from bounded_correspondence import track_pair, ray_projection, depth_interval, solve_intervals
+                lower = np.full((8, len(index)), np.nan); upper = lower.copy()
+                interval_valid = np.zeros(lower.shape, dtype=bool)
+                matches = np.full((8, len(index), 2), np.nan)
+                forward_back = np.full(lower.shape, np.nan)
+                for j in fit+hold:
+                    check(); name = names[j]
+                    initial, _ = ray_projection(xy, E, ci, cameras[name])
+                    tracked = track_pair(images["0000"], images[name], xy, initial)
+                    lo, hi, valid = depth_interval(xy, E, tracked["q"], ci, cameras[name], tau=.5)
+                    lower[j], upper[j] = lo, hi
+                    interval_valid[j] = valid & tracked["valid"]
+                    matches[j] = tracked["q"]; forward_back[j] = tracked["fb_error"]
+                result = solve_intervals(E, lower, upper, interval_valid, fit=fit, gate=hold)
+                D, accept = result["selected"], result["accept"]
+                assert D.dtype == np.float64
+                common = (result["fit_n"] >= 3) & np.isfinite(result["lo"]) & np.isfinite(result["hi"]) & (result["lo"] <= result["hi"])
+                best = np.full(len(index), -1, dtype=int)
+                extras = dict(interval_lower=lower, interval_upper=upper, interval_valid=interval_valid,
+                    fit_lo=result["lo"], fit_hi=result["hi"], fit_n=result["fit_n"], reason=result["reason"],
+                    matches=matches, forward_back=forward_back)
             scene = output / f"scan{scan}_view0000"; scene.mkdir()
             # Decisions are persisted BEFORE any independent scan cloud is loaded.
             np.savez_compressed(scene / "decisions.npz", index=index, xy=xy, E=E, H=H, soft=soft,
                 profile=profile, best=best, common=common, accept=accept, selected=D, costs=costs,
-                max_neighbor_EH_displacement_px=np.max(eh_displacements, axis=0))
+                max_neighbor_EH_displacement_px=np.max(eh_displacements, axis=0), **extras)
             sealed_decision_sha = sha256(scene/"decisions.npz")
             # Audit RGB is decoded and scored only after D and its SHA are sealed.
+            audit_costs, audit_match_errors = [], []
             for j in audit:
                 check()
                 name = names[j]
@@ -259,13 +289,21 @@ def observation_probe(args):
                     rgb = np.asarray(photo.convert("RGB").resize((w, h)), dtype=float) / 255.
                 gray = rgb @ np.array([.299, .587, .114])
                 gray[~frames[name]["gt_mask"].astype(bool)] = np.nan
-                costs[j] = photo_cost(images["0000"], gray, xy, candidates, normals, ci, cameras[name], radius=2)
+                audit_costs.append(photo_cost(images["0000"], gray, xy, np.column_stack((E, D)), normals, ci, cameras[name], radius=2))
+                if args.method == "bounded":
+                    initial, _ = ray_projection(xy, E, ci, cameras[name])
+                    tracked = track_pair(images["0000"], gray, xy, initial)
+                    projected_D, _ = ray_projection(xy, D, ci, cameras[name])
+                    errors = np.column_stack((np.linalg.norm(initial-tracked["q"], axis=1),
+                                              np.linalg.norm(projected_D-tracked["q"], axis=1)))
+                    errors[~tracked["valid"]] = np.nan
+                    audit_match_errors.append(errors)
             assert sha256(scene/"decisions.npz") == sealed_decision_sha
-            audit_best = pcost[audit][:, np.arange(len(index)), best]
-            audit_E = costs[audit, :, 0]
+            audit_costs = np.stack(audit_costs)
+            audit_best, audit_E = audit_costs[:, :, 1], audit_costs[:, :, 0]
             audit_take = accept[None, :] & np.isfinite(audit_best) & np.isfinite(audit_E)
             audit_delta = audit_best - audit_E
-            scene_record = dict(scan=scan, view="0000", samples=len(index), common6_profile=int(common.sum()),
+            scene_record = dict(scan=scan, view="0000", algorithm=args.method, samples=len(index), fit_supported_rays=int(common.sum()),
                 accepted=int(accept.sum()), unknown_or_unchanged=int((~accept).sum()),
                 independent_inference_audit_pairs=int(audit_take.sum()),
                 independent_inference_audit_coverage_fraction=float(audit_take.sum()/(2*accept.sum())) if accept.any() else None,
@@ -275,7 +313,19 @@ def observation_probe(args):
                 EH_max_neighbor_displacement_lt0p02_fraction=float((np.max(eh_displacements, axis=0) < .02).mean()),
                 source_checks=source_checks, decisions_sha256=sealed_decision_sha,
                 decision_dtype=str(D.dtype), audit_read_only_after_decision=True)
-            np.savez_compressed(scene/"audit.npz", costs=costs[audit], valid_pairs=audit_take, selected_delta=audit_delta)
+            np.savez_compressed(scene/"audit.npz", costs=audit_costs, valid_pairs=audit_take, selected_delta=audit_delta,
+                                correspondence_errors=np.asarray(audit_match_errors))
+            if audit_match_errors:
+                error = np.asarray(audit_match_errors)
+                take = accept[None, :] & np.isfinite(error).all(axis=2)
+                scene_record.update(audit_correspondence_pairs=int(take.sum()),
+                    audit_correspondence_coverage=float(take.sum()/(2*accept.sum())) if accept.any() else None,
+                    audit_reprojection_before_mean_px=float(error[:, :, 0][take].mean()) if take.any() else None,
+                    audit_reprojection_after_mean_px=float(error[:, :, 1][take].mean()) if take.any() else None)
+                keys, counts = np.unique(result["reason"], return_counts=True)
+                scene_record["bounded_reason_counts"] = dict(zip(keys.tolist(), counts.astype(int).tolist()))
+                widths = (result["hi"]-result["lo"])[common]*scale
+                scene_record["fit_interval_width_median_mm"] = float(np.median(widths)) if len(widths) else None
             save(scene / "metadata.json", scene_record)
             from scipy.spatial import cKDTree
             from plyfile import PlyData
@@ -284,13 +334,14 @@ def observation_probe(args):
             vertex = PlyData.read(str(gt_path))["vertex"]
             tree = cKDTree(np.column_stack([np.asarray(vertex[k], dtype=float) for k in ("x", "y", "z")]))
             nn = {}
-            for label, depth in (("expected", E), ("huber", H), ("soft", soft), ("photo_profile", D)):
+            selected_label = "photo_profile" if args.method == "profile" else "bounded_correspondence"
+            for label, depth in (("expected", E), ("huber", H), ("soft", soft), (selected_label, D)):
                 world = (ray*depth[:, None]) @ ci["c2w"][:3, :3].T + ci["c2w"][:3, 3]
                 mm = world @ transform[:3, :3].T + transform[:3, 3]
                 nn[label] = tree.query(mm, k=1, eps=0, workers=1)[0]
             scene_record.update(nn_proxy={k:dict(n=len(v), mean=float(v.mean()), median=float(np.median(v)), p95=float(np.quantile(v, .95))) for k, v in nn.items()},
-                accepted_nn_delta_mean_mm=float((nn["photo_profile"]-nn["expected"])[accept].mean()) if accept.any() else None,
-                accepted_nn_worse_fraction=float((nn["photo_profile"][accept]>nn["expected"][accept]).mean()) if accept.any() else None,
+                accepted_nn_delta_mean_mm=float((nn[selected_label]-nn["expected"])[accept].mean()) if accept.any() else None,
+                accepted_nn_worse_fraction=float((nn[selected_label][accept]>nn["expected"][accept]).mean()) if accept.any() else None,
                 gt_loaded_only_after_decisions=True)
             save(scene / "metadata.json", scene_record)
             state["completed"].append(scene_record); save(output / "metadata.json", state)
@@ -312,6 +363,7 @@ def main():
     q.add_argument("--observation-root", type=Path, required=True)
     q.add_argument("--output", type=Path, required=True)
     q.add_argument("--max-seconds", type=int, default=900)
+    q.add_argument("--method", choices=("profile", "bounded"), default="profile")
     args = p.parse_args()
     export_observations(args) if args.command == "export" else observation_probe(args)
 
