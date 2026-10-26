@@ -6,6 +6,7 @@ import ast
 import hashlib
 import inspect
 import json
+import math
 import os
 from pathlib import Path
 import random
@@ -53,6 +54,40 @@ def verify_originals(metadata, ply, cfg):
                     original_cfg_unchanged=sha256(cfg) == metadata["cfg_sha256"])
     if not metadata["original_model_unchanged"] or not metadata["original_cfg_unchanged"]:
         raise ValueError("Protected original model/cfg changed")
+
+
+def verify_input_reference(args):
+    path = HERE / "G1_Huber全场景输入参考.json"
+    reference = json.loads(path.read_text(encoding="utf-8"))["scans"][str(args.scan)]
+    if (reference["model_sha256"], reference["cfg_sha256"]) != FIXED[args.scan][:2]:
+        raise ValueError("Reference is not for the fixed G1 model")
+    for root, inputs in ((args.source_root, reference["source_inputs"]),
+                         (args.gt_root, reference["gt_inputs"])):
+        for relative, digest in inputs.items():
+            if sha256(root / relative) != digest:
+                raise ValueError(f"Original G1/canonical DTU input mismatch: {relative}")
+    return reference, sha256(path)
+
+
+def verify_camera_reference(cameras, reference):
+    if [c.image_name for c in cameras] != [v["name"] for v in reference["views"]]:
+        raise ValueError("Loaded camera names/order differ from original G1")
+    for camera, prior in zip(cameras, reference["views"]):
+        size = [camera.image_height, camera.image_width]
+        if size != prior["image_size"] or camera.gt_mask is None:
+            raise ValueError("Original image resolution/mask missing or changed")
+        mask = retained_mask(camera.gt_mask.cpu().numpy(), tuple(size))
+        if hashlib.sha256(mask.tobytes()).hexdigest() != prior["mask_sha256"]:
+            raise ValueError(f"Original G1 boolean mask changed at {camera.image_name}")
+        if "focal" in prior:
+            tx, ty = math.tan(camera.FoVx*.5), math.tan(camera.FoVy*.5)
+            focal = [float(np.float32(np.float32(size[1])/(np.float32(2)*np.float32(tx)))),
+                     float(np.float32(np.float32(size[0])/(np.float32(2)*np.float32(ty))))]
+            np.testing.assert_array_equal(focal, prior["focal"])
+            np.testing.assert_allclose(camera.world_view_transform.cpu().numpy(),
+                                       prior["world_view_transform"], rtol=0, atol=1e-6)
+    return dict(status="PASS", views=len(cameras), mask="exact bool bytes",
+                focal="old4 exact loaded float32 focal; new11 exact source COLMAP camera SHA")
 
 
 def extract_source(source):
@@ -268,6 +303,7 @@ def run(args):
         raise ValueError(f"Fixed G1 scan{scan} model/cfg differ from verified baseline")
     if float(config["depth_ratio"]) != 0. or bool(config.get("eval", False)):
         raise ValueError("This pilot retains the original G1 ratio0 and training cameras")
+    reference, reference_sha = verify_input_reference(args)
     required = [args.gt_root / f"Calibration/cal18/pos_{i:03d}.txt" for i in range(1, 65)]
     required += [args.gt_root / f"Points/stl/stl{scan:03d}_total.ply", args.gt_root / f"ObsMask/ObsMask{scan}_10.mat", args.gt_root / f"ObsMask/Plane{scan}.mat"]
     if not args.pilot_only:
@@ -299,6 +335,8 @@ def run(args):
         dataset, pipe, gaussians, cameras, loaded_ply, digest = load_scene(scan, output, args.model_root, args.source_root)
         if digest != model_sha or len(cameras) != camera_count or [c.image_name for c in cameras] != [f"{i:04d}" for i in range(camera_count)]:
             raise ValueError(f"Fixed scan{scan} model or exact{camera_count} training camera inventory changed")
+        metadata["input_reference_sha256"] = reference_sha
+        metadata["camera_input_reference_check"] = verify_camera_reference(cameras, reference)
         transform, alignment = coordinate_check(dataset, cameras)
         scale = float(alignment["scale_to_dtu_mm"])
         build = HERE / "构建_huber_v1"
