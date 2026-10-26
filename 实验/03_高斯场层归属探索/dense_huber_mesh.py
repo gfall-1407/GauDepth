@@ -34,7 +34,7 @@ SEED = 20261026
 CHUNK = 32768
 CUDA_FLAGS = ["-O3", "--use_fast_math"]
 METHODS = ("native_expected", "huber_1mm")
-CACHE_METHODS = METHODS + ("edge_restore", "interior_restore", "soft_tail_1mm", "tail_unshrunk_control")
+CACHE_METHODS = METHODS + ("gap_huber", "edge_restore", "interior_restore", "soft_tail_1mm", "tail_unshrunk_control")
 
 
 def cfg_values(path):
@@ -171,7 +171,30 @@ def gpu_synthetic_check(extension):
         "balanced_zero_interval_nonunit_bandwidth"])
 
 
-def dense_view(camera, gaussians, pipe, dataset, extension, scale, qa_first):
+def gap_reference(records, native, h_scene):
+    """CPU gate oracle; E64 is never substituted for the native fallback."""
+    native = float(np.float32(native))
+    fallback = native if np.isfinite(native) and native > 0 else float("nan")
+    if not len(records):
+        return (native, 0, float("nan")) if native == 0 else (fallback, 2, float("nan"))
+    z, w = records[:, 0].astype(np.float64), records[:, 1].astype(np.float64)
+    if (not np.isfinite(z).all() or not np.isfinite(w).all() or
+            np.any(z <= 0) or np.any(w < 0) or not np.isfinite(fallback)):
+        return fallback, 2, float("nan")
+    positive = w > 0
+    z, w = z[positive], w[positive]
+    if not len(z):
+        return fallback, 2, float("nan")
+    # Ordered double sums match the gate's two passes, separate from CPU mm QA.
+    e64 = sum(float(a*b) for a, b in zip(z, w))/sum(map(float, w))
+    gap = float(np.min(np.abs(z-e64)))
+    if gap <= h_scene:
+        return native, 1, gap
+    value, _ = huber_exact(z, w, h_scene)
+    return float(value), 3, gap
+
+
+def dense_view(camera, gaussians, pipe, dataset, extension, scale, qa_first, method="huber_1mm"):
     import torch
     from gaussian_renderer import render
 
@@ -224,8 +247,20 @@ def dense_view(camera, gaussians, pipe, dataset, extension, scale, qa_first):
         torch.testing.assert_close(replay, targets[start:stop], rtol=2e-5, atol=2e-6, equal_nan=True)
         discrepancy = (replay-targets[start:stop]).abs().nan_to_num().amax(0).cpu().numpy()
         qa["full_frame_replay_max_abs"] = np.maximum(qa["full_frame_replay_max_abs"], discrepancy).tolist()
-        result, status, width = extension.read_huber(records, counts, 1./scale)
-        if bool((status == 2).any()) or not bool(torch.isfinite(result).all()):
+        if method == "gap_huber":
+            native_expected = expected.reshape(-1)[start:stop].contiguous()
+            result, status, width = extension.read_gap_huber(records, counts, native_expected, 1./scale)
+            if bool(((status < 0) | (status > 3)).any()):
+                raise ValueError("Unknown gap_huber status enumeration")
+            no_gap = status == 1
+            if not torch.equal(result[no_gap].float().view(torch.int32), native_expected[no_gap].view(torch.int32)):
+                raise ValueError("No-gap output changed native float32 bits")
+            unknown = status == 2
+            if bool((unknown & (~torch.isfinite(native_expected) | (native_expected <= 0))).any()):
+                raise ValueError("Unknown ray has no valid native fallback; stop rather than hide as zero")
+        else:
+            result, status, width = extension.read_huber(records, counts, 1./scale)
+        if (method != "gap_huber" and bool((status == 2).any())) or not bool(torch.isfinite(result).all()):
             raise ValueError("Nonfinite/invalid accepted records; do not hide them as zero depth")
         huber[start:stop], statuses[start:stop], widths[start:stop] = result.cpu().numpy(), status.cpu().numpy(), width.cpu().numpy()
         for pixel in sorted(qa_pixels.intersection(range(start, stop))):
@@ -237,7 +272,15 @@ def dense_view(camera, gaussians, pipe, dataset, extension, scale, qa_first):
                     raise ValueError("Empty ray output must match native zero depth")
                 cpu_rows.append(dict(pixel=pixel, members=0, cpu_mm=None, gpu_mm=0., abs_error_mm=0.))
             else:
-                value, _ = huber_exact(rec[:, 0]*scale, rec[:, 1], 1.)
+                if method == "gap_huber":
+                    value_scene, cpu_status, cpu_gap = gap_reference(rec, float(expected.reshape(-1)[pixel].item()), 1./scale)
+                    if cpu_status != int(status[row].item()):
+                        raise ValueError(f"CPU/GPU gap gate differs at pixel{pixel}")
+                    if np.isfinite(cpu_gap):
+                        np.testing.assert_allclose(float(width[row].item())*scale, cpu_gap*scale, rtol=1e-10, atol=1e-7)
+                    value = value_scene*scale
+                else:
+                    value, _ = huber_exact(rec[:, 0]*scale, rec[:, 1], 1.)
                 gpu = float(result[row].item())*scale
                 error = abs(gpu-value)
                 if error > 1e-4:
@@ -246,19 +289,28 @@ def dense_view(camera, gaussians, pipe, dataset, extension, scale, qa_first):
         del records, ids, counts, replay, result, status, width, pixels
     qa["empty_pixels"] = int((statuses == 0).sum())
     qa["invalid_pixels"] = int((statuses == 2).sum())
-    qa["nonpositive_nonempty_mask_pixels"] = int((mask.ravel() & (statuses == 1) & (huber <= 0)).sum())
+    qa["nonpositive_nonempty_mask_pixels"] = int((mask.ravel() & ((statuses == 1) | (statuses == 3)) & (huber <= 0)).sum())
     # No extra method-dependent validity mask. The original extractor alone applies gt_mask<.5.
     huber32 = huber.astype(np.float32)
     qa["float32_storage_max_error_mm"] = float(np.max(np.abs(huber32.astype(np.float64)-huber))*scale)
-    qa["minimizer_width_max_mm"] = float(widths.max()*scale)
-    qa["minimizer_width_ge1mm_mask_pixels"] = int((mask.ravel() & (widths*scale >= 1.)).sum())
+    if method == "gap_huber":
+        finite_gap = np.isfinite(widths)
+        qa["gap_huber"] = dict(status_counts={str(k): int((statuses == k).sum()) for k in range(4)},
+            mask_status_counts={str(k): int((mask.ravel() & (statuses == k)).sum()) for k in range(4)},
+            min_gap_max_mm=float(widths[finite_gap].max()*scale) if finite_gap.any() else None,
+            gap_gt1mm_mask_pixels=int((mask.ravel() & finite_gap & (widths*scale > 1.)).sum()),
+            no_gap_native_float32_bitwise="PASS", unknown_policy="positive finite native fallback; otherwise hard stop")
+    else:
+        qa["minimizer_width_max_mm"] = float(widths.max()*scale)
+        qa["minimizer_width_ge1mm_mask_pixels"] = int((mask.ravel() & (widths*scale >= 1.)).sum())
     qa["cpu_qa"] = cpu_rows
     if qa_first and not any(row["members"] > 0 for row in cpu_rows):
         raise ValueError("All CPU QA rays were empty; this does not validate the estimator")
     qa["cpu_qa_max_error_mm"] = max((r["abs_error_mm"] for r in cpu_rows), default=None)
     qa["seconds"] = time.time()-started
     frame = dict(rgb=rgb.cpu().numpy(), expected=expected.cpu().numpy(),
-        median=median.cpu().numpy(), alpha=alpha.cpu().numpy(), huber=huber32.reshape(1, h, w), gt_mask=mask)
+        median=median.cpu().numpy(), alpha=alpha.cpu().numpy(), gt_mask=mask)
+    frame["gap_huber" if method == "gap_huber" else "huber"] = huber32.reshape(1, h, w)
     return frame, qa
 
 
@@ -286,8 +338,10 @@ def native_evaluate(host, dataset, gt_root, gaussians, scene):
 
 def cached_depth(frame, method, scale):
     """Fixed interventions; no GT distances, scan labels or learned thresholds."""
-    e, h = frame["expected"], frame["huber"]
+    e = frame["expected"]
     if method == "native_expected": return e
+    if method == "gap_huber": return frame["gap_huber"]
+    h = frame["huber"]
     if method == "huber_1mm": return h
     if method in ("edge_restore", "interior_restore"):
         from scipy.ndimage import binary_erosion
@@ -369,11 +423,12 @@ def run_cached(args):
             def render(camera,*_a,**_kw):
                 vm=by_name[camera.image_name]
                 with np.load(cache_root/vm['file']) as frame:
-                    depth=cached_depth(frame,method,scale);mask=frame['gt_mask'].astype(bool);e=frame['expected'];h=frame['huber']
+                    depth=cached_depth(frame,method,scale);mask=frame['gt_mask'].astype(bool);e=frame['expected'];h=frame['huber'] if 'huber' in frame else None
                     if not np.isfinite(depth).all():raise ValueError("Nonfinite repair")
-                    if np.any((depth < np.minimum(e,h)) | (depth > np.maximum(e,h))):raise ValueError("Correction escaped E/H interval")
+                    if method != "gap_huber" and h is not None and np.any((depth < np.minimum(e,h)) | (depth > np.maximum(e,h))):raise ValueError("Correction escaped E/H interval")
                     stats['mask_pixels']+=int(mask.sum());stats['changed_from_expected_n']+=int((depth.reshape(mask.shape)[mask]!=e.reshape(mask.shape)[mask]).sum())
-                    stats['changed_from_huber_n']+=int((depth.reshape(mask.shape)[mask]!=h.reshape(mask.shape)[mask]).sum())
+                    if h is not None:stats['changed_from_huber_n']+=int((depth.reshape(mask.shape)[mask]!=h.reshape(mask.shape)[mask]).sum())
+                    else:stats['changed_from_huber_n']=None
                     stats['max_change_from_expected_mm']=max(stats['max_change_from_expected_mm'],float(np.max(np.abs(depth-e))*scale))
                     return dict(render=torch.from_numpy(frame['rgb']).cuda(),expected_depth=torch.from_numpy(depth).cuda(),
                         median_depth=torch.from_numpy(frame['median']).cuda(),mask=torch.from_numpy(frame['alpha']).cuda())
@@ -397,6 +452,7 @@ def run_cached(args):
 def run(args):
     provenance = source_provenance()
     scan = args.scan
+    methods = ("native_expected", args.dense_method)
     model_sha, cfg_sha, camera_count, _ = FIXED[scan]
     expected_host = "autodl-container-" + args.instance_id
     if socket.gethostname() != expected_host:
@@ -425,7 +481,7 @@ def run(args):
     output.mkdir(parents=True)
     # Independent guard requests a save before its grace period expires.
     signal.signal(signal.SIGTERM, lambda *_: (output / "stop_after_stage").touch())
-    metadata = dict(status="partial", source=provenance, scan=scan, methods=list(METHODS), views=[], results={},
+    metadata = dict(status="partial", source=provenance, scan=scan, methods=list(methods), views=[], results={},
         args={k: str(v) if isinstance(v, Path) else v for k, v in vars(args).items()},
         instance_id=args.instance_id, hostname=socket.gethostname(),
         model_sha256=model_sha, cfg_sha256=cfg_sha, depth_ratio=0., h_mm=1.,
@@ -453,14 +509,32 @@ def run(args):
         metadata["camera_input_reference_check"] = verify_camera_reference(cameras, reference)
         transform, alignment = coordinate_check(dataset, cameras)
         scale = float(alignment["scale_to_dtu_mm"])
-        build = HERE / "构建_huber_v1"
+        tag = args.reader_build_tag or ("gap_huber_v1" if args.dense_method == "gap_huber" else "huber_v1")
+        build = HERE / ("构建_" + tag)
         build.mkdir(exist_ok=True)
         os.environ.setdefault("MAX_JOBS", "2")
-        extension = load(name="gaudepth_dense_huber_reader_v1", sources=[str(HERE / "reader.cu")],
+        extension_name = "gaudepth_dense_huber_reader_v1" if tag == "huber_v1" else "gaudepth_dense_" + tag.replace("-", "_") + "_reader"
+        extension = load(name=extension_name, sources=[str(HERE / "reader.cu")],
             build_directory=str(build), extra_cuda_cflags=CUDA_FLAGS, verbose=True)
         if not hasattr(extension, "read_huber"):
             raise ValueError("Exact new read_huber CUDA interface was not merged")
+        if args.dense_method == "gap_huber" and not hasattr(extension, "read_gap_huber"):
+            raise ValueError("read_gap_huber CUDA interface not merged; status0/1/2/3 contract required")
         metadata["gpu_synthetic_check"] = gpu_synthetic_check(extension)
+        if args.dense_method == "gap_huber":
+            records = torch.zeros((3, 2, 8), dtype=torch.float32, device="cuda")
+            records[:, :, 0] = torch.tensor([[2., 2.], [1., 11.], [2., 3.]], device="cuda")
+            records[:, :, 1] = torch.tensor([[1., 0.], [.75, .25], [.5, .5]], device="cuda")
+            native = torch.tensor([2.125, 3.5, 2.75], dtype=torch.float32, device="cuda")
+            count = torch.tensor([2, 2, 2], dtype=torch.int32, device="cuda")
+            values, states, gaps = extension.read_gap_huber(records, count, native, 1.)
+            for row in range(3):
+                cpu, state, gap = gap_reference(records[row].cpu().numpy(), native[row].item(), 1.)
+                if state != states[row].item(): raise AssertionError("Synthetic gap status mismatch")
+                np.testing.assert_allclose([values[row].item(), gaps[row].item()], [cpu, gap], rtol=0, atol=1e-10)
+            metadata["gpu_gap_synthetic_check"] = dict(status="PASS", cases=["zero_weight_ignored", "gap", "native_not_E64"])
+            metadata["gap_huber_policy"] = "E64 positive-weight support gap > physical1mm triggers exact Huber; otherwise original native float32. status0 empty/native0,1 no-gap,2 unknown/native fallback,3 gap. No new mask or alpha rule."
+
         metadata.update(alignment=alignment, camera_names=[c.image_name for c in cameras],
             cameras_npz_sha256=sha256(Path(dataset.source_path) / "cameras.npz"),
             original_C_path=_C.__file__, original_C_sha256=HOST_SHA,
@@ -478,10 +552,10 @@ def run(args):
         cache = output / "frames"
         cache.mkdir()
         frozen_frame_sha = (json.loads((HERE / "G1_Huber原缓存SHA.json").read_text(encoding="utf-8"))[str(scan)]
-                            if args.cache_only else None)
+                            if args.cache_only and args.dense_method != "gap_huber" else None)
         with torch.no_grad():
             for vi, camera in enumerate(cameras[:1] if args.pilot_only else cameras):
-                frame, qa = dense_view(camera, gaussians, pipe, dataset, extension, scale, vi == 0)
+                frame, qa = dense_view(camera, gaussians, pipe, dataset, extension, scale, vi == 0, args.dense_method)
                 path = cache / f"view_{vi:03d}.npz"
                 with path.open("wb") as f:
                     np.savez_compressed(f, **frame)
@@ -513,7 +587,7 @@ def run(args):
         atomic_json(output / "metadata.json", metadata)
         scene = SimpleNamespace(getTrainCameras=lambda: cameras)
         by_name = {v["name"]: v for v in metadata["views"]}
-        for method in METHODS:
+        for method in methods:
             destination = output / method
             destination.mkdir()
             proxy = SimpleNamespace(**dict(vars(dataset), model_path=str(destination)))
@@ -524,7 +598,7 @@ def run(args):
                     raise ValueError("Frozen frame cache changed")
                 with np.load(path) as frame:
                     result = {"render": torch.from_numpy(frame["rgb"]).cuda(),
-                        "expected_depth": torch.from_numpy(frame["expected" if method == "native_expected" else "huber"]).cuda(),
+                        "expected_depth": torch.from_numpy(frame["expected" if method == "native_expected" else ("gap_huber" if method == "gap_huber" else "huber")]).cuda(),
                         "median_depth": torch.from_numpy(frame["median"]).cuda(),
                         "mask": torch.from_numpy(frame["alpha"]).cuda()}
                 return result
@@ -567,7 +641,20 @@ def self_check():
     z = np.array([0., 10.]); w = np.array([.5, .5])
     value, width = huber_exact(z, w, 1.)
     np.testing.assert_allclose([value, width], [5., 8.], rtol=0, atol=1e-12)
-    print("Native source sites, controlled evaluator syntax and CPU Huber plateau: PASS", flush=True)
+    records = np.zeros((2, 8), dtype=np.float32)
+    records[:, 0], records[:, 1] = [2., 3.], [.5, .5]
+    native = np.float32(2.75)  # Intentionally differs from weighted E64=2.5.
+    value, state, gap = gap_reference(records, native, 1.)
+    assert state == 1 and np.float32(value).tobytes() == native.tobytes() and gap == .5
+    records[:, 0], records[:, 1] = [1., 11.], [.75, .25]
+    value, state, gap = gap_reference(records, np.float32(3.5), 1.)
+    assert state == 3 and gap == 2.5
+    np.testing.assert_allclose(value, huber_exact(records[:, 0].astype(float), records[:, 1].astype(float), 1.)[0], rtol=0, atol=1e-12)
+    assert gap_reference(records[:0], 0., 1.)[1] == 0
+    records[:, 1] = 0.
+    assert gap_reference(records, native, 1.)[:2] == (float(native), 2)
+    assert np.isnan(gap_reference(records, float("nan"), 1.)[0])
+    print("Native source sites, evaluator syntax, CPU Huber and gap/native fallback: PASS", flush=True)
 
 
 def main():
@@ -577,6 +664,9 @@ def main():
                         help="One of the 15 SHA-pinned G1 frozen scenes; unchanged fixed1mm protocol")
     parser.add_argument("--instance-id", choices=("d6a7459179-693ab6ee", "26a34fbbce-406e74f8", "5d5147b55f-67549ee6"),
                         default="d6a7459179-693ab6ee", help="Approved execution instance, not model origin")
+    parser.add_argument("--dense-method", choices=("huber_1mm", "gap_huber"), default="huber_1mm",
+                        help="New dense cache/readout paired with unchanged native expected; default unchanged")
+    parser.add_argument("--reader-build-tag", help="Independent CUDA build tag; gap defaults gap_huber_v1")
     parser.add_argument("--pilot-only", action="store_true")
     parser.add_argument("--cache-only", action="store_true", help="Complete dense cache only; no mesh or score")
     parser.add_argument("--cache-root", type=Path, help="Complete fixed original E/H cache; replay without tracing")
@@ -586,6 +676,11 @@ def main():
     parser.add_argument("--source-root", type=Path, default=Path("/root/autodl-tmp/DTU"))
     parser.add_argument("--gt-root", type=Path, default=Path("/root/autodl-tmp/DTU_MVS_Data"))
     args = parser.parse_args()
+    if args.reader_build_tag and (not args.reader_build_tag.replace("_", "").replace("-", "").isalnum() or
+                                  args.reader_build_tag == "huber_v1" and args.dense_method == "gap_huber"):
+        parser.error("reader-build-tag must be alphanumeric/_/- and isolate gap from the original build")
+    if args.cache_root is not None and args.dense_method != "huber_1mm":
+        parser.error("cache replay selects --methods gap_huber, not --dense-method")
     if args.cache_only and (args.pilot_only or args.cache_root is not None):
         parser.error("cache-only requires all views and is not a replay")
     if args.methods and args.cache_root is None:
