@@ -11,6 +11,7 @@ import os
 from pathlib import Path
 import random
 import shutil
+import signal
 import socket
 import subprocess
 import sys
@@ -311,6 +312,8 @@ def run(args):
             if not path.is_file():
                 raise FileNotFoundError(path)
     output.mkdir(parents=True)
+    # Independent guard requests a save before its grace period expires.
+    signal.signal(signal.SIGTERM, lambda *_: (output / "stop_after_stage").touch())
     metadata = dict(status="partial", source=provenance, scan=scan, methods=list(METHODS), views=[], results={},
         args={k: str(v) if isinstance(v, Path) else v for k, v in vars(args).items()},
         instance_id=args.instance_id, hostname=socket.gethostname(),
