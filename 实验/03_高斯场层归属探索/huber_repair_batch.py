@@ -19,11 +19,13 @@ OTHER = (24, 37, 55, 65, 69, 106, 110, 114, 118, 122)
 def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--root", type=Path, required=True)
+    p.add_argument("--counterexamples-only", action="store_true",
+                   help="Only fixed new counterexamples37/110, complementary region controls; no new formula")
     args = p.parse_args()
     root = args.root.resolve()
     if not args.root.is_absolute() or socket.gethostname() != "autodl-container-" + INSTANCE:
         raise ValueError("Require the verified G0 and an absolute independent result root")
-    controller = root / "batch.json"
+    controller = root / ("counterexamples_batch.json" if args.counterexamples_only else "batch.json")
     if controller.exists():
         raise ValueError("Do not replay a previous batch")
     state = dict(status="waiting_inputs", pid=os.getpid(), started=time.time(), completed=[])
@@ -71,6 +73,17 @@ def main():
     try:
         save("waiting_inputs")
         wait_marker("inputs_ready")
+        if args.counterexamples_only:
+            if json.loads((root / "batch.json").read_text())["status"] != "complete_waiting_transfer":
+                raise ValueError("Original full15 batch must finish before extra controls")
+            if json.loads((root / "bridge_review.json").read_text())["status"] != "PASS_exact":
+                raise ValueError("Original bridge did not pass")
+            for scan in (37, 110):
+                task(scan, "counterexamples", ["edge_restore", "interior_restore"])
+            save("complete_waiting_transfer")
+            wait_marker("counterexamples_transfer_verified")
+            save("complete")
+            return
         task(40, "cache")
         task(40, "bridge", ["native_expected", "huber_1mm"])
         save("awaiting_bridge_review")
