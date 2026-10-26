@@ -34,6 +34,7 @@ SEED = 20261026
 CHUNK = 32768
 CUDA_FLAGS = ["-O3", "--use_fast_math"]
 METHODS = ("native_expected", "huber_1mm")
+CACHE_METHODS = METHODS + ("edge_restore", "interior_restore", "soft_tail_1mm")
 
 
 def cfg_values(path):
@@ -283,6 +284,108 @@ def native_evaluate(host, dataset, gt_root, gaussians, scene):
     scope["evaluate_mesh"](dataset, 30000, str(gt_root))
 
 
+def cached_depth(frame, method, scale):
+    """Fixed interventions; no GT distances, scan labels or learned thresholds."""
+    e, h = frame["expected"], frame["huber"]
+    if method == "native_expected": return e
+    if method == "huber_1mm": return h
+    if method in ("edge_restore", "interior_restore"):
+        from scipy.ndimage import binary_erosion
+        mask = frame["gt_mask"].astype(bool)
+        interior = binary_erosion(mask, iterations=3, border_value=0)
+        restore = (mask & ~interior) if method == "edge_restore" else interior
+        depth = h.copy(); depth.reshape(mask.shape)[restore] = e.reshape(mask.shape)[restore]
+        return depth
+    if method == "soft_tail_1mm":
+        delta_mm = (h.astype(np.float64)-e)*scale
+        # L1 proximal shrink of the Huber correction, with the existing h=1mm.
+        return (e.astype(np.float64)+np.sign(delta_mm)*np.maximum(np.abs(delta_mm)-1., 0.)/scale).astype(np.float32)
+    raise ValueError(method)
+
+
+def run_cached(args):
+    provenance = source_provenance()
+    if socket.gethostname() != "autodl-container-"+args.instance_id:
+        raise ValueError("Wrong explicitly authorized execution instance")
+    cache_root = args.cache_root.resolve(); output = args.output.resolve()
+    if not args.output.is_absolute() or output.exists() or not args.cache_root.is_absolute():
+        raise ValueError("Require absolute cache and new independent output")
+    if output == cache_root or cache_root in output.parents:
+        raise ValueError("Do not write inside the frozen cache")
+    methods = args.methods or ["soft_tail_1mm"]
+    if len(set(methods)) != len(methods) or args.pilot_only:
+        raise ValueError("Do not repeat methods or use pilot-only in cache replay")
+    original = json.loads((cache_root/"metadata.json").read_text(encoding="utf-8"))
+    model_sha,cfg_sha,count,_ = FIXED[args.scan]
+    if (original.get("status") not in ("complete", "cache_complete") or original.get("scan") != args.scan or
+        original["model_sha256"] != model_sha or original["cfg_sha256"] != cfg_sha or
+        original["h_mm"] != 1. or original["depth_ratio"] != 0. or len(original["views"]) != count):
+        raise ValueError("Cache is not the complete fixed G1 1mm experiment")
+    reference, reference_sha = verify_input_reference(args)
+    output.mkdir(parents=True)
+    signal.signal(signal.SIGTERM, lambda *_: (output/"stop_after_stage").touch())
+    metadata = dict(status="partial", source=provenance, scan=args.scan, methods=methods, results={},
+        instance_id=args.instance_id, hostname=socket.gethostname(),model_sha256=model_sha,cfg_sha256=cfg_sha,
+        h_mm=1.,depth_ratio=0., cache_root=str(cache_root), cache_metadata_sha256=sha256(cache_root/"metadata.json"),
+        cache_source=original["source"], input_reference_sha256=reference_sha,
+        protocol="Frozen cached E/H; original RGB/alpha/median/mask, tracked TSDF/Calibration/seed20261026 unchanged. edge/interior are exact complements of original mask 3 iterations4-neighbor erosion. soft_tail is continuous L1 shrink of delta, not a guarantee or an independent holdout.")
+    atomic_json(output/"metadata.json",metadata)
+    loaded_ply=args.model_root/f"scan{args.scan}/point_cloud/iteration_30000/point_cloud.ply";cfg_path=loaded_ply.parents[2]/"cfg_args"
+    try:
+        import torch
+        from diff_gaussian_rasterization import _C
+        import mesh_extract,evaluate_dtu_mesh
+        from utils.general_utils import safe_state
+        if sha256(_C.__file__) != HOST_SHA or original["original_C_sha256"] != HOST_SHA:
+            raise ValueError("Original rasterizer changed")
+        if sha256(loaded_ply) != model_sha or sha256(cfg_path) != cfg_sha:
+            raise ValueError("Frozen G1 input changed")
+        for key,path in (("host_mesh_sha256",Path(mesh_extract.__file__)),("host_evaluate_sha256",Path(evaluate_dtu_mesh.__file__)),("dtu_eval_sha256",ROOT/'dtu_eval/eval.py')):
+            if sha256(path) != original[key]:raise ValueError("Native protocol source changed: "+key)
+        safe_state(False)
+        dataset,pipe,gaussians,cameras,loaded_ply,digest=load_scene(args.scan,output,args.model_root,args.source_root)
+        if digest != model_sha or len(cameras) != count:raise ValueError("Model/camera inventory changed")
+        metadata["camera_input_reference_check"]=verify_camera_reference(cameras,reference)
+        transform,alignment=coordinate_check(dataset,cameras);scale=float(alignment['scale_to_dtu_mm'])
+        np.testing.assert_allclose(alignment['transform'],original['alignment']['transform'],rtol=0,atol=1e-8)
+        metadata.update(alignment=alignment,original_C_sha256=HOST_SHA,
+            host_mesh_sha256=sha256(Path(mesh_extract.__file__)),host_evaluate_sha256=sha256(Path(evaluate_dtu_mesh.__file__)),
+            dtu_eval_sha256=sha256(ROOT/'dtu_eval/eval.py'),frame_manifest_sha256=sha256(cache_root/'metadata.json'))
+        by_name={v['name']:v for v in original['views']};scene=SimpleNamespace(getTrainCameras=lambda:cameras)
+        for vm in original['views']:
+            if sha256(cache_root/vm['file']) != vm['sha256']:raise ValueError("Frozen cached frame changed")
+        atomic_json(output/'metadata.json',metadata)
+        for method in methods:
+            destination=output/method;destination.mkdir();proxy=SimpleNamespace(**dict(vars(dataset),model_path=str(destination)))
+            stats=dict(mask_pixels=0,changed_from_expected_n=0,changed_from_huber_n=0,max_change_from_expected_mm=0.)
+            def render(camera,*_a,**_kw):
+                vm=by_name[camera.image_name]
+                with np.load(cache_root/vm['file']) as frame:
+                    depth=cached_depth(frame,method,scale);mask=frame['gt_mask'].astype(bool);e=frame['expected'];h=frame['huber']
+                    if not np.isfinite(depth).all():raise ValueError("Nonfinite repair")
+                    if np.any((depth < np.minimum(e,h)) | (depth > np.maximum(e,h))):raise ValueError("Correction escaped E/H interval")
+                    stats['mask_pixels']+=int(mask.sum());stats['changed_from_expected_n']+=int((depth.reshape(mask.shape)[mask]!=e.reshape(mask.shape)[mask]).sum())
+                    stats['changed_from_huber_n']+=int((depth.reshape(mask.shape)[mask]!=h.reshape(mask.shape)[mask]).sum())
+                    stats['max_change_from_expected_mm']=max(stats['max_change_from_expected_mm'],float(np.max(np.abs(depth-e))*scale))
+                    return dict(render=torch.from_numpy(frame['rgb']).cuda(),expected_depth=torch.from_numpy(depth).cuda(),
+                        median_depth=torch.from_numpy(frame['median']).cuda(),mask=torch.from_numpy(frame['alpha']).cuda())
+            started=time.time()
+            with torch.no_grad():
+                native_extract(mesh_extract,proxy,pipe,gaussians,scene,render)
+                native_evaluate(evaluate_dtu_mesh,proxy,args.gt_root,gaussians,scene)
+            score_path=destination/'vis/results.json';scores=json.loads(score_path.read_text(encoding='utf-8'))
+            if not all(np.isfinite(scores[k]) for k in ('mean_d2s','mean_s2d','overall')):raise ValueError("Nonfinite score")
+            metadata['results'][method]=dict(scores=scores,mesh_sha256=sha256(destination/'recon_post.ply'),aligned_sha256=sha256(destination/'recon_aligned.ply'),
+                raw_mesh_sha256=sha256(destination/'recon.ply'),results_sha256=sha256(score_path),seconds=time.time()-started,depth_change=stats)
+            verify_originals(metadata,loaded_ply,cfg_path);atomic_json(output/'metadata.json',metadata)
+            print(json.dumps(dict(scan=args.scan,method=method,scores=scores)),flush=True)
+            if (output/'stop_after_stage').exists():
+                metadata['status']='stopped_after_method';atomic_json(output/'metadata.json',metadata);return metadata
+        metadata['status']='complete';verify_originals(metadata,loaded_ply,cfg_path);atomic_json(output/'metadata.json',metadata);return metadata
+    except BaseException as exc:
+        metadata.update(status='failed_or_stopped',error=repr(exc));atomic_json(output/'metadata.json',metadata);raise
+
+
 def run(args):
     provenance = source_provenance()
     scan = args.scan
@@ -366,6 +469,8 @@ def run(args):
         atomic_json(output / "metadata.json", metadata)
         cache = output / "frames"
         cache.mkdir()
+        frozen_frame_sha = (json.loads((HERE / "G1_Huber原缓存SHA.json").read_text(encoding="utf-8"))[str(scan)]
+                            if args.cache_only else None)
         with torch.no_grad():
             for vi, camera in enumerate(cameras[:1] if args.pilot_only else cameras):
                 frame, qa = dense_view(camera, gaussians, pipe, dataset, extension, scale, vi == 0)
@@ -375,6 +480,8 @@ def run(args):
                     f.flush()
                     os.fsync(f.fileno())
                 qa.update(file=str(path.relative_to(output)), sha256=sha256(path))
+                if frozen_frame_sha is not None and qa["sha256"] != frozen_frame_sha[qa["file"]]:
+                    raise ValueError("Regenerated cache differs from original complete frame bytes; do not mix protocols")
                 metadata["views"].append(qa)
                 atomic_json(output / "metadata.json", metadata)
                 print(json.dumps(dict(stage="dense", view=camera.image_name, seconds=qa["seconds"], cpu_qa_max_error_mm=qa["cpu_qa_max_error_mm"])), flush=True)
@@ -386,6 +493,11 @@ def run(args):
         if args.pilot_only:
             verify_originals(metadata, loaded_ply, cfg_path)
             metadata["status"] = "pilot_complete"
+            atomic_json(output / "metadata.json", metadata)
+            return metadata
+        if args.cache_only:
+            verify_originals(metadata, loaded_ply, cfg_path)
+            metadata["status"] = "cache_complete"
             atomic_json(output / "metadata.json", metadata)
             return metadata
         metadata["status"] = "dense_complete"
@@ -458,17 +570,24 @@ def main():
     parser.add_argument("--instance-id", choices=("d6a7459179-693ab6ee", "26a34fbbce-406e74f8"),
                         default="d6a7459179-693ab6ee", help="Approved execution instance, not model origin")
     parser.add_argument("--pilot-only", action="store_true")
+    parser.add_argument("--cache-only", action="store_true", help="Complete dense cache only; no mesh or score")
+    parser.add_argument("--cache-root", type=Path, help="Complete fixed original E/H cache; replay without tracing")
+    parser.add_argument("--methods", nargs="+", choices=CACHE_METHODS)
     parser.add_argument("--check", action="store_true")
     parser.add_argument("--model-root", type=Path, default=Path("/root/autodl-tmp/GauDepth/outtest"))
     parser.add_argument("--source-root", type=Path, default=Path("/root/autodl-tmp/DTU"))
     parser.add_argument("--gt-root", type=Path, default=Path("/root/autodl-tmp/DTU_MVS_Data"))
     args = parser.parse_args()
+    if args.cache_only and (args.pilot_only or args.cache_root is not None):
+        parser.error("cache-only requires all views and is not a replay")
+    if args.methods and args.cache_root is None:
+        parser.error("--methods requires --cache-root")
     if args.check:
         self_check()
     elif args.output is None:
         parser.error("--output is required")
     else:
-        result = run(args)
+        result = run_cached(args) if args.cache_root is not None else run(args)
         print(json.dumps(dict(status=result["status"], results=result["results"])), flush=True)
 
 
