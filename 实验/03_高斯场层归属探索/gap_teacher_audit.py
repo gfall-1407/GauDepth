@@ -239,6 +239,39 @@ def evaluate(args):
     print(json.dumps(summary))
 
 
+def truncation_audit(args):
+    """Audit the benchmark's fixed20mm cutoff on the SAME sampled ray NN pairs."""
+    source=source_info();report=json.loads((args.output/'summary.json').read_text())
+    if report['status']!='complete':raise ValueError('Complete sealed paired NN scores required')
+    destination=args.output/'truncation_diagnostic.json'
+    if destination.exists():raise ValueError('Do not overwrite completed cutoff diagnostic')
+    pairs={}
+    for row in report['completed_scores']:
+        f=args.output/row['file'];prediction=args.output/f"scan{row['scan']}_{row['view']}.npz"
+        if sha256(f)!=row['sha256'] or sha256(prediction)!=row['prediction_sha256']:
+            raise ValueError('Sealed sample/prediction changed')
+        with np.load(f) as z:selection=z['selection'];index=z['index'];nn=z['nn_mm']
+        with np.load(prediction) as z:
+            np.testing.assert_array_equal(index,z['index'][selection]);group=z['changed'][selection]
+        if not np.isfinite(nn).all() or np.any(nn<0):raise ValueError('Invalid fixed NN pairs')
+        for changed in (True,False):pairs.setdefault((row['scan'],changed),[]).append(nn[group==changed])
+    rows=[];cutoff=20. # Existing native dtu_eval --max_dist; never fitted to results.
+    for (scan,changed),values in pairs.items():
+        a=np.concatenate(values);inside=a<cutoff;common=inside.all(1)
+        def mean(x):return float(x.mean()) if len(x) else None
+        rows.append(dict(scan=scan,group='gap_changed' if changed else 'unchanged_control',n=len(a),
+            untruncated_E_mm=mean(a[:,0]),untruncated_H_mm=mean(a[:,1]),
+            independent_cutoff_E_mm=mean(a[inside[:,0],0]),independent_cutoff_H_mm=mean(a[inside[:,1],1]),
+            independent_E_n=int(inside[:,0].sum()),independent_H_n=int(inside[:,1].sum()),
+            common_n=int(common.sum()),common_E_mm=mean(a[common,0]),common_H_mm=mean(a[common,1]),
+            capped_E_mm=mean(np.minimum(a[:,0],cutoff)),capped_H_mm=mean(np.minimum(a[:,1],cutoff)),
+            entered_H_support=int(np.sum(~inside[:,0]&inside[:,1])),
+            left_H_support=int(np.sum(inside[:,0]&~inside[:,1]))))
+    save(destination,dict(status='complete',source=source,cutoff_mm=cutoff,rows=rows,
+        limitation='Same fixed per-view/group ray-NN sample only. Native mesh scoring additionally changes area samples, voxel thinning, ObsMask and geometry; cutoff behavior here does not prove the actual cause of mesh regression and is not a new evaluation protocol.'))
+    print(json.dumps(rows))
+
+
 if __name__ == "__main__":
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--output", type=Path, required=True)
@@ -248,6 +281,8 @@ if __name__ == "__main__":
     p.add_argument("--max-seconds", type=float, default=600)
     p.add_argument("--nn-per-group", type=int, default=256)
     p.add_argument("--evaluate", action="store_true")
+    p.add_argument('--truncation-audit',action='store_true')
     a = p.parse_args()
-    if a.evaluate: evaluate(a)
+    if a.truncation_audit:truncation_audit(a)
+    elif a.evaluate: evaluate(a)
     else: diagnose(a)
