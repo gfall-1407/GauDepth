@@ -47,6 +47,13 @@ def locate_sample(results,scan):
     return present[0]
 
 
+def input_directory(results,scan):
+    # Four pre-existing exploration inputs were not duplicated into the new
+    # confirmation directory. Their camera/GT hashes must still match canonical.
+    batch="20261023_一致深度支持" if scan in (24,65,105,110) else "20261026_夜间深度方法"
+    return results/batch/"inputs"/f"scan{scan}"
+
+
 def geometry(results,scan,reference,sample):
     paths=[results/f"20261023_双模型影响诊断/influence_G1_v1/scan{scan}/metadata.json",
            results/f"20261026_夜间深度方法/dense_confirm_v1/scan{scan}_v1/metadata.json",
@@ -68,7 +75,7 @@ def geometry(results,scan,reference,sample):
         np.testing.assert_allclose(other["alignment"]["scale_to_dtu_mm"],meta["alignment"]["scale_to_dtu_mm"],rtol=0,atol=1e-8)
     alignment=np.asarray(meta["alignment"]["transform"],float); scale=float(meta["alignment"]["scale_to_dtu_mm"])
     if alignment.shape!=(4,4) or not np.isfinite(alignment).all() or not np.isfinite(scale) or scale<=0: raise ValueError("Invalid alignment")
-    camera=results/f"20261026_夜间深度方法/inputs/scan{scan}/cameras.npz"
+    camera=input_directory(results,scan)/"cameras.npz"
     if sha256(camera)!=meta["cameras_npz_sha256"]: raise ValueError("Camera file SHA mismatch")
     return alignment,scale,camera,dict(geometry_metadata=str(path),geometry_sha256=sha256(path),cameras_sha256=sha256(camera))
 
@@ -157,7 +164,7 @@ def run(args):
                 # Decisions and provenance are sealed before scanned geometry is opened.
                 from scipy.spatial import cKDTree
                 from plyfile import PlyData
-                gt=results/f"20261026_夜间深度方法/inputs/scan{scan}/stl{scan:03d}_total.ply"; digest=sha256(gt)
+                gt=input_directory(results,scan)/f"stl{scan:03d}_total.ply"; digest=sha256(gt)
                 if digest!=reference["gt_inputs"][f"Points/stl/stl{scan:03d}_total.ply"]: raise ValueError("GT SHA mismatch")
                 vertex=PlyData.read(str(gt))["vertex"]; tree=cKDTree(np.column_stack([np.asarray(vertex[k],float) for k in ("x","y","z")]))
                 fx,fy=vm["focal"]; h,width=size; K=np.array([[fx,0,(width-1)/2],[0,fy,(h-1)/2],[0,0,1.]])
