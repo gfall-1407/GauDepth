@@ -34,7 +34,7 @@ SEED = 20261026
 CHUNK = 32768
 CUDA_FLAGS = ["-O3", "--use_fast_math"]
 METHODS = ("native_expected", "huber_1mm")
-CACHE_METHODS = METHODS + ("edge_restore", "interior_restore", "soft_tail_1mm")
+CACHE_METHODS = METHODS + ("edge_restore", "interior_restore", "soft_tail_1mm", "tail_unshrunk_control")
 
 
 def cfg_values(path):
@@ -300,6 +300,11 @@ def cached_depth(frame, method, scale):
         delta_mm = (h.astype(np.float64)-e)*scale
         # L1 proximal shrink of the Huber correction, with the existing h=1mm.
         return (e.astype(np.float64)+np.sign(delta_mm)*np.maximum(np.abs(delta_mm)-1., 0.)/scale).astype(np.float32)
+    if method == "tail_unshrunk_control":
+        # Two-scene diagnostic: same small-delta restoration as soft_tail,
+        # differing ONLY by retaining the original large H correction.
+        delta_mm = (h.astype(np.float64)-e.astype(np.float64))*scale
+        return np.where(np.abs(delta_mm) <= 1., e, h).astype(np.float32)
     raise ValueError(method)
 
 

@@ -21,11 +21,16 @@ def main():
     p.add_argument("--root", type=Path, required=True)
     p.add_argument("--counterexamples-only", action="store_true",
                    help="Only fixed new counterexamples37/110, complementary region controls; no new formula")
+    p.add_argument("--tail-control-only", action="store_true",
+                   help="Only37/110 diagnostic: omit large-tail shrink, keep same1mm small-delta restoration")
     args = p.parse_args()
+    if args.counterexamples_only and args.tail_control_only:
+        p.error("Choose one finite diagnostic batch")
     root = args.root.resolve()
     if not args.root.is_absolute() or socket.gethostname() != "autodl-container-" + INSTANCE:
         raise ValueError("Require the verified G0 and an absolute independent result root")
-    controller = root / ("counterexamples_batch.json" if args.counterexamples_only else "batch.json")
+    controller = root / ("tail_control_batch.json" if args.tail_control_only else
+                         "counterexamples_batch.json" if args.counterexamples_only else "batch.json")
     if controller.exists():
         raise ValueError("Do not replay a previous batch")
     state = dict(status="waiting_inputs", pid=os.getpid(), started=time.time(), completed=[])
@@ -73,6 +78,15 @@ def main():
     try:
         save("waiting_inputs")
         wait_marker("inputs_ready")
+        if args.tail_control_only:
+            if json.loads((root / "counterexamples_batch.json").read_text())["status"] != "complete_waiting_transfer":
+                raise ValueError("Region counterexample controls must finish first")
+            for scan in (37, 110):
+                task(scan, "tail_control", ["tail_unshrunk_control"])
+            save("complete_waiting_transfer")
+            wait_marker("tail_control_transfer_verified")
+            save("complete")
+            return
         if args.counterexamples_only:
             if json.loads((root / "batch.json").read_text())["status"] != "complete_waiting_transfer":
                 raise ValueError("Original full15 batch must finish before extra controls")
