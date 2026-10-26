@@ -62,7 +62,9 @@ def readout(E, raw, calibration):
     if calibration["valid"]:
         mu = calibration["a"]*raw + calibration["b"]; q = calibration["q"]
         valid = np.isfinite(mu) & (mu > 0)
-        teacher[valid] = 1/mu[valid]
+        with np.errstate(over="ignore",divide="ignore",invalid="ignore"):inverse=1/mu
+        valid &= np.isfinite(inverse) & (inverse > 0)
+        teacher[valid] = inverse[valid]
         bounded = valid & np.isfinite(q) & (q >= 0) & (mu-q > 0) & np.isfinite(mu+q)
         lo[bounded], hi[bounded] = 1/(mu[bounded]+q), 1/(mu[bounded]-q)
         bounded &= np.isfinite(lo) & np.isfinite(hi) & (lo > 0) & (hi > 0)
@@ -149,8 +151,10 @@ def run(args):
                 re,te = _check_camera_projection(obs/f"scan{scan}/cameras.npz", dict(image_name=name,world_view_transform=w2c.T.tolist()), transform)
                 cameras[name] = dict(K=K,w2c=w2c,c2w=np.linalg.inv(w2c))
                 checks.append(dict(name=name,rotation_error=re,translation_error=te))
+                ids,counts=np.unique(row.point3D_ids[row.point3D_ids>=0],return_counts=True)
+                unique=set(ids[counts==1].tolist());checks[-1]["ambiguous_point_ids"]=int((counts>1).sum())
                 for pid,xy in zip(row.point3D_ids, row.xys):
-                    if pid >= 0: tracks.setdefault(int(pid), {})[name] = xy*np.array([sx,sy])-.5
+                    if int(pid) in unique: tracks.setdefault(int(pid), {})[name] = xy*np.array([sx,sy])-.5
             h,w = vm["image_size"]; Emap,mask = Emap.reshape(h,w),mask.reshape(h,w)
             image = [p for p in (obs/f"scan{scan}/images").iterdir() if p.stem == ref]
             if len(image) != 1: raise ValueError("Reference original image unavailable")
@@ -162,8 +166,9 @@ def run(args):
             with torch.inference_mode(): raw = model.infer_image(bgr, input_size=518).astype(np.float32)
             torch.cuda.synchronize(); inference_seconds = time.monotonic()-tick; check()
             if raw.shape != (h,w): raise ValueError("Prior dimensions")
-            row = extr[ref]; xyref = np.array([tracks[int(pid)][ref] if pid >= 0 else [np.nan,np.nan] for pid in row.point3D_ids])
-            fg,inside = bilinear(mask, xyref); candidates = [int(pid) for pid,ok in zip(row.point3D_ids,inside & (fg>=.5)) if ok and pid>=0 and len(tracks[int(pid)])>=5]
+            np.savez_compressed(scene/"raw_prior.npz",raw=raw)
+            row = extr[ref]; xyref = np.array([tracks.get(int(pid),{}).get(ref,[np.nan,np.nan]) for pid in row.point3D_ids])
+            fg,inside = bilinear(mask, xyref); candidates = [int(pid) for pid,ok in zip(row.point3D_ids,inside & (fg>=.5)) if ok and pid>=0 and ref in tracks.get(int(pid),{}) and len(tracks[int(pid)])>=5]
             rng = np.random.default_rng(20261027+scan); ids = np.sort(rng.choice(np.unique(candidates), min(256,len(set(candidates))), replace=False))
             projected = np.full((len(ids),2),np.nan); z = np.full(len(ids),np.nan); values=z.copy(); spread=z.copy(); reasons=[]; tick=time.monotonic()
             ci = cameras[ref]
@@ -190,8 +195,8 @@ def run(args):
             anchor_valid=np.isfinite(values)&np.isfinite(z)&(z>0)
             np.savez_compressed(scene/"calibration.npz",ids=ids,fit=fit&anchor_valid,calibration=(~fit)&anchor_valid,projected_xy=projected,z=z,raw=values,loo_displacement=spread,reason=np.asarray(reasons,dtype="U128"))
             np.savez_compressed(scene/"decisions.npz",xy=xy,E=E,raw=raw[y,x],params=json.dumps(calibration),**decision)
-            sealed={name:sha256(scene/name) for name in ("calibration.npz","decisions.npz")}
-            record=dict(status="partial",scan=scan,reference=ref,sealed_sha256=sealed,calibration=calibration,triangulation_reason_counts=dict(Counter(reasons)),samples=len(E),old_decision_sha256=old_sha,frame_sha256=frame_sha,image_sha256=sha256(image[0]),camera_checks=checks,timings=dict(inference=inference_seconds,triangulation=triangulation_seconds,calibration=calibration_seconds,readout=readout_seconds),cuda_peak_allocated_bytes=torch.cuda.max_memory_allocated())
+            sealed={name:sha256(scene/name) for name in ("calibration.npz","decisions.npz","raw_prior.npz")}
+            record=dict(status="partial",scan=scan,reference=ref,sealed_sha256=sealed,calibration=calibration,triangulation_reason_counts=dict(Counter(reasons)),samples=len(E),old_decision_sha256=old_sha,frame_sha256=frame_sha,image_sha256=sha256(image[0]),camera_checks=checks,timings=dict(inference=inference_seconds,triangulation=triangulation_seconds,calibration=calibration_seconds,readout=readout_seconds),cuda_peak_allocated_bytes=torch.cuda.max_memory_allocated(),cuda_peak_reserved_bytes=torch.cuda.max_memory_reserved())
             save(scene/"metadata.json",record); check()
             # Scanned geometry is first opened only after both decision artifacts are sealed.
             from scipy.spatial import cKDTree
