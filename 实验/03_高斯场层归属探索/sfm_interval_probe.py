@@ -19,8 +19,12 @@ def run(args):
     out.mkdir(parents=True)
     state = dict(status="partial", source=source_info(), completed=[], parameters=dict(
         scans=[37, 40], reference="0000", samples=512, tau_pixels=.5,
-        fit=[0, 2, 4, 6], gate=[1, 3], audit=[5, 7], seed=20261026),
+        fit=[0, 2, 4, 6], gate=[1, 3], audit=[5, 7], seed=20261026,
+        all_track_views=args.all_track_views),
         limitation="Sparse SfM feature observations already used for model initialization, not new training holdout or depth truth. E is bilinearly sampled at fractional feature coordinates, not a native pixel rerender. Scan NN is a diagnostic, not pixel GT or mesh gain. Total true matching/calibration bound .5px remains an assumption.")
+    if args.all_track_views:
+        state["parameters"].update(fit="3 largest geometric parallax among observed tracks",
+            gate="next2 geometric parallax",audit="all remaining observed tracks",minimum_available_nonref_views=6)
     save(out/"metadata.json", state)
     started = time.monotonic()
     verified = json.loads((args.observation_root.parent/"selected_local_verified.json").read_text())
@@ -42,6 +46,8 @@ def run(args):
         extr = {Path(v.name).stem:v for v in loader.read_extrinsics_binary(source/"sparse/0/images.bin").values()}
         names = next(json.loads(line)["nearest_name"] for line in (cache/"multi_view.json").read_text().splitlines()
                      if json.loads(line)["ref_name"] == "0000")
+        if args.all_track_views:
+            names = sorted(name for name in extr if name != "0000")
         frames, cameras, features = {}, {}, {}
         transform = np.asarray(meta["alignment"]["transform"])
         scale = float(meta["alignment"]["scale_to_dtu_mm"])
@@ -55,6 +61,7 @@ def run(args):
             fx, fy, cx, cy = k.params
             K = np.array([[sx*fx, 0, sx*cx-.5], [0, sy*fy, sy*cy-.5], [0, 0, 1.]])
             np.testing.assert_allclose([K[0, 0], K[1, 1]], vm["focal"], rtol=0, atol=3e-4)
+            np.testing.assert_allclose(K[:2, 2], [(w-1)/2., (h-1)/2.], rtol=0, atol=1e-8)
             w2c = np.eye(4);w2c[:3, :3] = row.qvec2rotmat();w2c[:3, 3] = row.tvec
             w2c = w2c.astype(np.float32).astype(float)
             _check_camera_projection(source/"cameras.npz",dict(image_name=name,world_view_transform=w2c.T.tolist()),transform)
@@ -72,24 +79,65 @@ def run(args):
         take = np.sort(np.random.default_rng(20261026+scan).choice(eligible,size=min(512,len(eligible)),replace=False))
         ids,xy,E = ids[take],xy[take],E[take].astype(float)
         if len(ids) == 0:raise ValueError("No foreground sparse observations")
-        lower = np.full((8,len(ids)),np.nan);upper = lower.copy();valid = np.zeros(lower.shape,bool)
-        q_all = np.full((8,len(ids),2),np.nan)
+        if args.all_track_views:
+            previous = out.parent/f"sfm_interval_v1/scan{scan}_view0000/decisions.npz"
+            with np.load(previous) as old:
+                np.testing.assert_array_equal(ids,old["point_ids"])
+                np.testing.assert_array_equal(xy,old["xy"])
+                np.testing.assert_array_equal(E,old["E"])
+        roles = None
+        if args.all_track_views:
+            # Availability and camera geometry only: no q residual/scan score
+            # chooses roles. Reserve >=1 observed view for coordinate audit.
+            seen = np.array([[int(pid) in features[name] for pid in ids] for name in names])
+            parallax = np.zeros(seen.shape)
+            step = np.maximum(np.abs(E), 1.)*1e-5
+            for j, name in enumerate(names):
+                p0,z0 = ray_projection(xy,E,cameras["0000"],cameras[name])
+                p1,z1 = ray_projection(xy,E+step,cameras["0000"],cameras[name])
+                score = np.linalg.norm(p1-p0,axis=1)/step
+                parallax[j] = np.where(seen[j] & np.isfinite(score) & (z0>0) & (z1>0),score,0.)
+            roles = np.full((5,len(ids)),-1,dtype=int)
+            for k in range(len(ids)):
+                order = np.argsort(-parallax[:,k],kind="stable")
+                available = order[parallax[order,k]>1e-12]
+                if len(available)>=6:roles[:,k] = available[:5]
+            lower = np.full((5,len(ids)),np.nan)
+            decision_views = range(len(names));fit_roles,gate_roles = [0,1,2],[3,4]
+        else:
+            lower = np.full((8,len(ids)),np.nan)
+            decision_views = (0,2,4,6,1,3);fit_roles,gate_roles = [0,2,4,6],[1,3]
+        upper = lower.copy();valid = np.zeros(lower.shape,bool)
+        q_all = np.full((len(names),len(ids),2),np.nan)
         # Only fit/gate observations enter the decision. Audit feature matches are read afterwards.
-        for j in (0,2,4,6,1,3):
-            name = names[j];q = np.array([features[name].get(int(pid),[np.nan,np.nan]) for pid in ids])
+        for j in decision_views:
+            name = names[j]
+            used = np.any(roles==j,axis=0) if roles is not None else np.ones(len(ids),bool)
+            q = np.array([features[name].get(int(pid),[np.nan,np.nan]) if take else [np.nan,np.nan] for pid,take in zip(ids,used)])
             lo,hi,ok = depth_interval(xy,E,q,cameras["0000"],cameras[name],tau=.5)
             mask,inside = bilinear(frames[name]["gt_mask"].astype(float),q)
-            lower[j],upper[j],valid[j] = lo,hi,ok & inside & (mask>=1-1e-9)
+            if roles is None:
+                lower[j],upper[j],valid[j] = lo,hi,ok & inside & (mask>=1-1e-9)
+            else:
+                for slot in range(5):
+                    use = roles[slot]==j
+                    lower[slot,use],upper[slot,use],valid[slot,use] = lo[use],hi[use],(ok & inside & (mask>=1-1e-9))[use]
             q_all[j] = q
-        result = solve_intervals(E,lower,upper,valid)
+        result = solve_intervals(E,lower,upper,valid,fit=fit_roles,gate=gate_roles)
         D,accept = result["selected"],result["accept"]
         scene = out/f"scan{scan}_view0000";scene.mkdir()
         np.savez_compressed(scene/"decisions.npz",point_ids=ids,xy=xy,E=E,selected=D,accept=accept,
-                            lower=lower,upper=upper,valid=valid,q=q_all,**{k:v for k,v in result.items() if k not in ("selected","accept")})
+                            lower=lower,upper=upper,valid=valid,q=q_all,
+                            role_views=roles if roles is not None else np.empty((0,len(ids)),int),
+                            camera_names=np.array(names),**{k:v for k,v in result.items() if k not in ("selected","accept")})
         sealed = sha256(scene/"decisions.npz")
         audit_errors = []
-        for j in (5,7):
-            name = names[j];q = np.array([features[name].get(int(pid),[np.nan,np.nan]) for pid in ids])
+        audit_available = 0
+        for j in (range(len(names)) if roles is not None else (5,7)):
+            name = names[j]
+            unused = ~np.any(roles==j,axis=0) if roles is not None else np.ones(len(ids),bool)
+            q = np.array([features[name].get(int(pid),[np.nan,np.nan]) if take else [np.nan,np.nan] for pid,take in zip(ids,unused)])
+            audit_available += int((accept & np.isfinite(q).all(axis=1)).sum())
             pE,_ = ray_projection(xy,E,cameras["0000"],cameras[name]);pD,_ = ray_projection(xy,D,cameras["0000"],cameras[name])
             audit_errors.append(np.column_stack((np.linalg.norm(pE-q,axis=1),np.linalg.norm(pD-q,axis=1))))
         error = np.stack(audit_errors);audit_take = accept[None,:] & np.isfinite(error).all(axis=2)
@@ -108,7 +156,9 @@ def run(args):
         keys,counts = np.unique(result["reason"],return_counts=True)
         row = dict(scan=scan,view="0000",samples=len(ids),accepted=int(accept.sum()),
             reason_counts=dict(zip(keys.tolist(),counts.astype(int).tolist())),decisions_sha256=sealed,
-            audit_pairs=int(audit_take.sum()),audit_coverage=float(audit_take.sum()/(2*accept.sum())) if accept.any() else None,
+            audit_pairs=int(audit_take.sum()),audit_available_track_pairs=audit_available,
+            audit_coverage=float(audit_take.sum()/audit_available) if audit_available else None,
+            audit_coverage_definition="finite pairs / available unused-track pairs for changed features",
             audit_before_mean_px=float(error[:,:,0][audit_take].mean()) if audit_take.any() else None,
             audit_after_mean_px=float(error[:,:,1][audit_take].mean()) if audit_take.any() else None,
             nn_proxy={k:dict(n=len(v),mean=float(v.mean()),median=float(np.median(v)),p95=float(np.quantile(v,.95))) for k,v in errors.items()},
@@ -123,4 +173,5 @@ def run(args):
 if __name__ == "__main__":
     p=argparse.ArgumentParser(description=__doc__);p.add_argument("--observation-root",type=Path,required=True)
     p.add_argument("--output",type=Path,required=True);p.add_argument("--max-seconds",type=int,default=900)
+    p.add_argument("--all-track-views",action="store_true",help="Same interval rule; geometry-only fit3/gate2 among all available tracks, reserve audit")
     run(p.parse_args())
