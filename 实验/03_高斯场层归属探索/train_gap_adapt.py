@@ -58,6 +58,7 @@ def apply_loss_backward(base, weighted_gap, parameters, route, verify=False):
     expected=extra if before['xyz'] is None else before['xyz']+extra
     if not torch.equal(xyz.grad,expected): raise ValueError('xyz gradient sum differs')
     b=before['xyz'];bn=0. if b is None else float(b.norm());en=float(extra.norm())
+    if en<=0:raise ValueError('Route QA needs a nonzero added xyz gradient, not baseline-only motion')
     cosine=None if b is None or bn==0 or en==0 else float((b*extra).sum())/(bn*en)
     return dict(status='PASS_exact_direct_route',forbidden=('scaling','rotation','opacity'),
         forbidden_gradient_bitwise_unchanged=True,xyz_addition_bitwise_equal=True,
