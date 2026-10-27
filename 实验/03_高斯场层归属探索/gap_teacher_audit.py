@@ -422,8 +422,8 @@ def native_operator_check(args):
                 flattened_indices_changed=not np.array_equal(flat,initial_flat),
                 original_cached_index_mismatches=int(np.count_nonzero(stale_w!=initial_weight)),
                 old_width_boundary_mismatches=int(np.count_nonzero(boundary_bad)),
-                old_boundary_disagreements=[dict(xyz=xyz[i],uv=[u[i],v[i]],actual=actual_w[i],
-                    wrong_width_bound=old_boundary_weight[i],native_width_minus_one=weight[i])
+                old_boundary_disagreements=[dict(xyz=xyz[i].tolist(),uv=[float(u[i]),float(v[i])],actual=float(actual_w[i]),
+                    wrong_width_bound=float(old_boundary_weight[i]),native_width_minus_one=float(weight[i]))
                     for i in np.flatnonzero(boundary_bad)[:32]],
                 corrected_weight_mismatches=int(np.count_nonzero(actual_w!=weight))))
             evidence=args.output/('native_operator_frame_'+name+'_'+str(frame)+'.json')
