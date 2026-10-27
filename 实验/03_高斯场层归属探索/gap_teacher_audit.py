@@ -398,6 +398,22 @@ def native_operator_check(args):
             grid.integrate(block_keys,image,intrinsic,extrinsic,1.,float(depth_max),8.)
             actual_w=grid.attribute('weight').numpy().reshape(-1)[flat]
             actual_phi=grid.attribute('tsdf').numpy().reshape(-1)[flat]
+            if not np.array_equal(actual_w,weight):
+                # Collect evidence before changing physics or numerical tolerances.
+                after_xyz,after_indices=grid.voxel_coordinates_and_flattened_indices()
+                after_xyz=after_xyz.numpy();after_flat=after_indices.numpy().ravel()
+                same_keys={tuple(q):i for i,q in enumerate(xyz)}
+                old_order=np.array([same_keys[tuple(q)] for q in after_xyz],dtype=int)
+                fresh_w=grid.attribute('weight').numpy().reshape(-1)[after_flat]
+                probe=dict(status='FAILED_weight_bridge_pending_layout_or_operator_diagnosis',source=source,
+                    case=name,depth=depth,voxels=len(weight),old_index_mismatches=int(np.count_nonzero(actual_w!=weight)),
+                    coordinate_order_changed=not np.array_equal(after_xyz,xyz),
+                    flattened_indices_changed=not np.array_equal(after_flat,flat),
+                    remapped_index_mismatches=int(np.count_nonzero(fresh_w!=weight[old_order])),
+                    interpretation='Index-layout suspicion is not a proven cause until this recorded comparison is executed; no mask or tolerance is changed.')
+                failure=args.output/'native_operator_check_layout_probe.json'
+                if failure.exists():raise ValueError('Prior layout failure preserved; use a new diagnostic directory')
+                save(failure,probe)
             np.testing.assert_array_equal(actual_w,weight)
             np.testing.assert_array_equal(actual_w>0,weight>0)
             error=float(np.abs(actual_phi-tsdf).max());maximum_error=max(maximum_error,error)
