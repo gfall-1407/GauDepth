@@ -374,19 +374,16 @@ def native_operator_check(args):
     intrinsic=o3d.core.Tensor([[4.,0.,2.],[0.,4.,2.],[0.,0.,1.]],o3d.core.Dtype.Float64)
     extrinsic=o3d.core.Tensor.eye(4,o3d.core.Dtype.Float64)
     block_keys=o3d.core.Tensor(keys);cases=[]
-    for name,depths in [('plane2',[2.]),('invalid_zero',[0.]),('invalid_above_depthmax',[9.]),('two_frames2then4',[2.,4.])]:
-        grid=o3d.t.geometry.VoxelBlockGrid(attr_names=('tsdf','weight'),
-            attr_dtypes=(o3d.core.Dtype.Float32,o3d.core.Dtype.Float32),attr_channels=((1),(1)),
-            voxel_size=float(voxel),block_resolution=4,block_count=128,device=o3d.core.Device('CPU:0'))
-        grid.hashmap().activate(block_keys)
-        # CPU NumPy views share these native Tensor buffers; no torch API here.
-        grid.attribute('tsdf').numpy().fill(0);grid.attribute('weight').numpy().fill(0)
-        coordinates,indices=grid.voxel_coordinates_and_flattened_indices()
-        xyz=coordinates.numpy();flat=indices.numpy().ravel();z=xyz[:,2]
+    def reference(xyz,depths,native_boundary=True):
+        z=xyz[:,2]
         with np.errstate(divide='ignore',invalid='ignore'):
-            u=xyz[:,0]*np.float32(4)/z+np.float32(2);v=xyz[:,1]*np.float32(4)/z+np.float32(2)
-        projected=np.isfinite(u)&np.isfinite(v)&(u>=0)&(u<5)&(v>=0)&(v<5)&(z>0)
-        tsdf=np.zeros(len(z),np.float32);weight=tsdf.copy();maximum_error=0.;behind_skipped=0
+            inv_z=np.float32(1)/z
+            u=np.float32(4)*xyz[:,0]*inv_z+np.float32(2)
+            v=np.float32(4)*xyz[:,1]*inv_z+np.float32(2)
+        # GeometryIndexer.h InBoundary(float,float): inclusive width-1/height-1.
+        boundary=((u<=4)&(v<=4)) if native_boundary else ((u<5)&(v<5))
+        projected=np.isfinite(u)&np.isfinite(v)&(u>=0)&(v>=0)&boundary&(z>0)
+        tsdf=np.zeros(len(z),np.float32);weight=tsdf.copy();behind=0
         for depth in depths:
             d=np.float32(depth);sdf=d-z
             valid=projected&(d>0)&(d<=depth_max)&(sdf>=-trunc)
@@ -394,37 +391,55 @@ def native_operator_check(args):
             inv=np.float32(1)/(weight[valid]+np.float32(1))
             tsdf[valid]=(weight[valid]*tsdf[valid]+observation[valid])*inv
             weight[valid]+=np.float32(1)
+            if 0<depth<=depth_max:behind+=int(np.sum(projected&(sdf<-trunc)))
+        return tsdf,weight,behind,u,v
+    for name,depths in [('plane2',[2.]),('invalid_zero',[0.]),('invalid_above_depthmax',[9.]),('two_frames2then4',[2.,4.])]:
+        grid=o3d.t.geometry.VoxelBlockGrid(attr_names=('tsdf','weight'),
+            attr_dtypes=(o3d.core.Dtype.Float32,o3d.core.Dtype.Float32),attr_channels=((1),(1)),
+            voxel_size=float(voxel),block_resolution=4,block_count=128,device=o3d.core.Device('CPU:0'))
+        grid.hashmap().activate(block_keys)
+        grid.attribute('tsdf').numpy().fill(0);grid.attribute('weight').numpy().fill(0)
+        initial_xyz,initial_indices=grid.voxel_coordinates_and_flattened_indices()
+        initial_xyz=initial_xyz.numpy().copy();initial_flat=initial_indices.numpy().ravel().copy()
+        maximum_error=0.;frames=[]
+        for frame,depth in enumerate(depths):
+            d=np.float32(depth)
             image=o3d.t.geometry.Image(o3d.core.Tensor(np.full((5,5),d,np.float32)))
             grid.integrate(block_keys,image,intrinsic,extrinsic,1.,float(depth_max),8.)
+            coordinates,indices=grid.voxel_coordinates_and_flattened_indices()
+            xyz=coordinates.numpy();flat=indices.numpy().ravel()
+            # Activation inside integrate may reallocate indices; compare physical voxels.
+            if {tuple(q) for q in xyz}!={tuple(q) for q in initial_xyz}:
+                raise ValueError('Physical voxel domain unexpectedly changed')
+            tsdf,weight,behind,u,v=reference(xyz,depths[:frame+1])
             actual_w=grid.attribute('weight').numpy().reshape(-1)[flat]
             actual_phi=grid.attribute('tsdf').numpy().reshape(-1)[flat]
-            if not np.array_equal(actual_w,weight):
-                # Collect evidence before changing physics or numerical tolerances.
-                after_xyz,after_indices=grid.voxel_coordinates_and_flattened_indices()
-                after_xyz=after_xyz.numpy();after_flat=after_indices.numpy().ravel()
-                same_keys={tuple(q):i for i,q in enumerate(xyz)}
-                old_order=np.array([same_keys[tuple(q)] for q in after_xyz],dtype=int)
-                fresh_w=grid.attribute('weight').numpy().reshape(-1)[after_flat]
-                probe=dict(status='FAILED_weight_bridge_pending_layout_or_operator_diagnosis',source=source,
-                    case=name,depth=depth,voxels=len(weight),old_index_mismatches=int(np.count_nonzero(actual_w!=weight)),
-                    coordinate_order_changed=not np.array_equal(after_xyz,xyz),
-                    flattened_indices_changed=not np.array_equal(after_flat,flat),
-                    remapped_index_mismatches=int(np.count_nonzero(fresh_w!=weight[old_order])),
-                    interpretation='Index-layout suspicion is not a proven cause until this recorded comparison is executed; no mask or tolerance is changed.')
-                failure=args.output/'native_operator_check_layout_probe.json'
-                if failure.exists():raise ValueError('Prior layout failure preserved; use a new diagnostic directory')
-                save(failure,probe)
+            _,old_boundary_weight,_,_,_=reference(xyz,depths[:frame+1],False)
+            boundary_bad=actual_w!=old_boundary_weight
+            stale_w=grid.attribute('weight').numpy().reshape(-1)[initial_flat]
+            _,initial_weight,_,_,_=reference(initial_xyz,depths[:frame+1])
+            frames.append(dict(frame=frame,depth=depth,
+                flattened_indices_changed=not np.array_equal(flat,initial_flat),
+                original_cached_index_mismatches=int(np.count_nonzero(stale_w!=initial_weight)),
+                old_width_boundary_mismatches=int(np.count_nonzero(boundary_bad)),
+                old_boundary_disagreements=[dict(xyz=xyz[i],uv=[u[i],v[i]],actual=actual_w[i],
+                    wrong_width_bound=old_boundary_weight[i],native_width_minus_one=weight[i])
+                    for i in np.flatnonzero(boundary_bad)[:32]],
+                corrected_weight_mismatches=int(np.count_nonzero(actual_w!=weight))))
+            evidence=args.output/('native_operator_frame_'+name+'_'+str(frame)+'.json')
+            if evidence.exists():raise ValueError('Prior frame evidence preserved; use new diagnostic directory')
+            save(evidence,dict(source=source,case=name,frame=frames[-1]))
             np.testing.assert_array_equal(actual_w,weight)
             np.testing.assert_array_equal(actual_w>0,weight>0)
             error=float(np.abs(actual_phi-tsdf).max());maximum_error=max(maximum_error,error)
             if error>8*np.finfo(np.float32).eps:raise ValueError('Fixed float32 TSDF budget exceeded; inspect operator, not GT')
-            if 0<depth<=depth_max:behind_skipped+=int(np.sum(projected&(sdf<-trunc)))
-        cases.append(dict(case=name,voxels=len(z),updated_voxels=int((weight>0).sum()),
+        cases.append(dict(case=name,voxels=len(xyz),updated_voxels=int((weight>0).sum()),
             update_mask_and_weight='PASS_exact',tsdf_max_abs_error=maximum_error,
-            behind_truncation_skipped_n=behind_skipped))
+            behind_truncation_skipped_n=behind,frames=frames))
     report=dict(status='PASS_localCPU_constant_image_identity_camera_delta_bridge_only',source=source,
         open3d=o3d.__version__,voxel_size=float(voxel),trunc_voxel_multiplier=8.,sdf_trunc=float(trunc),depth_scale=1.,depth_max=float(depth_max),cases=cases,
         source_reference='https://raw.githubusercontent.com/isl-org/Open3D/v0.19.0/cpp/open3d/t/geometry/kernel/VoxelBlockGridImpl.h',
+        boundary_reference='https://raw.githubusercontent.com/isl-org/Open3D/v0.19.0/cpp/open3d/t/geometry/kernel/GeometryIndexer.h',
         limitation='Native skip mask and observation weight are separate from symmetric clipped-location toy. No remote package version proof, arbitrary-camera/nonconstant-pixel sampling bridge, full ray-distribution integration, model gradient, real scene or reconstruction evidence. All remain pending.')
     save(destination,report);print(json.dumps(report))
 
