@@ -379,7 +379,8 @@ def native_operator_check(args):
             attr_dtypes=(o3d.core.Dtype.Float32,o3d.core.Dtype.Float32),attr_channels=((1),(1)),
             voxel_size=float(voxel),block_resolution=4,block_count=128,device=o3d.core.Device('CPU:0'))
         grid.hashmap().activate(block_keys)
-        grid.attribute('tsdf').fill_(0);grid.attribute('weight').fill_(0)
+        # CPU NumPy views share these native Tensor buffers; no torch API here.
+        grid.attribute('tsdf').numpy().fill(0);grid.attribute('weight').numpy().fill(0)
         coordinates,indices=grid.voxel_coordinates_and_flattened_indices()
         xyz=coordinates.numpy();flat=indices.numpy().ravel();z=xyz[:,2]
         with np.errstate(divide='ignore',invalid='ignore'):
