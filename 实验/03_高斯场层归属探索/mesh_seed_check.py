@@ -38,6 +38,36 @@ scope.update(__file__=script, ThreadPool=ThreadPool)
 exec(compile(source, script, "exec"), scope)
 '''
 
+AUDIT_AFTER_SCORE = r'''
+# Post-computation inspection only: results.json was already written above.
+def _audit_distribution(values):
+    x=np.asarray(values).reshape(-1)
+    if not len(x) or not np.isfinite(x).all():raise ValueError('Invalid scored distances')
+    edges=[0.,.2,.5,1.,2.,5.,10.,20.,np.inf]
+    counts=np.histogram(x,bins=edges)[0]
+    sums=[float(x[(x>=lo)&(x<hi)].sum()) for lo,hi in zip(edges[:-1],edges[1:])]
+    retained=x<max_dist
+    return dict(n=len(x),below_cutoff_n=int(retained.sum()),excluded_n=int((~retained).sum()),
+        native_truncated_mean=float(x[retained].mean()),untruncated_mean=float(x.mean()),
+        capped_mean=float(np.minimum(x,max_dist).mean()),
+        quantiles=dict(zip(['min','p50','p90','p95','p99','max'],np.quantile(x,[0,.5,.9,.95,.99,1.]).tolist())),
+        bin_edges_mm=['0','.2','.5','1','2','5','10','20','inf'],bin_counts=counts.tolist(),bin_distance_sums_mm=sums)
+_audit_d2s=_audit_distribution(dist_d2s);_audit_s2d=_audit_distribution(dist_s2d)
+if not np.isclose(_audit_d2s['native_truncated_mean'],mean_d2s,rtol=1e-12,atol=1e-12):raise ValueError('D2S inspection changed the scored quantity')
+if not np.isclose(_audit_s2d['native_truncated_mean'],mean_s2d,rtol=1e-12,atol=1e-12):raise ValueError('S2D inspection changed the scored quantity')
+np.savez_compressed(Path(args.vis_out_dir)/'retained_scoring_points.npz',
+    d2s_points_mm=data_in_obs,d2s_distance_mm=dist_d2s[:,0],
+    s2d_gt_index=np.flatnonzero(above),s2d_distance_mm=dist_s2d[:,0])
+_audit=dict(input_vertices_n=len(vertices),input_triangles_n=len(triangles),
+    nonzero_triangles_n=len(area2),mesh_area_mm2=float(area2.sum()/2),
+    surface_sample_before_thinning_n=len(data_pcd),after_thinning_n=len(data_down),
+    bbox_n=len(data_in),grid_inbound_n=int(grid_inbound.sum()),obs_mask_n=len(data_in_obs),
+    gt_total_n=len(stl),gt_above_plane_n=len(stl_above),max_distance_mm=float(max_dist),
+    downsample_radius_mm=float(thresh),d2s=_audit_d2s,s2d=_audit_s2d)
+import json as _audit_json
+(Path(args.vis_out_dir)/'score_diagnostics.json').write_text(_audit_json.dumps(_audit,indent=2),encoding='utf-8')
+'''
+
 
 def run(args):
     if git("status", "--short") or git("remote", "get-url", "origin") != "git@github.com:gfall-1407/GauDepth.git":
@@ -168,6 +198,61 @@ def run_training(args):
         state.update(status='partial',error=repr(exc));atomic_json(out/'metadata.json',state);raise
 
 
+def run_frozen_audit(args):
+    """Inspect exactly two original aligned E/gap meshes and preserve distances."""
+    if git('status','--porcelain') or git('remote','get-url','origin')!='git@github.com:gfall-1407/GauDepth.git':
+        raise ValueError('Require clean committed approved source')
+    root=args.frozen_score_audit.resolve();out=args.output.resolve()
+    if not args.output.is_absolute() or out.exists():raise ValueError('New independent diagnostic output required')
+    meta=json.loads((root/'metadata.json').read_text(encoding='utf-8'));scan=int(meta['scan'])
+    manifest=json.loads(args.transfer_manifest.read_text(encoding='utf-8'))
+    if meta['status']!='complete' or Path(manifest['root']).name!=root.parent.name:
+        raise ValueError('Expected complete transferred frozen native scene')
+    source_files={x['file']:x['sha256'] for x in manifest['files']}
+    if sha256(root/'metadata.json')!=source_files[f'{root.name}/metadata.json']:
+        raise ValueError('Primary native metadata SHA differs')
+    evaluator=ROOT/'dtu_eval/eval.py'
+    normalized=__import__('hashlib').sha256(evaluator.read_text(encoding='utf-8').encode()).hexdigest()
+    if normalized!=meta['dtu_eval_sha256']:raise ValueError('Native evaluator source differs')
+    canonical=json.loads((HERE/'G1_Huber全场景输入参考.json').read_text(encoding='utf-8'))['scans'][str(scan)]
+    for rel in (f'Points/stl/stl{scan:03d}_total.ply',f'ObsMask/ObsMask{scan}_10.mat',f'ObsMask/Plane{scan}.mat'):
+        if sha256(args.root/rel)!=canonical['gt_inputs'][rel]:raise ValueError('Canonical evaluation input differs')
+    for method in ('native_expected','gap_huber'):
+        mesh=root/method/'recon_aligned.ply';relative=f'{root.name}/{method}/recon_aligned.ply'
+        if sha256(mesh)!=source_files[relative] or sha256(mesh)!=meta['results'][method]['aligned_sha256']:
+            raise ValueError('Original aligned mesh SHA differs')
+    out.mkdir();state=dict(status='partial',source_commit=git('rev-parse','HEAD'),scan=scan,seed=20261026,jobs=[],
+        evaluator_normalized_sha256=normalized,transfer_manifest_sha256=sha256(args.transfer_manifest),
+        protocol='Original scorer and fixed seed26 with ordered ThreadPool8. Diagnostics only read arrays after the original three metrics were written. No change to meshes, GT, alignment, sampling, masks or cutoffs. Ray-NN and mesh denominators remain distinct; histogram differences are descriptive, not causal shares.')
+    atomic_json(out/'metadata.json',state);deadline=time.monotonic()+args.max_seconds
+    try:
+        for method in ('native_expected','gap_huber'):
+            remaining=deadline-time.monotonic()
+            if remaining<10 or (out/'stop_after_score').exists():raise TimeoutError('Full-score boundary stop/deadline')
+            dest=out/method;dest.mkdir();mesh=root/method/'recon_aligned.ply'
+            command=[sys.executable,'-c',CHILD+AUDIT_AFTER_SCORE,str(evaluator),'20261026','--data',str(mesh),
+                '--scan',str(scan),'--mode','mesh','--dataset_dir',str(args.root),'--vis_out_dir',str(dest)]
+            with (dest/'evaluation.log').open('w') as log:
+                child=subprocess.Popen(command,cwd=ROOT,stdin=subprocess.DEVNULL,stdout=log,stderr=subprocess.STDOUT)
+                state['active']=dict(method=method,pid=child.pid);atomic_json(out/'metadata.json',state)
+                try:code=child.wait(timeout=min(600,remaining))
+                except subprocess.TimeoutExpired:
+                    child.kill();child.wait();raise TimeoutError('Bounded diagnostic scorer timed out')
+            if code:raise RuntimeError('Native score inspection failed: '+method)
+            score=json.loads((dest/'results.json').read_text(encoding='utf-8'));primary=meta['results'][method]['scores']
+            if any(abs(score[k]-primary[k])>1e-9 for k in ('mean_d2s','mean_s2d','overall')):
+                raise ValueError('Inspection does not reproduce original native score; do not compare distributions')
+            row=dict(method=method,scores=score,mesh_sha256=sha256(mesh),
+                diagnostics=json.loads((dest/'score_diagnostics.json').read_text(encoding='utf-8')),
+                results_sha256=sha256(dest/'results.json'),diagnostics_sha256=sha256(dest/'score_diagnostics.json'),
+                retained_points_sha256=sha256(dest/'retained_scoring_points.npz'))
+            state['jobs'].append(row);atomic_json(out/'metadata.json',state)
+            print(json.dumps(dict(method=method,scores=score,d2s_n=row['diagnostics']['d2s']['n'])),flush=True)
+        state.update(status='complete',active=None);atomic_json(out/'metadata.json',state)
+    except BaseException as exc:
+        state.update(status='partial',error=repr(exc));atomic_json(out/'metadata.json',state);raise
+
+
 if __name__ == "__main__":
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--root", type=Path, required=True)
@@ -177,8 +262,12 @@ if __name__ == "__main__":
     p.add_argument('--transfer-manifest',type=Path)
     p.add_argument('--teacher-metadata',type=Path)
     p.add_argument('--training-arms',nargs='+',default=['control','gap_train','xyz_train'])
+    p.add_argument('--frozen-score-audit',type=Path)
     a=p.parse_args()
-    if a.training_batch:
+    if a.frozen_score_audit:
+        if not a.transfer_manifest:p.error('Transferred manifest required')
+        run_frozen_audit(a)
+    elif a.training_batch:
         if not a.transfer_manifest or not a.teacher_metadata:p.error('Transferred manifest and teacher metadata required')
         run_training(a)
     else:run(a)
