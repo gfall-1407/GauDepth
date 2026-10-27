@@ -315,6 +315,53 @@ def native_alignment_audit(args):
     print(json.dumps(records))
 
 
+def clipped_location_field(z,w,t,h):
+    """Symmetric location-mixture toy, NOT the unverified native TSDF operator."""
+    z,w,t=np.asarray(z,dtype=float),np.asarray(w,dtype=float),np.asarray(t,dtype=float)
+    if z.ndim!=1 or z.shape!=w.shape or not len(z) or not np.isfinite(z).all() or not np.isfinite(w).all() or np.any(w<0) or w.sum()<=0:
+        raise ValueError('Finite locations and nonnegative nonzero weights required')
+    if not np.isfinite(t).all() or not np.isfinite(h) or h<=0:raise ValueError('Finite queries/positive bandwidth required')
+    d=(z-t[...,None])/h
+    phi=(w*np.clip(d,-1.,1.)).sum(axis=-1)/w.sum()
+    negative_derivative=(w*(np.abs(d)<1.)).sum(axis=-1)/(h*w.sum())
+    return phi,negative_derivative
+
+
+def mixture_operator_check(args):
+    destination=args.output/'mixture_operator_check.json'
+    if not args.output.is_absolute() or not args.output.is_dir() or destination.exists():
+        raise ValueError('Existing absolute result directory and new toy output required')
+    source=source_info();h=1.;offset=2.
+    z=[offset,10.+offset,2.+offset];w=[.51,.49,1.]
+    root_a=offset+49/51;root_b=offset+2.;point_root=offset+151/102;mixture_root=offset+1.98
+    def field(t):return clipped_location_field(z,w,t,h)
+    assert abs(float(clipped_location_field(z[:2],w[:2],root_a,h)[0]))<1e-12
+    assert abs(float(field(mixture_root)[0]))<1e-12
+    assert abs(float(clipped_location_field([root_a,root_b],[1.,1.],point_root,h)[0]))<1e-12
+    assert abs(point_root-mixture_root)>.49 and abs(float(field(point_root)[0]))>.2
+    grid=np.linspace(offset-2,offset+14,65)
+    delta,_=clipped_location_field([offset+2],[.37],grid,h)
+    np.testing.assert_allclose(delta,np.clip((offset+2-grid)/h,-1,1),atol=1e-15,rtol=0)
+    linear_z=np.array([.9,1.1,1.2])+offset;linear_w=np.array([.2,.3,.5]);t=np.array([.8,1.,1.3])+offset
+    phi,slope=clipped_location_field(linear_z,linear_w,t,2.)
+    np.testing.assert_allclose(phi,((linear_z@linear_w)-t)/2,atol=1e-15,rtol=0)
+    np.testing.assert_allclose(slope,.5,atol=1e-15,rtol=0)
+    plateau,plateau_slope=clipped_location_field([offset,offset+10],[.5,.5],np.array([2,4,6,8])+offset,h)
+    np.testing.assert_array_equal(plateau,np.zeros(4));np.testing.assert_array_equal(plateau_slope,np.zeros(4))
+    probes=np.array([.3,.8,1.8,2.3])+offset;eps=1e-6
+    finite_difference=(field(probes+eps)[0]-field(probes-eps)[0])/(2*eps)
+    derivative_error=float(np.max(np.abs(finite_difference+field(probes)[1])))
+    if derivative_error>1e-8:raise ValueError('Mixture-field derivative formula failed')
+    report=dict(status='mathematical_checks_PASS_native_TSDF_bridge_PENDING',source=source,
+        assumptions='One-dimensional same-axis symmetric clipping; equal total view weights; arbitrary toy h1, not asserted to be native TSDF truncation.',
+        distributions=[dict(z=z[:2],w=w[:2]),dict(z=[z[2]],w=[1.])],
+        separate_view_roots=[root_a,root_b],root_after_point_compression=point_root,
+        root_after_distribution_pooling=mixture_root,root_difference=mixture_root-point_root,
+        derivative_max_error=derivative_error,delta_and_linear_regime='PASS',zero_interval='PASS_nonunique_not_surface_guarantee',
+        limitation='This proves noncommutation and lost local support slope only. Same-model rendering weights are not calibrated physical probabilities. Native pixel sampling, visibility/negative-truncation skipping, weight update and delta-E TSDF/weight/update-mask agreement remain unverified. Detached reader has no trainable distribution gradient. No scene, mesh, efficiency, novelty or stable-algorithm claim.')
+    save(destination,report);print(json.dumps(report))
+
+
 if __name__ == "__main__":
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--output", type=Path, required=True)
@@ -326,8 +373,10 @@ if __name__ == "__main__":
     p.add_argument("--evaluate", action="store_true")
     p.add_argument('--truncation-audit',action='store_true')
     p.add_argument('--native-alignment-audit',action='store_true')
+    p.add_argument('--mixture-operator-check',action='store_true')
     a = p.parse_args()
-    if a.native_alignment_audit:native_alignment_audit(a)
+    if a.mixture_operator_check:mixture_operator_check(a)
+    elif a.native_alignment_audit:native_alignment_audit(a)
     elif a.truncation_audit:truncation_audit(a)
     elif a.evaluate: evaluate(a)
     else: diagnose(a)
