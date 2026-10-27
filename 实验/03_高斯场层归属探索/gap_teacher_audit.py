@@ -650,6 +650,66 @@ def native_mixture_ray_audit(args):
     save(args.output/'native_mixture_ray_audit.json',report);print(json.dumps(report))
 
 
+def native_mixture_context_audit(args):
+    """All other views remain delta-E; this is not full-distribution fusion."""
+    from gap_huber_probe import locate_sample
+    parent=args.output.parent/'native_mixture_rays_v1'
+    if not args.output.is_absolute() or args.output.exists() or not (parent/'native_mixture_ray_audit.json').is_file():raise ValueError('Sealed ray audit and new absolute output required')
+    args.output.mkdir(parents=True);source=source_info();started=time.monotonic();summaries=[]
+    h=float(np.float32(.002)*np.float32(8))
+    def quantiles(values):
+        return None if not len(values) else np.quantile(values,[0,.1,.5,.9,1]).tolist()
+    for scan in (40,63):
+        meta,cameras,frames,_,provenance=checked_scan(scan,args)
+        source_name=meta['views'][0]['name'];scene_path=parent/f'scan{scan}.json'
+        sealed=json.loads(scene_path.read_text(encoding='utf-8'))
+        sample_root=locate_sample(HERE/'结果',scan,0);sm=json.loads((sample_root/'metadata.json').read_text(encoding='utf-8'))
+        vm=next(v for v in sm['views'] if v['view_index']==0);ray_path=sample_root/vm['file']
+        if sha256(ray_path)!=sealed['ray_npz_sha256'] or vm['npz_sha256']!=sealed['ray_npz_sha256']:raise ValueError('Ray source differs')
+        d=np.load(ray_path);items=[];points=[]
+        for row in sealed['rows']:
+            if row['status']!='diagnosed':continue
+            ray=row['ray'];a,b=d['offsets'][ray:ray+2];z=d['depth'][a:b];w=d['weight'][a:b]
+            t=np.array(row['zero_roots']);n,m=native_distribution_field(z,w,t,h)
+            xy=np.repeat(np.array(row['pixel'])[None,:],len(t),axis=0)
+            points.extend(world(xy,t,cameras[source_name]).tolist())
+            items.extend([dict(ray=ray,root_index=i,camera_z=float(x),source_mass=float(m[i]),source_numerator=float(n[i])) for i,x in enumerate(t)])
+        points=np.array(points,np.float32);numerator=np.zeros(len(points),float);weight=numerator.copy();source_n=None;source_w=None
+        for name,camera in cameras.items():
+            if time.monotonic()-started>args.max_seconds:raise TimeoutError('Finite context audit deadline')
+            em=camera['w2c'].astype(np.float32)
+            local=np.column_stack([((points[:,0]*em[j,0]+points[:,1]*em[j,1])+points[:,2]*em[j,2])+em[j,3] for j in range(3)])
+            z=local[:,2];im,_,mask=frames[name];height,width=im.shape;fx,fy=np.array(camera['focal'],np.float32)
+            with np.errstate(divide='ignore',invalid='ignore'):
+                inv=np.float32(1)/z;u=fx*local[:,0]*inv+np.float32((width-1)/2);v=fy*local[:,1]*inv+np.float32((height-1)/2)
+            inside=np.isfinite(u)&np.isfinite(v)&(u>=0)&(v>=0)&(u<=width-1)&(v<=height-1)
+            observed=np.zeros(len(points),np.float32);observed[inside]=im[v[inside].astype(int),u[inside].astype(int)]
+            valid=inside&(z>0)&np.isfinite(observed)&(observed>0)&(observed<=8)&(observed-z>=-h)
+            contribution=np.where(valid,np.minimum((observed-z)/h,1),0).astype(float)
+            if name==source_name:source_n=contribution;source_w=valid.astype(float)
+            else:numerator+=contribution;weight+=valid
+        for i,item in enumerate(items):
+            item.update(neighbor_deltaE_numerator=float(numerator[i]),neighbor_deltaE_weight=float(weight[i]),
+                hybrid_weight=float(weight[i]+item['source_mass']),
+                hybrid_field=None if weight[i]+item['source_mass']==0 else float((numerator[i]+item['source_numerator'])/(weight[i]+item['source_mass'])),
+                all_deltaE_weight=float(weight[i]+source_w[i]),
+                all_deltaE_field=None if weight[i]+source_w[i]==0 else float((numerator[i]+source_n[i])/(weight[i]+source_w[i])))
+        first=[r for r in items if r['root_index']==0];later=[r for r in items if r['root_index']>0]
+        groups={}
+        for name,rows in [('first_root',first),('later_roots',later)]:
+            groups[name]=dict(roots=len(rows),source_mass_quantiles_0_10_50_90_100=quantiles([r['source_mass'] for r in rows]),
+                neighbor_deltaE_weight_quantiles_0_10_50_90_100=quantiles([r['neighbor_deltaE_weight'] for r in rows]),
+                hybrid_weight_ge_native3=sum(r['hybrid_weight']>=3 for r in rows),
+                hybrid_abs_field_quantiles_0_10_50_90_100=quantiles([abs(r['hybrid_field']) for r in rows if r['hybrid_field'] is not None]))
+        report=dict(source=source,scan=scan,source_view=source_name,neighbor_views=len(cameras)-1,
+            groups=groups,rows=items,provenance=provenance,ray_audit_sha256=sha256(scene_path))
+        save(args.output/f'scan{scan}.json',report);summaries.append({k:v for k,v in report.items() if k!='rows'})
+    report=dict(status='complete_GT_free_one_distribution_plus_other_deltaE_context_only',source=source,
+        scans=summaries,seconds=time.monotonic()-started,
+        limitation='Each source-ray root is examined with the other 48 views represented only by cached delta-E. This is correlated same-model context, not independent truth or full mixture fusion. Source weights can be tiny. Weight>=3 alone does not imply a mesh or valid physical surface; neighbor voxel support/zero crossings/extraction are untested. Projection rounding at the source pixel can differ. No GT query or deployment rule.')
+    save(args.output/'native_mixture_context_audit.json',report);print(json.dumps({k:v for k,v in report.items() if k!='scans'}));print(json.dumps([dict(scan=x['scan'],groups=x['groups']) for x in summaries]))
+
+
 if __name__ == "__main__":
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--output", type=Path, required=True)
@@ -666,8 +726,10 @@ if __name__ == "__main__":
     p.add_argument('--native-cache-operator-check',action='store_true')
     p.add_argument('--native-mixture-operator-check',action='store_true')
     p.add_argument('--native-mixture-ray-audit',action='store_true')
+    p.add_argument('--native-mixture-context-audit',action='store_true')
     a = p.parse_args()
-    if a.native_mixture_ray_audit:native_mixture_ray_audit(a)
+    if a.native_mixture_context_audit:native_mixture_context_audit(a)
+    elif a.native_mixture_ray_audit:native_mixture_ray_audit(a)
     elif a.native_mixture_operator_check:native_mixture_operator_check(a)
     elif a.native_cache_operator_check:native_cache_operator_check(a)
     elif a.native_operator_check:native_operator_check(a)
