@@ -18,6 +18,18 @@ from photo_surface_probe import HERE, REPO, save, sha256, source_info
 sys.path.insert(0, str(REPO))
 
 
+def native_observation(z,w,t,h):
+    """Native float32 validity/SDF, float64 normalized accepted-mass sum."""
+    z,w,t=np.asarray(z,np.float32),np.asarray(w,float),np.asarray(t,np.float32)
+    if not len(z) or z.shape!=w.shape or not np.isfinite(z).all() or not np.isfinite(w).all() or (z<=0).any() or (w<0).any() or w.sum()<=0:
+        raise ValueError('Invalid complete accepted ray')
+    sdf=z[None,:]-t[:,None];h=np.float32(h)
+    accepted=(z[None,:]<=np.float32(8))&(t[:,None]>0)&(sdf>=-h)
+    mass=accepted*(w/w.sum())[None,:]
+    observation=np.minimum(sdf,h)/h
+    return (mass*observation).sum(1),mass.sum(1)
+
+
 def run(args):
     if socket.gethostname() != 'autodl-container-5d5147b55f-67549ee6':
         raise ValueError('Only explicitly authorized G0')
@@ -30,7 +42,6 @@ def run(args):
     from dense_huber_mesh import HOST_SHA,source_provenance
     from depth_accuracy import load_scene
     from sample import forward
-    from gap_teacher_audit import native_distribution_field
     source_provenance()
     if sha256(_C.__file__)!=HOST_SHA:raise ValueError('Original rasterizer changed')
     config_path=HERE/'分布场固定探针.json';config=json.loads(config_path.read_text(encoding='utf-8'))
@@ -43,6 +54,7 @@ def run(args):
         query_config_sha256=sha256(config_path),reader_source_sha256=sha256(HERE/'reader.cu'),
         reader_binary=str(args.reader_binary),reader_binary_sha256=sha256(args.reader_binary),
         original_C_sha256=sha256(_C.__file__),torch=torch.__version__,cuda=torch.version.cuda,scans=[],
+        arithmetic='float32 native validity/SDF/clip; float64 normalized accepted-mass sums',
         policy=config['policy'],limitation='Sparse common voxels only; original E cache and accepted ray distributions, no GT, mesh, training or efficiency claim.')
     save(args.output/'metadata.json',state)
     def boundary():
@@ -74,7 +86,9 @@ def run(args):
                     fp=cache/vm['file']
                     if sha256(fp)!=vm['sha256']:raise ValueError('Sealed native frame differs')
                     with np.load(fp) as f:
-                        np.testing.assert_array_equal(expected.cpu().numpy(),f['expected'])
+                        actual=expected.cpu().numpy();reference=f['expected']
+                        if actual.dtype!=reference.dtype or actual.shape!=reference.shape or actual.tobytes()!=reference.tobytes():
+                            raise ValueError('Native E cache bytes differ')
                         mask=f['gt_mask'].astype(bool).copy()
                     np.testing.assert_array_equal(camera.gt_mask.cpu().numpy().squeeze()>=.5,mask)
                     em=camera.world_view_transform.T.cpu().numpy().astype(np.float32)
@@ -109,8 +123,8 @@ def run(args):
                                 if native[ray]>0:raise ValueError('Positive native E with empty record')
                                 continue
                             if not np.isfinite(native[ray]) or native[ray]<=0:raise ValueError('Nonpositive native E')
-                            fields[q,0],fields[q,1]=native_distribution_field([native[ray]],[1.],t,float(np.float32(config['voxel_size'])*8))
-                            fields[q,2],fields[q,3]=native_distribution_field(depths[a:b],weights[a:b],t,float(np.float32(config['voxel_size'])*8))
+                            fields[q,0],fields[q,1]=native_observation([native[ray]],[1.],t,np.float32(config['voxel_size'])*np.float32(8))
+                            fields[q,2],fields[q,3]=native_observation(depths[a:b],weights[a:b],t,np.float32(config['voxel_size'])*np.float32(8))
                         np.savez_compressed(out/f'{camera.image_name}_rays.npz',pixels=pixels,offsets=offsets,depth=depths,weight=weights,gaussian_id=gids,point_to_ray=point_to_ray,native_expected=native)
                         del records,ids,counts,replay,target,pixel_tensor
                     np.savez_compressed(out/f'{camera.image_name}_fields.npz',fields=fields,camera_z=z,world_view_transform=em)
