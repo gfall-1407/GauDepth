@@ -444,6 +444,82 @@ def native_operator_check(args):
     save(destination,report);print(json.dumps(report))
 
 
+def native_cache_operator_check(args):
+    """Bounded real cached-image/pose delta check on selected physical blocks."""
+    import open3d as o3d
+    if o3d.__version__!='0.19.0':raise ValueError('Require source-verified local0.19.0')
+    if not args.output.is_absolute() or args.output.exists():raise ValueError('New absolute output required')
+    args.output.mkdir(parents=True)
+    source=source_info();started=time.monotonic();summaries=[]
+    voxel=np.float32(.002);trunc=np.float32(voxel*8);resolution=4
+    for scan in (40,63):
+        meta,cameras,frames,_,provenance=checked_scan(scan,args)
+        names=[meta['views'][i]['name'] for i in (0,1,24)]
+        images=[];intrinsics=[];extrinsics=[];blocks=[]
+        for name in names:
+            e,_,mask=frames[name];camera=cameras[name];h,w=e.shape;fx,fy=camera['focal']
+            image=np.where(mask,e,0).astype(np.float32);images.append(image)
+            intrinsic=np.array([[fx,0,(w-1)/2],[0,fy,(h-1)/2],[0,0,1]],np.float64)
+            # Both compared paths receive exactly the same pose; remote pose replay is not asserted.
+            extrinsic=camera['w2c'].astype(np.float32).astype(np.float64)
+            intrinsics.append(intrinsic);extrinsics.append(extrinsic)
+            valid=np.flatnonzero(mask&np.isfinite(image)&(image>0))
+            chosen=valid[np.linspace(0,len(valid)-1,16,dtype=int)]
+            xy=np.column_stack((chosen%w,chosen//w));points=world(xy,image.ravel()[chosen],camera)
+            base=np.floor(points/(float(voxel)*resolution)).astype(np.int32)
+            offsets=np.array([(a,b,c) for a in (-1,0,1) for b in (-1,0,1) for c in (-1,0,1)],np.int32)
+            blocks.append((base[:,None,:]+offsets[None,:,:]).reshape(-1,3))
+        keys=np.unique(np.concatenate(blocks),axis=0);n=len(keys)*resolution**3
+        if n>100000:raise ValueError('Fixed tiny-domain budget exceeded')
+        grid=o3d.t.geometry.VoxelBlockGrid(attr_names=('tsdf','weight'),
+            attr_dtypes=(o3d.core.Dtype.Float32,o3d.core.Dtype.Float32),attr_channels=(1,1),
+            voxel_size=float(voxel),block_resolution=resolution,block_count=max(128,len(keys)*2),device=o3d.core.Device('CPU:0'))
+        block_keys=o3d.core.Tensor(keys);grid.hashmap().activate(block_keys)
+        grid.attribute('tsdf').numpy().fill(0);grid.attribute('weight').numpy().fill(0)
+        results=[]
+        for frame,(image,k,e) in enumerate(zip(images,intrinsics,extrinsics)):
+            if time.monotonic()-started>args.max_seconds:raise TimeoutError('Bounded local check expired')
+            grid.integrate(block_keys,o3d.t.geometry.Image(o3d.core.Tensor(image)),
+                o3d.core.Tensor(k),o3d.core.Tensor(e),1.,8.,8.)
+            coordinates,indices=grid.voxel_coordinates_and_flattened_indices()
+            xyz=coordinates.numpy();flat=indices.numpy().ravel()
+            phi=np.zeros(n,np.float32);weight=phi.copy();last_valid=None
+            for im,km,em in zip(images[:frame+1],intrinsics[:frame+1],extrinsics[:frame+1]):
+                # Source expression order and float32 TransformIndexer parameters.
+                em=em.astype(np.float32);km=km.astype(np.float32)
+                local=np.column_stack([((xyz[:,0]*em[j,0]+xyz[:,1]*em[j,1])+xyz[:,2]*em[j,2])+em[j,3] for j in range(3)])
+                z=local[:,2]
+                with np.errstate(divide='ignore',invalid='ignore'):
+                    invz=np.float32(1)/z
+                    u=km[0,0]*local[:,0]*invz+km[0,2];v=km[1,1]*local[:,1]*invz+km[1,2]
+                inside=np.isfinite(u)&np.isfinite(v)&(u>=0)&(v>=0)&(u<=im.shape[1]-1)&(v<=im.shape[0]-1)
+                d=np.zeros(n,np.float32);d[inside]=im[v[inside].astype(int),u[inside].astype(int)]
+                sdf=d-z;valid=inside&(z>0)&(d>0)&(d<=8)&(sdf>=-trunc)
+                observation=np.minimum(sdf[valid],trunc)/trunc
+                phi[valid]=(weight[valid]*phi[valid]+observation)/(weight[valid]+np.float32(1))
+                weight[valid]+=np.float32(1);last_valid=valid
+            actual_weight=grid.attribute('weight').numpy().reshape(-1)[flat]
+            actual_phi=grid.attribute('tsdf').numpy().reshape(-1)[flat]
+            mismatch=actual_weight!=weight;difference=np.abs(actual_phi-phi)
+            record=dict(source=source,scan=scan,view=names[frame],blocks=len(keys),voxels=n,
+                updated_voxels=int(np.count_nonzero(weight)),last_frame_updates=int(last_valid.sum()),
+                weight_mismatches=int(mismatch.sum()),tsdf_max_abs_error=float(difference.max()),
+                fixed_tsdf_budget=float(8*np.finfo(np.float32).eps),
+                mismatches=[dict(xyz=xyz[i].tolist(),actual=float(actual_weight[i]),reference=float(weight[i])) for i in np.flatnonzero(mismatch)[:16]],
+                intrinsic=k.tolist(),extrinsic=e.tolist(),frame_sha256=meta['views'][[0,1,24][frame]]['sha256'])
+            save(args.output/f'scan{scan}_frame{frame}.json',record)
+            np.testing.assert_array_equal(actual_weight,weight)
+            if difference.max()>8*np.finfo(np.float32).eps:raise ValueError('Fixed TSDF budget exceeded; preserve evidence')
+            results.append(record)
+        summaries.append(dict(scan=scan,provenance=provenance,teacher_source=meta['source'],frames=results))
+    report=dict(status='PASS_localCPU_real_cache_sparse_blocks_delta_bridge_only',source=source,
+        open3d=o3d.__version__,voxel_size=float(voxel),sdf_trunc=float(trunc),block_resolution=resolution,
+        scans=summaries,seconds=time.monotonic()-started,
+        limitation='Fixed 3 views per scene and sparse blocks, not full native grid allocation, remote version or remote pose-byte replay. No ray-mixture integration, mesh extraction, training or quality/efficiency claim.')
+    save(args.output/'native_cache_operator_check.json',report)
+    print(json.dumps(dict(status=report['status'],seconds=report['seconds'],scans=[dict(scan=x['scan'],frames=len(x['frames']),max_error=max(y['tsdf_max_abs_error'] for y in x['frames'])) for x in summaries])))
+
+
 if __name__ == "__main__":
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--output", type=Path, required=True)
@@ -457,8 +533,10 @@ if __name__ == "__main__":
     p.add_argument('--native-alignment-audit',action='store_true')
     p.add_argument('--mixture-operator-check',action='store_true')
     p.add_argument('--native-operator-check',action='store_true')
+    p.add_argument('--native-cache-operator-check',action='store_true')
     a = p.parse_args()
-    if a.native_operator_check:native_operator_check(a)
+    if a.native_cache_operator_check:native_cache_operator_check(a)
+    elif a.native_operator_check:native_operator_check(a)
     elif a.mixture_operator_check:mixture_operator_check(a)
     elif a.native_alignment_audit:native_alignment_audit(a)
     elif a.truncation_audit:truncation_audit(a)
