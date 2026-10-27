@@ -520,6 +520,69 @@ def native_cache_operator_check(args):
     print(json.dumps(dict(status=report['status'],seconds=report['seconds'],scans=[dict(scan=x['scan'],frames=len(x['frames']),max_error=max(y['tsdf_max_abs_error'] for y in x['frames'])) for x in summaries])))
 
 
+def native_distribution_field(z,w,t,h,depth_max=8.):
+    """Accepted-contribution extension, not calibrated probabilities or Huber score.
+
+    Normalize before native validity: a view with surviving mass<1 retains that
+    fractional integration weight. Conditional renormalization would change it.
+    """
+    z,w,t=np.asarray(z,float),np.asarray(w,float),np.asarray(t,float)
+    if z.ndim!=1 or z.shape!=w.shape or not len(z) or not np.isfinite(z).all() or not np.isfinite(w).all() or (z<=0).any() or (w<0).any() or w.sum()<=0 or not h>0:
+        raise ValueError('Invalid complete accepted ray; do not silently prune members')
+    p=w/w.sum();sdf=z[None,:]-t[:,None]
+    accepted=(z[None,:]<=depth_max)&(t[:,None]>0)&(sdf>=-h)
+    mass=accepted*p[None,:]
+    return (mass*np.minimum(sdf/h,1.)).sum(1),mass.sum(1)
+
+
+def native_mixture_operator_check(args):
+    import open3d as o3d
+    if o3d.__version__!='0.19.0':raise ValueError('Require source-verified local0.19.0')
+    if not args.output.is_absolute() or args.output.exists():raise ValueError('New absolute output required')
+    args.output.mkdir(parents=True);source=source_info()
+    # A single view with rational masses can be replayed as four native frames.
+    keys=np.array([(0,0,z) for z in range(12)],np.int32)
+    grid=o3d.t.geometry.VoxelBlockGrid(attr_names=('tsdf','weight'),
+        attr_dtypes=(o3d.core.Dtype.Float32,o3d.core.Dtype.Float32),attr_channels=(1,1),
+        voxel_size=.125,block_resolution=4,block_count=128,device=o3d.core.Device('CPU:0'))
+    block_keys=o3d.core.Tensor(keys);grid.hashmap().activate(block_keys)
+    grid.attribute('tsdf').numpy().fill(0);grid.attribute('weight').numpy().fill(0)
+    k=o3d.core.Tensor([[4.,0.,2.],[0.,4.,2.],[0.,0.,1.]],o3d.core.Dtype.Float64)
+    e=o3d.core.Tensor.eye(4,o3d.core.Dtype.Float64)
+    for d in (1.,1.,1.,4.):
+        grid.integrate(block_keys,o3d.t.geometry.Image(o3d.core.Tensor(np.full((5,5),d,np.float32))),k,e,1.,8.,8.)
+    xyz,indices=grid.voxel_coordinates_and_flattened_indices();xyz=xyz.numpy();flat=indices.numpy().ravel()
+    axis=(xyz[:,0]==0)&(xyz[:,1]==0)&(xyz[:,2]>0)
+    t=xyz[axis,2].astype(float);order=np.argsort(t);t=t[order];axis_flat=flat[axis][order]
+    n,m=native_distribution_field([1.,4.],[.75,.25],t,1.)
+    native_w=grid.attribute('weight').numpy().reshape(-1)[axis_flat].astype(float)/4
+    native_phi=grid.attribute('tsdf').numpy().reshape(-1)[axis_flat].astype(float)
+    np.testing.assert_array_equal(native_w,m)
+    field=np.divide(n,m,out=np.zeros_like(n),where=m>0)
+    error=float(np.max(np.abs(native_phi-field)))
+    if error>8*np.finfo(np.float32).eps:raise ValueError('Fixed TSDF budget exceeded')
+    probe=np.array([4/3,2.,np.nextafter(2.,np.inf),4.])
+    pn,pm=native_distribution_field([1.,4.],[.75,.25],probe,1.)
+    np.testing.assert_allclose(pn,[0.,-.5,.25,0.],atol=64*np.finfo(float).eps,rtol=0)
+    np.testing.assert_array_equal(pm,[1.,1.,.25,.25])
+    # Delta extension agrees with the original per-observation formula, including skip.
+    delta_n,delta_m=native_distribution_field([1.],[1.],t,1.)
+    delta_valid=(t>0)&(1.-t>=-1.)
+    np.testing.assert_array_equal(delta_m,delta_valid.astype(float))
+    np.testing.assert_allclose(delta_n,np.where(delta_valid,np.minimum(1.-t,1.),0.),rtol=0,atol=0)
+    np.savez_compressed(args.output/'field.npz',camera_z=t,numerator=n,weight=m,field=field,
+        native_weight=native_w,native_field=native_phi,delta_numerator=delta_n,delta_weight=delta_m)
+    report=dict(status='PASS_rational_weight_native_field_equivalence_and_nonmonotonic_counterexample',source=source,
+        open3d=o3d.__version__,z=[1.,4.],normalized_contributions=[.75,.25],h=1.,native_replay_depths=[1.,1.,1.,4.],
+        voxels_on_axis=len(t),native_weight_scale=4,weight_exact=True,tsdf_max_abs_error=error,
+        counterexample=dict(t=probe.tolist(),numerator=pn.tolist(),weight=pm.tolist(),field=(pn/pm).tolist(),
+            downward_roots=[4/3,4.],negative_to_positive_jump_at=2.,interpretation='The negative-truncation skip makes the field nonmonotone. A sign change across a jump is not a zero. Not the monotone score of a convex Huber objective.'),
+        field_sha256=sha256(args.output/'field.npz'),
+        limitation='Synthetic operator evidence only. Native equivalent weights are accepted mass, not calibrated reliability. No real-mixture 3D field, scene mesh, training, stable-algorithm or novelty evidence.')
+    save(args.output/'native_mixture_operator_check.json',report)
+    print(json.dumps(report))
+
+
 if __name__ == "__main__":
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--output", type=Path, required=True)
@@ -534,8 +597,10 @@ if __name__ == "__main__":
     p.add_argument('--mixture-operator-check',action='store_true')
     p.add_argument('--native-operator-check',action='store_true')
     p.add_argument('--native-cache-operator-check',action='store_true')
+    p.add_argument('--native-mixture-operator-check',action='store_true')
     a = p.parse_args()
-    if a.native_cache_operator_check:native_cache_operator_check(a)
+    if a.native_mixture_operator_check:native_mixture_operator_check(a)
+    elif a.native_cache_operator_check:native_cache_operator_check(a)
     elif a.native_operator_check:native_operator_check(a)
     elif a.mixture_operator_check:mixture_operator_check(a)
     elif a.native_alignment_audit:native_alignment_audit(a)
