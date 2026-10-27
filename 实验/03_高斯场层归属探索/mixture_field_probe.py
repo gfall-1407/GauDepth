@@ -7,6 +7,7 @@ from __future__ import annotations
 import argparse
 import importlib.util
 import json
+import os
 from pathlib import Path
 import shutil
 import signal
@@ -28,6 +29,13 @@ def native_observation(z,w,t,h):
     mass=accepted*(w/w.sum())[None,:]
     observation=np.minimum(sdf,h)/h
     return (mass*observation).sum(1),mass.sum(1)
+
+
+def save_npz(path,**arrays):
+    temporary=path.with_suffix('.npz.part')
+    with temporary.open('xb') as f:
+        np.savez_compressed(f,**arrays);f.flush();os.fsync(f.fileno())
+    os.replace(temporary,path)
 
 
 def run(args):
@@ -80,6 +88,11 @@ def run(args):
             state['scans'].append(scene);bg=torch.ones(3,device='cuda',dtype=torch.float32)
             for camera,vm in zip(cameras,cm['views']):
                 boundary();tick=time.monotonic();w,h=camera.image_width,camera.image_height
+                # Reserve the full uncompressed worst case plus ZIP/metadata margin
+                # before starting this view; compressed output cannot cross budget.
+                used=sum(p.stat().st_size for p in args.output.rglob('*') if p.is_file())
+                reserve=n*(1024*12+80)+2*1024**2
+                if used+reserve>budget:raise InterruptedError('Insufficient reserved output budget for a full view')
                 with torch.no_grad():
                     raw,fx,fy=forward(camera,gaussians,pipe,bg,dataset.kernel_size)
                     _,rgb,alpha,normal,expected,median,_,geom,binning,image=raw
@@ -125,16 +138,16 @@ def run(args):
                             if not np.isfinite(native[ray]) or native[ray]<=0:raise ValueError('Nonpositive native E')
                             fields[q,0],fields[q,1]=native_observation([native[ray]],[1.],t,np.float32(config['voxel_size'])*np.float32(8))
                             fields[q,2],fields[q,3]=native_observation(depths[a:b],weights[a:b],t,np.float32(config['voxel_size'])*np.float32(8))
-                        np.savez_compressed(out/f'{camera.image_name}_rays.npz',pixels=pixels,offsets=offsets,depth=depths,weight=weights,gaussian_id=gids,point_to_ray=point_to_ray,native_expected=native)
+                        save_npz(out/f'{camera.image_name}_rays.npz',pixels=pixels,offsets=offsets,depth=depths,weight=weights,gaussian_id=gids,point_to_ray=point_to_ray,native_expected=native)
                         del records,ids,counts,replay,target,pixel_tensor
-                    np.savez_compressed(out/f'{camera.image_name}_fields.npz',fields=fields,camera_z=z,world_view_transform=em)
+                    save_npz(out/f'{camera.image_name}_fields.npz',fields=fields,camera_z=z,world_view_transform=em)
                     sums+=fields
                     files=[out/f'{camera.image_name}_fields.npz']+([out/f'{camera.image_name}_rays.npz'] if len(pixels) else [])
                     views.append(dict(name=camera.image_name,queried_pixels=len(pixels),capacity=capacity,cache_expected_bitwise=True,
                         frame_sha256=vm['sha256'],files=[dict(file=p.name,bytes=p.stat().st_size,sha256=sha256(p)) for p in files],seconds=time.monotonic()-tick))
                     save(args.output/'metadata.json',state)
                     del raw,rgb,alpha,normal,expected,median,geom,binning,image
-            np.savez_compressed(out/'pooled_fields.npz',voxel_keys=np.array(cfg['voxel_keys'],np.int32),points=points,fields=sums)
+            save_npz(out/'pooled_fields.npz',voxel_keys=np.array(cfg['voxel_keys'],np.int32),points=points,fields=sums)
             scene.update(status='complete',pooled_fields_sha256=sha256(out/'pooled_fields.npz'),original_model_unchanged=sha256(ply)==cfg['model_sha256'],original_cfg_unchanged=sha256(cf)==cfg['cfg_sha256'])
             if not scene['original_model_unchanged'] or not scene['original_cfg_unchanged']:raise ValueError('Protected model changed')
             del gaussians,cameras;torch.cuda.empty_cache()
