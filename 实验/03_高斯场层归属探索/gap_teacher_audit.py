@@ -362,6 +362,56 @@ def mixture_operator_check(args):
     save(destination,report);print(json.dumps(report))
 
 
+def native_operator_check(args):
+    """Tiny localCPU0.19 delta bridge; NOT the remote/real-scene bridge."""
+    import open3d as o3d
+    if o3d.__version__!='0.19.0':raise ValueError('This source-verified check pins local Open3D0.19.0')
+    destination=args.output/'native_operator_check.json'
+    if not args.output.is_absolute() or not args.output.is_dir() or destination.exists():
+        raise ValueError('Existing absolute result directory/new output required')
+    source=source_info();voxel=np.float32(.125);trunc=np.float32(voxel*8);depth_max=np.float32(8.)
+    keys=np.array([(x,y,z) for x in (-1,0) for y in (-1,0) for z in range(-1,20)],np.int32)
+    intrinsic=o3d.core.Tensor([[4.,0.,2.],[0.,4.,2.],[0.,0.,1.]],o3d.core.Dtype.Float64)
+    extrinsic=o3d.core.Tensor.eye(4,o3d.core.Dtype.Float64)
+    block_keys=o3d.core.Tensor(keys);cases=[]
+    for name,depths in [('plane2',[2.]),('invalid_zero',[0.]),('invalid_above_depthmax',[9.]),('two_frames2then4',[2.,4.])]:
+        grid=o3d.t.geometry.VoxelBlockGrid(attr_names=('tsdf','weight'),
+            attr_dtypes=(o3d.core.Dtype.Float32,o3d.core.Dtype.Float32),attr_channels=((1),(1)),
+            voxel_size=float(voxel),block_resolution=4,block_count=128,device=o3d.core.Device('CPU:0'))
+        grid.hashmap().activate(block_keys)
+        grid.attribute('tsdf').fill_(0);grid.attribute('weight').fill_(0)
+        coordinates,indices=grid.voxel_coordinates_and_flattened_indices()
+        xyz=coordinates.numpy();flat=indices.numpy().ravel();z=xyz[:,2]
+        with np.errstate(divide='ignore',invalid='ignore'):
+            u=xyz[:,0]*np.float32(4)/z+np.float32(2);v=xyz[:,1]*np.float32(4)/z+np.float32(2)
+        projected=np.isfinite(u)&np.isfinite(v)&(u>=0)&(u<5)&(v>=0)&(v<5)&(z>0)
+        tsdf=np.zeros(len(z),np.float32);weight=tsdf.copy();maximum_error=0.;behind_skipped=0
+        for depth in depths:
+            d=np.float32(depth);sdf=d-z
+            valid=projected&(d>0)&(d<=depth_max)&(sdf>=-trunc)
+            observation=np.minimum(sdf,trunc)/trunc
+            inv=np.float32(1)/(weight[valid]+np.float32(1))
+            tsdf[valid]=(weight[valid]*tsdf[valid]+observation[valid])*inv
+            weight[valid]+=np.float32(1)
+            image=o3d.t.geometry.Image(o3d.core.Tensor(np.full((5,5),d,np.float32)))
+            grid.integrate(block_keys,image,intrinsic,extrinsic,1.,float(depth_max),8.)
+            actual_w=grid.attribute('weight').numpy().reshape(-1)[flat]
+            actual_phi=grid.attribute('tsdf').numpy().reshape(-1)[flat]
+            np.testing.assert_array_equal(actual_w,weight)
+            np.testing.assert_array_equal(actual_w>0,weight>0)
+            error=float(np.abs(actual_phi-tsdf).max());maximum_error=max(maximum_error,error)
+            if error>8*np.finfo(np.float32).eps:raise ValueError('Fixed float32 TSDF budget exceeded; inspect operator, not GT')
+            if 0<depth<=depth_max:behind_skipped+=int(np.sum(projected&(sdf<-trunc)))
+        cases.append(dict(case=name,voxels=len(z),updated_voxels=int((weight>0).sum()),
+            update_mask_and_weight='PASS_exact',tsdf_max_abs_error=maximum_error,
+            behind_truncation_skipped_n=behind_skipped))
+    report=dict(status='PASS_localCPU_constant_image_identity_camera_delta_bridge_only',source=source,
+        open3d=o3d.__version__,voxel_size=float(voxel),trunc_voxel_multiplier=8.,sdf_trunc=float(trunc),depth_scale=1.,depth_max=float(depth_max),cases=cases,
+        source_reference='https://raw.githubusercontent.com/isl-org/Open3D/v0.19.0/cpp/open3d/t/geometry/kernel/VoxelBlockGridImpl.h',
+        limitation='Native skip mask and observation weight are separate from symmetric clipped-location toy. No remote package version proof, arbitrary-camera/nonconstant-pixel sampling bridge, full ray-distribution integration, model gradient, real scene or reconstruction evidence. All remain pending.')
+    save(destination,report);print(json.dumps(report))
+
+
 if __name__ == "__main__":
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--output", type=Path, required=True)
@@ -374,8 +424,10 @@ if __name__ == "__main__":
     p.add_argument('--truncation-audit',action='store_true')
     p.add_argument('--native-alignment-audit',action='store_true')
     p.add_argument('--mixture-operator-check',action='store_true')
+    p.add_argument('--native-operator-check',action='store_true')
     a = p.parse_args()
-    if a.mixture_operator_check:mixture_operator_check(a)
+    if a.native_operator_check:native_operator_check(a)
+    elif a.mixture_operator_check:mixture_operator_check(a)
     elif a.native_alignment_audit:native_alignment_audit(a)
     elif a.truncation_audit:truncation_audit(a)
     elif a.evaluate: evaluate(a)
