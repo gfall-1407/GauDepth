@@ -583,6 +583,73 @@ def native_mixture_operator_check(args):
     print(json.dumps(report))
 
 
+def native_mixture_ray_audit(args):
+    """Seal GT-free root/jump diagnostics on 64 pre-existing random rays per scene."""
+    from gap_huber_probe import locate_sample
+    if not args.output.is_absolute() or args.output.exists():raise ValueError('New absolute output required')
+    args.output.mkdir(parents=True);source=source_info();started=time.monotonic();summaries=[]
+    canonical=json.loads((HERE/'G1_Huber全场景输入参考.json').read_text(encoding='utf-8'))['scans']
+    h=float(np.float32(.002)*np.float32(8));tol=64*np.finfo(float).eps
+    for scan in (40,63):
+        sample_root=locate_sample(HERE/'结果',scan,0)
+        mp=sample_root/'metadata.json';meta=json.loads(mp.read_text(encoding='utf-8'))
+        if meta.get('status')!='complete' or meta['model_sha256']!=canonical[str(scan)]['model_sha256'] or meta['cfg_sha256']!=canonical[str(scan)]['cfg_sha256']:
+            raise ValueError('Require sealed complete original ray provenance')
+        view=next(v for v in meta['views'] if v['view_index']==0);path=sample_root/view['file']
+        if sha256(path)!=view['npz_sha256']:raise ValueError('Ray source hash differs')
+        data=np.load(path);offsets=data['offsets'];depth=data['depth'].astype(float);weight=data['weight'].astype(float)
+        # Fixed original random stratum and source order; no GT/teacher loss selection.
+        selected=np.flatnonzero(~data['qualitative'].astype(bool))[:64];rows=[]
+        for ray in selected:
+            if time.monotonic()-started>args.max_seconds:raise TimeoutError('Finite ray audit deadline')
+            a,b=offsets[ray:ray+2];z=depth[a:b];w=weight[a:b]
+            if not len(z) or not np.isfinite(z).all() or not np.isfinite(w).all() or (z<=0).any() or (w<0).any() or w.sum()<=0:
+                rows.append(dict(ray=int(ray),status='unknown_invalid_complete_ray'));continue
+            p=w/w.sum();valid=z<=8
+            if not valid.any():rows.append(dict(ray=int(ray),status='no_valid_depth_mass'));continue
+            knots=np.unique(np.r_[0.,z[valid]-h,z[valid]+h]);knots=knots[knots>=0]
+            lo,hi=knots[:-1],knots[1:];mid=(lo+hi)/2
+            n,m=native_distribution_field(z,w,mid,h)
+            slope=-(((np.abs(z[None,:]-mid[:,None])<h)&valid[None,:])*p[None,:]).sum(1)/h
+            moving=slope<0
+            roots=mid[moving]-n[moving]/slope[moving]
+            roots=roots[(roots>lo[moving])&(roots<=hi[moving])]
+            rn,rm=native_distribution_field(z,w,roots,h)
+            roots=roots[(np.abs(rn)<=tol)&(rm>0)]
+            # Exact-knot zeros and flat intervals are reported separately.
+            kn,km=native_distribution_field(z,w,knots,h)
+            roots=np.sort(np.r_[roots,knots[(np.abs(kn)<=tol)&(km>0)]])
+            if len(roots):roots=roots[np.r_[True,np.diff(roots)>h*1e-10]]
+            flat_intervals=np.column_stack((lo,hi))[(~moving)&(np.abs(n)<=tol)&(m>0)]
+            drops=np.unique(z[valid]+h)
+            # Evaluate mathematical one-sided limits without eps shifts in t.
+            sd=z[None,:]-drops[:,None]
+            left=(sd>=-h)&valid[None,:];right=(sd>-h)&valid[None,:]
+            # At a drop the departing component contributes -p to the left.
+            # Floating knots are handled explicitly by equality of their generating z+h.
+            departing=(z[None,:]+h)==drops[:,None]
+            left|=departing&valid[None,:];right&=~departing
+            nl=(left*p*np.minimum(sd/h,1.)).sum(1);nr=(right*p*np.minimum(sd/h,1.)).sum(1)
+            jumps=(nl<-tol)&(nr>tol)
+            rows.append(dict(ray=int(ray),status='diagnosed',pixel=data['pixel_xy'][ray].tolist(),members=len(z),
+                zero_roots=roots.tolist(),zero_root_count=len(roots),flat_zero_intervals=flat_intervals.tolist(),
+                negative_to_positive_jumps=drops[jumps].tolist(),jump_count=int(jumps.sum()),
+                valid_depth_mass=float(p[valid].sum()),host_expected=float(data['host_target'][ray,0])))
+        diagnosed=[r for r in rows if r['status']=='diagnosed']
+        report=dict(source=source,scan=scan,view=0,h_scene=h,selected_random_rays=len(selected),diagnosed=len(diagnosed),
+            multiple_zero_roots=sum(r['zero_root_count']>1 for r in diagnosed),
+            negative_to_positive_jump_rays=sum(r['jump_count']>0 for r in diagnosed),
+            flat_zero_interval_rays=sum(bool(r['flat_zero_intervals']) for r in diagnosed),
+            ray_npz_sha256=sha256(path),sample_metadata_sha256=sha256(mp),sample_source=meta['git_commit'],
+            rows=rows)
+        save(args.output/f'scan{scan}.json',report);summaries.append({k:v for k,v in report.items() if k!='rows'})
+    report=dict(status='complete_GT_free_per_ray_native_distribution_diagnostic',source=source,scans=summaries,
+        native_scene_voxel=.002,trunc_voxel_multiplier=8,root_numerical_zero_tolerance=tol,root_merge_tolerance=h*1e-10,
+        seconds=time.monotonic()-started,
+        limitation='64 pre-existing random rays per scene, one view each. Single-ray field roots are not a 3D fused field, physical surfaces or mesh quality. Accepted 3DGS contributions are not calibrated probabilities. No GT query, deployment gate, training or reconstruction was performed.')
+    save(args.output/'native_mixture_ray_audit.json',report);print(json.dumps(report))
+
+
 if __name__ == "__main__":
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--output", type=Path, required=True)
@@ -598,8 +665,10 @@ if __name__ == "__main__":
     p.add_argument('--native-operator-check',action='store_true')
     p.add_argument('--native-cache-operator-check',action='store_true')
     p.add_argument('--native-mixture-operator-check',action='store_true')
+    p.add_argument('--native-mixture-ray-audit',action='store_true')
     a = p.parse_args()
-    if a.native_mixture_operator_check:native_mixture_operator_check(a)
+    if a.native_mixture_ray_audit:native_mixture_ray_audit(a)
+    elif a.native_mixture_operator_check:native_mixture_operator_check(a)
     elif a.native_cache_operator_check:native_cache_operator_check(a)
     elif a.native_operator_check:native_operator_check(a)
     elif a.mixture_operator_check:mixture_operator_check(a)
