@@ -253,6 +253,55 @@ def run_frozen_audit(args):
         state.update(status='partial',error=repr(exc));atomic_json(out/'metadata.json',state);raise
 
 
+def run_cross_surface(args):
+    """Locate the fixed2-20mm error tail relative to the other evaluated pointset."""
+    import numpy as np
+    from scipy.spatial import cKDTree
+    if git('status','--porcelain') or git('remote','get-url','origin')!='git@github.com:gfall-1407/GauDepth.git':
+        raise ValueError('Require clean committed approved source')
+    root=args.cross_surface_audit.resolve();out=args.output.resolve()
+    if not args.output.is_absolute() or out.exists():raise ValueError('New independent output required')
+    primary=json.loads((root/'metadata.json').read_text(encoding='utf-8'))
+    if primary['status']!='complete' or len(primary['jobs'])!=2:raise ValueError('Complete two-method score inspection required')
+    records={r['method']:r for r in primary['jobs']};data={}
+    for name in ('native_expected','gap_huber'):
+        file=root/name/'retained_scoring_points.npz'
+        if sha256(file)!=records[name]['retained_points_sha256']:raise ValueError('Retained scored points SHA differs')
+        with np.load(file) as z:points=z['d2s_points_mm'];errors=z['d2s_distance_mm']
+        if points.shape!=(len(errors),3) or not np.isfinite(points).all() or not np.isfinite(errors).all():
+            raise ValueError('Invalid retained scoring arrays')
+        data[name]=(points,errors)
+    out.mkdir();state=dict(status='partial',source_commit=git('rev-parse','HEAD'),completed=[],
+        protocol='All source D2S points in the already fixed2<=error<20mm histogram tail. Exact nearest neighbor in the OTHER method retained ObsMask pointset; no GT query, geometry update or fitted threshold. Radius.2mm/native thinning and1mm/prior physical band are descriptive cuts only. Associations are not triangle identities or causal surface creation; excluded other-method points may affect proximity.')
+    atomic_json(out/'metadata.json',state);start=time.monotonic()
+    try:
+        for source,target in (('gap_huber','native_expected'),('native_expected','gap_huber')):
+            points,errors=data[source];other,other_error=data[target];index=np.flatnonzero((errors>=2)&(errors<20))
+            tree=cKDTree(other,leafsize=32);distance=[];nearest=[]
+            for pos in range(0,len(index),4096):
+                if time.monotonic()-start>args.max_seconds or (out/'stop_after_chunk').exists():
+                    raise TimeoutError('Bounded full-chunk stop/deadline')
+                d,i=tree.query(points[index[pos:pos+4096]],k=1,eps=0,workers=1)
+                distance.append(d);nearest.append(i);state['active']=dict(source=source,processed=min(pos+4096,len(index)),total=len(index));atomic_json(out/'metadata.json',state)
+            distance=np.concatenate(distance);nearest=np.concatenate(nearest);delta=errors[index]-other_error[nearest]
+            violations=np.abs(delta)>distance+1e-8
+            if violations.any():raise ValueError('Same-GT NN1-Lipschitz consistency failed')
+            far=distance>1.;near=~far
+            def avg(x):return float(x.mean()) if len(x) else None
+            row=dict(source=source,target=target,n=len(index),
+                cross_distance_mm_quantiles=dict(zip(['min','p50','p90','p95','p99','max'],np.quantile(distance,[0,.5,.9,.95,.99,1]).tolist())),
+                within_native_radius_0p2_n=int((distance<=.2).sum()),within_1mm_n=int(near.sum()),beyond_1mm_n=int(far.sum()),
+                source_tail_mean_mm=avg(errors[index]),nearest_other_mean_mm=avg(other_error[nearest]),
+                source_error_better_n=int((delta<0).sum()),source_error_worse_n=int((delta>0).sum()),
+                beyond_1mm_source_mean_mm=avg(errors[index][far]),beyond_1mm_nearest_other_mean_mm=avg(other_error[nearest][far]),
+                nearest_other_below2mm_n=int((other_error[nearest]<2).sum()),lipschitz_violations=0)
+            file=out/(source+'_to_'+target+'.npz');np.savez_compressed(file,source_index=index,other_index=nearest,cross_distance_mm=distance)
+            row['matches_sha256']=sha256(file);state['completed'].append(row);atomic_json(out/'metadata.json',state);print(json.dumps(row),flush=True)
+        state.update(status='complete',active=None);atomic_json(out/'metadata.json',state)
+    except BaseException as exc:
+        state.update(status='partial',error=repr(exc));atomic_json(out/'metadata.json',state);raise
+
+
 if __name__ == "__main__":
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--root", type=Path, required=True)
@@ -263,8 +312,10 @@ if __name__ == "__main__":
     p.add_argument('--teacher-metadata',type=Path)
     p.add_argument('--training-arms',nargs='+',default=['control','gap_train','xyz_train'])
     p.add_argument('--frozen-score-audit',type=Path)
+    p.add_argument('--cross-surface-audit',type=Path)
     a=p.parse_args()
-    if a.frozen_score_audit:
+    if a.cross_surface_audit:run_cross_surface(a)
+    elif a.frozen_score_audit:
         if not a.transfer_manifest:p.error('Transferred manifest required')
         run_frozen_audit(a)
     elif a.training_batch:
