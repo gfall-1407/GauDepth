@@ -1,0 +1,1264 @@
+{
+  "scan": 106,
+  "view": 32,
+  "code_head": "fd62bc235d015cd7b2b52007ec397f6074e9ea42",
+  "inputs_sha256": {
+    "model": "1901bf477fabda932c19088e3801f95b590ed5dd8832f840fceb623c03026e76",
+    "camera": "ffb03dda2653c6204e57d4c5a87aed044f465bd239d4a07a6f102d1fdb9b3331",
+    "stl": "80dfb498c845cf7fa5b06712fdcad69bc5330913ef5b1d0afca484e3016f2fe7",
+    "metadata": "b4b122bc8ae316808f620a54ac97087bae1e61fba2083fdf59f261ce7aab7663",
+    "trace": "86a9e5fd29a3df1877308ab679b2ee1298fb24bc94149352b40c9b09aecd7931"
+  },
+  "kappa": 2,
+  "source": "samples_v2",
+  "camera_check": {
+    "center_max_abs": 1.0614050172108591e-07,
+    "intrinsics_lower_max_abs": 5.1139645966782654e-05,
+    "K_from_projection": [
+      [
+        2892.33025564808,
+        -0.00017418042335228838,
+        823.2062903490701
+      ],
+      [
+        -5.1139645966782654e-05,
+        2883.175435968144,
+        619.0701868810937
+      ],
+      [
+        9.73512732147308e-10,
+        -8.589128695541659e-10,
+        1.0
+      ]
+    ],
+    "scale": 329.365966796875
+  },
+  "stl_header": [
+    "ply",
+    "format binary_little_endian 1.0",
+    "element vertex 3562723",
+    "property float x",
+    "property float y",
+    "property float z",
+    "property float nx",
+    "property float ny",
+    "property float nz",
+    "property uchar red",
+    "property uchar green",
+    "property uchar blue",
+    "end_header"
+  ],
+  "common_valid": 31,
+  "requested": 32,
+  "summary": {
+    "expected": {
+      "mean_mm": 2.382676382126021,
+      "median_mm": 0.16396879212743173,
+      "p90_mm": 0.2614289312592372,
+      "paired_mean_vs_expected_mm": 0.0,
+      "failures": 0
+    },
+    "native_median": {
+      "mean_mm": 0.21508489346917406,
+      "median_mm": 0.16967903054902625,
+      "p90_mm": 0.4719359237661716,
+      "paired_mean_vs_expected_mm": -2.1675914886568477,
+      "failures": 0
+    },
+    "directional": {
+      "mean_mm": 0.17719875048495706,
+      "median_mm": 0.16025838944464363,
+      "p90_mm": 0.2598352257838778,
+      "paired_mean_vs_expected_mm": -2.205477631641064,
+      "failures": 0
+    },
+    "isotropic": {
+      "mean_mm": 0.1759352004652224,
+      "median_mm": 0.14755320889236798,
+      "p90_mm": 0.25938637660024966,
+      "paired_mean_vs_expected_mm": -2.206741181660798,
+      "failures": 0
+    },
+    "gggs_proxy": {
+      "mean_mm": 0.20552891750586597,
+      "median_mm": 0.1622561940973889,
+      "p90_mm": 0.4861035687687272,
+      "paired_mean_vs_expected_mm": -2.1771474646201545,
+      "failures": 1
+    }
+  },
+  "rows": [
+    {
+      "ray_index": 0,
+      "expected": 1.8795318003628803,
+      "native_median": 1.874977946281433,
+      "directional": 1.8790444018560433,
+      "directional_status": "ok",
+      "isotropic": 1.8791685522450106,
+      "isotropic_status": "ok",
+      "gggs_proxy": 1.8775073250452854,
+      "gggs_proxy_status": "ok",
+      "pixel_xy": [
+        527,
+        207
+      ],
+      "valid": {
+        "expected": true,
+        "native_median": true,
+        "directional": true,
+        "isotropic": true,
+        "gggs_proxy": true
+      },
+      "common_valid": true,
+      "distance_mm": {
+        "expected": 0.13747523980777623,
+        "native_median": 0.4872785791647643,
+        "directional": 0.1209489822857833,
+        "isotropic": 0.1037441372699076,
+        "gggs_proxy": 0.1040872752133688
+      },
+      "difference_vs_expected_mm": {
+        "expected": 0.0,
+        "native_median": 0.34980333935698804,
+        "directional": -0.016526257521992938,
+        "isotropic": -0.03373110253786864,
+        "gggs_proxy": -0.03338796459440743
+      }
+    },
+    {
+      "ray_index": 16,
+      "expected": 1.7844097093069105,
+      "native_median": 1.7843629121780396,
+      "directional": 1.784687438231268,
+      "directional_status": "ok",
+      "isotropic": 1.7848589527165126,
+      "isotropic_status": "ok",
+      "gggs_proxy": 1.7838778716886905,
+      "gggs_proxy_status": "ok",
+      "pixel_xy": [
+        241,
+        195
+      ],
+      "valid": {
+        "expected": true,
+        "native_median": true,
+        "directional": true,
+        "isotropic": true,
+        "gggs_proxy": true
+      },
+      "common_valid": true,
+      "distance_mm": {
+        "expected": 0.17703444780157354,
+        "native_median": 0.1804587742261126,
+        "directional": 0.15981036365820597,
+        "isotropic": 0.1539595173601919,
+        "gggs_proxy": 0.207463111832705
+      },
+      "difference_vs_expected_mm": {
+        "expected": 0.0,
+        "native_median": 0.003424326424539048,
+        "directional": -0.01722408414336757,
+        "isotropic": -0.023074930441381647,
+        "gggs_proxy": 0.030428664031131453
+      }
+    },
+    {
+      "ray_index": 32,
+      "expected": 1.814941295934032,
+      "native_median": 1.8150975704193115,
+      "directional": 1.8140174090156076,
+      "directional_status": "ok",
+      "isotropic": 1.814368958390881,
+      "isotropic_status": "ok",
+      "gggs_proxy": 1.8132402478834688,
+      "gggs_proxy_status": "ok",
+      "pixel_xy": [
+        222,
+        309
+      ],
+      "valid": {
+        "expected": true,
+        "native_median": true,
+        "directional": true,
+        "isotropic": true,
+        "gggs_proxy": true
+      },
+      "common_valid": true,
+      "distance_mm": {
+        "expected": 0.1704842587359341,
+        "native_median": 0.17232578058564205,
+        "directional": 0.17546659877064716,
+        "isotropic": 0.1340754009992458,
+        "gggs_proxy": 0.15541096577604155
+      },
+      "difference_vs_expected_mm": {
+        "expected": 0.0,
+        "native_median": 0.0018415218497079555,
+        "directional": 0.0049823400347130675,
+        "isotropic": -0.03640885773668828,
+        "gggs_proxy": -0.015073292959892542
+      }
+    },
+    {
+      "ray_index": 49,
+      "expected": 1.7104342174682574,
+      "native_median": 1.7100380659103394,
+      "directional": 1.7109931892058816,
+      "directional_status": "ok",
+      "isotropic": 1.7106120775190758,
+      "isotropic_status": "ok",
+      "gggs_proxy": 1.7098960763790525,
+      "gggs_proxy_status": "ok",
+      "pixel_xy": [
+        351,
+        65
+      ],
+      "valid": {
+        "expected": true,
+        "native_median": true,
+        "directional": true,
+        "isotropic": true,
+        "gggs_proxy": true
+      },
+      "common_valid": true,
+      "distance_mm": {
+        "expected": 0.07849167067965085,
+        "native_median": 0.12597029581246616,
+        "directional": 0.16753407109514412,
+        "isotropic": 0.07479392594930064,
+        "gggs_proxy": 0.133364030046881
+      },
+      "difference_vs_expected_mm": {
+        "expected": 0.0,
+        "native_median": 0.04747862513281531,
+        "directional": 0.08904240041549327,
+        "isotropic": -0.0036977447303502137,
+        "gggs_proxy": 0.054872359367230145
+      }
+    },
+    {
+      "ray_index": 65,
+      "expected": 1.848723240244604,
+      "native_median": 1.8457249402999878,
+      "directional": 1.8483561419645163,
+      "directional_status": "ok",
+      "isotropic": 1.847705757117813,
+      "isotropic_status": "ok",
+      "gggs_proxy": 1.8453776075392492,
+      "gggs_proxy_status": "ok",
+      "pixel_xy": [
+        498,
+        358
+      ],
+      "valid": {
+        "expected": true,
+        "native_median": true,
+        "directional": true,
+        "isotropic": true,
+        "gggs_proxy": true
+      },
+      "common_valid": true,
+      "distance_mm": {
+        "expected": 0.06705508409079956,
+        "native_median": 0.17917295907353833,
+        "directional": 0.07854098866316642,
+        "isotropic": 0.1588505369494214,
+        "gggs_proxy": 0.10586851063000301
+      },
+      "difference_vs_expected_mm": {
+        "expected": 0.0,
+        "native_median": 0.11211787498273877,
+        "directional": 0.011485904572366853,
+        "isotropic": 0.09179545285862183,
+        "gggs_proxy": 0.038813426539203444
+      }
+    },
+    {
+      "ray_index": 82,
+      "expected": 2.354879902641053,
+      "native_median": 1.799860954284668,
+      "directional": 1.7833543426209653,
+      "directional_status": "ok",
+      "isotropic": 1.7832400548962737,
+      "isotropic_status": "ok",
+      "gggs_proxy": 1.7988553804438774,
+      "gggs_proxy_status": "ok",
+      "pixel_xy": [
+        436,
+        110
+      ],
+      "valid": {
+        "expected": true,
+        "native_median": true,
+        "directional": true,
+        "isotropic": true,
+        "gggs_proxy": true
+      },
+      "common_valid": true,
+      "distance_mm": {
+        "expected": 68.52597211099003,
+        "native_median": 0.7203167780895392,
+        "directional": 0.2598352257838778,
+        "isotropic": 0.25938637660024966,
+        "gggs_proxy": 0.6684559002234007
+      },
+      "difference_vs_expected_mm": {
+        "expected": 0.0,
+        "native_median": -67.80565533290049,
+        "directional": -68.26613688520615,
+        "isotropic": -68.26658573438978,
+        "gggs_proxy": -67.85751621076662
+      }
+    },
+    {
+      "ray_index": 98,
+      "expected": 1.7939292679103878,
+      "native_median": 1.7939566373825073,
+      "directional": 1.7940170080878284,
+      "directional_status": "ok",
+      "isotropic": 1.7934393306367713,
+      "isotropic_status": "ok",
+      "gggs_proxy": 1.7927322019152254,
+      "gggs_proxy_status": "ok",
+      "pixel_xy": [
+        191,
+        200
+      ],
+      "valid": {
+        "expected": true,
+        "native_median": true,
+        "directional": true,
+        "isotropic": true,
+        "gggs_proxy": true
+      },
+      "common_valid": true,
+      "distance_mm": {
+        "expected": 0.02095397249540574,
+        "native_median": 0.025451668541019754,
+        "directional": 0.04117883647603806,
+        "isotropic": 0.15752685711938658,
+        "gggs_proxy": 0.07484128854521739
+      },
+      "difference_vs_expected_mm": {
+        "expected": 0.0,
+        "native_median": 0.004497696045614015,
+        "directional": 0.02022486398063232,
+        "isotropic": 0.13657288462398084,
+        "gggs_proxy": 0.05388731604981165
+      }
+    },
+    {
+      "ray_index": 115,
+      "expected": 2.0979602757821056,
+      "native_median": 2.0963456630706787,
+      "directional": 2.0979202595689266,
+      "directional_status": "ok",
+      "isotropic": 2.097582982762235,
+      "isotropic_status": "ok",
+      "gggs_proxy": 2.096173767001324,
+      "gggs_proxy_status": "ok",
+      "pixel_xy": [
+        644,
+        305
+      ],
+      "valid": {
+        "expected": true,
+        "native_median": true,
+        "directional": true,
+        "isotropic": true,
+        "gggs_proxy": true
+      },
+      "common_valid": true,
+      "distance_mm": {
+        "expected": 0.1382516561741677,
+        "native_median": 0.17192232156284623,
+        "directional": 0.13116666940162958,
+        "isotropic": 0.1239144593575285,
+        "gggs_proxy": 0.20563010989248923
+      },
+      "difference_vs_expected_mm": {
+        "expected": 0.0,
+        "native_median": 0.03367066538867852,
+        "directional": -0.007084986772538132,
+        "isotropic": -0.014337196816639211,
+        "gggs_proxy": 0.06737845371832152
+      }
+    },
+    {
+      "ray_index": 131,
+      "expected": 1.7978177902501469,
+      "native_median": 1.7979642152786255,
+      "directional": 1.7979541712223368,
+      "directional_status": "ok",
+      "isotropic": 1.7975970390710607,
+      "isotropic_status": "ok",
+      "gggs_proxy": 1.7963270306991368,
+      "gggs_proxy_status": "ok",
+      "pixel_xy": [
+        190,
+        123
+      ],
+      "valid": {
+        "expected": true,
+        "native_median": true,
+        "directional": true,
+        "isotropic": true,
+        "gggs_proxy": true
+      },
+      "common_valid": true,
+      "distance_mm": {
+        "expected": 0.09350754948691994,
+        "native_median": 0.08003594797672778,
+        "directional": 0.08007959791098122,
+        "isotropic": 0.14609617786736168,
+        "gggs_proxy": 0.1622561940973889
+      },
+      "difference_vs_expected_mm": {
+        "expected": 0.0,
+        "native_median": -0.013471601510192166,
+        "directional": -0.01342795157593872,
+        "isotropic": 0.05258862838044173,
+        "gggs_proxy": 0.06874864461046895
+      }
+    },
+    {
+      "ray_index": 148,
+      "expected": 1.8392628736679064,
+      "native_median": 1.8393421173095703,
+      "directional": 1.8389678426789466,
+      "directional_status": "ok",
+      "isotropic": 1.839019515097456,
+      "isotropic_status": "ok",
+      "gggs_proxy": 1.837882615936246,
+      "gggs_proxy_status": "ok",
+      "pixel_xy": [
+        530,
+        231
+      ],
+      "valid": {
+        "expected": true,
+        "native_median": true,
+        "directional": true,
+        "isotropic": true,
+        "gggs_proxy": true
+      },
+      "common_valid": true,
+      "distance_mm": {
+        "expected": 0.33505362189362936,
+        "native_median": 0.3553545003122584,
+        "directional": 0.26868747950169325,
+        "isotropic": 0.27898202386284243,
+        "gggs_proxy": 0.10126603879843905
+      },
+      "difference_vs_expected_mm": {
+        "expected": 0.0,
+        "native_median": 0.020300878418629043,
+        "directional": -0.06636614239193611,
+        "isotropic": -0.05607159803078693,
+        "gggs_proxy": -0.23378758309519032
+      }
+    },
+    {
+      "ray_index": 164,
+      "expected": 1.783463058152792,
+      "native_median": 1.7829959392547607,
+      "directional": 1.783102359875922,
+      "directional_status": "ok",
+      "isotropic": 1.783167670312454,
+      "isotropic_status": "ok",
+      "gggs_proxy": 1.782389351150203,
+      "gggs_proxy_status": "ok",
+      "pixel_xy": [
+        480,
+        285
+      ],
+      "valid": {
+        "expected": true,
+        "native_median": true,
+        "directional": true,
+        "isotropic": true,
+        "gggs_proxy": true
+      },
+      "common_valid": true,
+      "distance_mm": {
+        "expected": 0.19684251996444657,
+        "native_median": 0.12386339546948161,
+        "directional": 0.12842604377674527,
+        "isotropic": 0.1357252320783923,
+        "gggs_proxy": 0.19930347313887714
+      },
+      "difference_vs_expected_mm": {
+        "expected": 0.0,
+        "native_median": -0.07297912449496496,
+        "directional": -0.0684164761877013,
+        "isotropic": -0.06111728788605428,
+        "gggs_proxy": 0.002460953174430569
+      }
+    },
+    {
+      "ray_index": 181,
+      "expected": 2.106901063689395,
+      "native_median": 2.1068410873413086,
+      "directional": 2.106681447746614,
+      "directional_status": "ok",
+      "isotropic": 2.106787009988399,
+      "isotropic_status": "ok",
+      "gggs_proxy": 2.1045185426375985,
+      "gggs_proxy_status": "ok",
+      "pixel_xy": [
+        59,
+        388
+      ],
+      "valid": {
+        "expected": true,
+        "native_median": true,
+        "directional": true,
+        "isotropic": true,
+        "gggs_proxy": true
+      },
+      "common_valid": true,
+      "distance_mm": {
+        "expected": 0.1472416582166168,
+        "native_median": 0.15257938757537895,
+        "directional": 0.17764544021877465,
+        "isotropic": 0.15946860581227768,
+        "gggs_proxy": 0.4861035687687272
+      },
+      "difference_vs_expected_mm": {
+        "expected": 0.0,
+        "native_median": 0.005337729358762144,
+        "directional": 0.030403782002157848,
+        "isotropic": 0.01222694759566087,
+        "gggs_proxy": 0.33886191055211035
+      }
+    },
+    {
+      "ray_index": 197,
+      "expected": 1.7846745216681137,
+      "native_median": 1.7834947109222412,
+      "directional": 1.783606840835626,
+      "directional_status": "ok",
+      "isotropic": 1.7836364625835175,
+      "isotropic_status": "ok",
+      "gggs_proxy": 1.7837737873570103,
+      "gggs_proxy_status": "ok",
+      "pixel_xy": [
+        233,
+        125
+      ],
+      "valid": {
+        "expected": true,
+        "native_median": true,
+        "directional": true,
+        "isotropic": true,
+        "gggs_proxy": true
+      },
+      "common_valid": true,
+      "distance_mm": {
+        "expected": 0.22469886226245217,
+        "native_median": 0.09993811382602975,
+        "directional": 0.06813763909257212,
+        "isotropic": 0.06080681229026599,
+        "gggs_proxy": 0.04316768342991089
+      },
+      "difference_vs_expected_mm": {
+        "expected": 0.0,
+        "native_median": -0.12476074843642242,
+        "directional": -0.15656122316988005,
+        "isotropic": -0.16389204997218618,
+        "gggs_proxy": -0.18153117883254127
+      }
+    },
+    {
+      "ray_index": 214,
+      "expected": 1.931681789347628,
+      "native_median": 1.9320316314697266,
+      "directional": 1.9308348757753337,
+      "directional_status": "ok",
+      "isotropic": 1.9313153229736304,
+      "isotropic_status": "ok",
+      "gggs_proxy": 1.9303960754358767,
+      "gggs_proxy_status": "ok",
+      "pixel_xy": [
+        280,
+        510
+      ],
+      "valid": {
+        "expected": true,
+        "native_median": true,
+        "directional": true,
+        "isotropic": true,
+        "gggs_proxy": true
+      },
+      "common_valid": true,
+      "distance_mm": {
+        "expected": 0.16396879212743173,
+        "native_median": 0.1076022489784374,
+        "directional": 0.15774033657298453,
+        "isotropic": 0.12345898966684879,
+        "gggs_proxy": 0.27447068071963093
+      },
+      "difference_vs_expected_mm": {
+        "expected": 0.0,
+        "native_median": -0.056366543148994336,
+        "directional": -0.006228455554447204,
+        "isotropic": -0.040509802460582944,
+        "gggs_proxy": 0.1105018885921992
+      }
+    },
+    {
+      "ray_index": 230,
+      "expected": 1.969236207630098,
+      "native_median": 1.9682518243789673,
+      "directional": 1.9682936597312146,
+      "directional_status": "ok",
+      "isotropic": 1.9675029717314731,
+      "isotropic_status": "ok",
+      "gggs_proxy": 1.966505190608009,
+      "gggs_proxy_status": "ok",
+      "pixel_xy": [
+        443,
+        434
+      ],
+      "valid": {
+        "expected": true,
+        "native_median": true,
+        "directional": true,
+        "isotropic": true,
+        "gggs_proxy": true
+      },
+      "common_valid": true,
+      "distance_mm": {
+        "expected": 0.14168361715162514,
+        "native_median": 0.2334271815386281,
+        "directional": 0.2243560808949671,
+        "isotropic": 0.3071891643111067,
+        "gggs_proxy": 0.5680273465841283
+      },
+      "difference_vs_expected_mm": {
+        "expected": 0.0,
+        "native_median": 0.09174356438700296,
+        "directional": 0.08267246374334197,
+        "isotropic": 0.16550554715948157,
+        "gggs_proxy": 0.4263437294325032
+      }
+    },
+    {
+      "ray_index": 247,
+      "expected": 1.8382429420779183,
+      "native_median": 1.8367079496383667,
+      "directional": 1.836220645432594,
+      "directional_status": "ok",
+      "isotropic": 1.8363999729171776,
+      "isotropic_status": "ok",
+      "gggs_proxy": 1.834894811633561,
+      "gggs_proxy_status": "ok",
+      "pixel_xy": [
+        164,
+        160
+      ],
+      "valid": {
+        "expected": true,
+        "native_median": true,
+        "directional": true,
+        "isotropic": true,
+        "gggs_proxy": true
+      },
+      "common_valid": true,
+      "distance_mm": {
+        "expected": 0.19929709251792083,
+        "native_median": 0.1286784088512969,
+        "directional": 0.16918513446650768,
+        "isotropic": 0.15286689594068992,
+        "gggs_proxy": 0.17344363897720702
+      },
+      "difference_vs_expected_mm": {
+        "expected": 0.0,
+        "native_median": -0.07061868366662394,
+        "directional": -0.030111958051413146,
+        "isotropic": -0.04643019657723091,
+        "gggs_proxy": -0.025853453540713806
+      }
+    },
+    {
+      "ray_index": 263,
+      "expected": 1.8161721281118792,
+      "native_median": 1.8151096105575562,
+      "directional": 1.8151084327256946,
+      "directional_status": "ok",
+      "isotropic": 1.8153323347997294,
+      "isotropic_status": "ok",
+      "gggs_proxy": 1.814317279361937,
+      "gggs_proxy_status": "ok",
+      "pixel_xy": [
+        296,
+        252
+      ],
+      "valid": {
+        "expected": true,
+        "native_median": true,
+        "directional": true,
+        "isotropic": true,
+        "gggs_proxy": true
+      },
+      "common_valid": true,
+      "distance_mm": {
+        "expected": 0.14463859476493363,
+        "native_median": 0.16967903054902625,
+        "directional": 0.16945766704637052,
+        "isotropic": 0.17304332898078215,
+        "gggs_proxy": 0.21590377330433622
+      },
+      "difference_vs_expected_mm": {
+        "expected": 0.0,
+        "native_median": 0.025040435784092624,
+        "directional": 0.0248190722814369,
+        "isotropic": 0.02840473421584852,
+        "gggs_proxy": 0.07126517853940259
+      }
+    },
+    {
+      "ray_index": 280,
+      "expected": 1.7154783515355367,
+      "native_median": 1.7159479856491089,
+      "directional": 1.716091176186989,
+      "directional_status": "ok",
+      "isotropic": 1.716158064992251,
+      "isotropic_status": "ok",
+      "gggs_proxy": 1.7152065287149854,
+      "gggs_proxy_status": "ok",
+      "pixel_xy": [
+        364,
+        55
+      ],
+      "valid": {
+        "expected": true,
+        "native_median": true,
+        "directional": true,
+        "isotropic": true,
+        "gggs_proxy": true
+      },
+      "common_valid": true,
+      "distance_mm": {
+        "expected": 0.6975524159315658,
+        "native_median": 0.7961391164526175,
+        "directional": 0.8297657279951179,
+        "isotropic": 0.8459410541324667,
+        "gggs_proxy": 0.6290752676523054
+      },
+      "difference_vs_expected_mm": {
+        "expected": 0.0,
+        "native_median": 0.09858670052105167,
+        "directional": 0.13221331206355214,
+        "isotropic": 0.14838863820090087,
+        "gggs_proxy": -0.06847714827926044
+      }
+    },
+    {
+      "ray_index": 296,
+      "expected": 1.79369166685159,
+      "native_median": 1.7934576272964478,
+      "directional": 1.793240945479256,
+      "directional_status": "ok",
+      "isotropic": 1.7930766269031417,
+      "isotropic_status": "ok",
+      "gggs_proxy": 1.7925930530558265,
+      "gggs_proxy_status": "ok",
+      "pixel_xy": [
+        253,
+        256
+      ],
+      "valid": {
+        "expected": true,
+        "native_median": true,
+        "directional": true,
+        "isotropic": true,
+        "gggs_proxy": true
+      },
+      "common_valid": true,
+      "distance_mm": {
+        "expected": 0.15270517470305234,
+        "native_median": 0.08536293272881923,
+        "directional": 0.056006464874294545,
+        "isotropic": 0.08272878885615859,
+        "gggs_proxy": 0.1284620827866203
+      },
+      "difference_vs_expected_mm": {
+        "expected": 0.0,
+        "native_median": -0.06734224197423311,
+        "directional": -0.09669870982875779,
+        "isotropic": -0.06997638584689375,
+        "gggs_proxy": -0.024243091916432036
+      }
+    },
+    {
+      "ray_index": 313,
+      "expected": 2.1040539515445484,
+      "native_median": 2.1031205654144287,
+      "directional": 2.103120913840711,
+      "directional_status": "ok",
+      "isotropic": 2.103290234955614,
+      "isotropic_status": "ok",
+      "gggs_proxy": 2.1022957178157045,
+      "gggs_proxy_status": "ok",
+      "pixel_xy": [
+        652,
+        304
+      ],
+      "valid": {
+        "expected": true,
+        "native_median": true,
+        "directional": true,
+        "isotropic": true,
+        "gggs_proxy": true
+      },
+      "common_valid": true,
+      "distance_mm": {
+        "expected": 0.208922426757663,
+        "native_median": 0.20360890175617313,
+        "directional": 0.20365630381315056,
+        "isotropic": 0.22863357881001334,
+        "gggs_proxy": 0.08479877288581258
+      },
+      "difference_vs_expected_mm": {
+        "expected": 0.0,
+        "native_median": -0.005313525001489877,
+        "directional": -0.0052661229445124524,
+        "isotropic": 0.019711152052350328,
+        "gggs_proxy": -0.12412365387185043
+      }
+    },
+    {
+      "ray_index": 329,
+      "expected": 1.786964734362904,
+      "native_median": 1.7861430644989014,
+      "directional": 1.7860246374258868,
+      "directional_status": "ok",
+      "isotropic": 1.7869043725570697,
+      "isotropic_status": "ok",
+      "gggs_proxy": 1.7861811070309783,
+      "gggs_proxy_status": "ok",
+      "pixel_xy": [
+        216,
+        142
+      ],
+      "valid": {
+        "expected": true,
+        "native_median": true,
+        "directional": true,
+        "isotropic": true,
+        "gggs_proxy": true
+      },
+      "common_valid": true,
+      "distance_mm": {
+        "expected": 0.12562259871525802,
+        "native_median": 0.17135810113264247,
+        "directional": 0.16025838944464363,
+        "isotropic": 0.14550607391818127,
+        "gggs_proxy": 0.17665696419687263
+      },
+      "difference_vs_expected_mm": {
+        "expected": 0.0,
+        "native_median": 0.045735502417384444,
+        "directional": 0.03463579072938561,
+        "isotropic": 0.019883475202923245,
+        "gggs_proxy": 0.05103436548161461
+      }
+    },
+    {
+      "ray_index": 346,
+      "expected": 1.796602979201395,
+      "native_median": 1.7982465028762817,
+      "directional": 1.797127193367336,
+      "directional_status": "ok",
+      "isotropic": 1.7971114547407019,
+      "isotropic_status": "ok",
+      "gggs_proxy": 1.7964740397992127,
+      "gggs_proxy_status": "ok",
+      "pixel_xy": [
+        48,
+        150
+      ],
+      "valid": {
+        "expected": true,
+        "native_median": true,
+        "directional": true,
+        "isotropic": true,
+        "gggs_proxy": true
+      },
+      "common_valid": true,
+      "distance_mm": {
+        "expected": 0.13298485383442044,
+        "native_median": 0.36227149887435117,
+        "directional": 0.16738305474398749,
+        "isotropic": 0.163653780403225,
+        "gggs_proxy": 0.15770482920296905
+      },
+      "difference_vs_expected_mm": {
+        "expected": 0.0,
+        "native_median": 0.22928664503993074,
+        "directional": 0.03439820090956705,
+        "isotropic": 0.030668926568804572,
+        "gggs_proxy": 0.024719975368548613
+      }
+    },
+    {
+      "ray_index": 362,
+      "expected": 1.7792634520759512,
+      "native_median": 1.7781829833984375,
+      "directional": 1.7793256199302552,
+      "directional_status": "ok",
+      "isotropic": 1.7789677144844278,
+      "isotropic_status": "ok",
+      "gggs_proxy": 1.7782559464914347,
+      "gggs_proxy_status": "ok",
+      "pixel_xy": [
+        226,
+        113
+      ],
+      "valid": {
+        "expected": true,
+        "native_median": true,
+        "directional": true,
+        "isotropic": true,
+        "gggs_proxy": true
+      },
+      "common_valid": true,
+      "distance_mm": {
+        "expected": 0.15246663751294054,
+        "native_median": 0.11477348678919898,
+        "directional": 0.16044943975833825,
+        "isotropic": 0.1521930133603725,
+        "gggs_proxy": 0.13699393454954398
+      },
+      "difference_vs_expected_mm": {
+        "expected": 0.0,
+        "native_median": -0.03769315072374156,
+        "directional": 0.007982802245397713,
+        "isotropic": -0.0002736241525680416,
+        "gggs_proxy": -0.015472702963396562
+      }
+    },
+    {
+      "ray_index": 379,
+      "expected": 1.8468565534322579,
+      "native_median": 1.8421790599822998,
+      "directional": 1.8456069933966472,
+      "directional_status": "ok",
+      "isotropic": 1.8458536240981287,
+      "isotropic_status": "ok",
+      "gggs_proxy": 1.8443573222022165,
+      "gggs_proxy_status": "ok",
+      "pixel_xy": [
+        506,
+        202
+      ],
+      "valid": {
+        "expected": true,
+        "native_median": true,
+        "directional": true,
+        "isotropic": true,
+        "gggs_proxy": true
+      },
+      "common_valid": true,
+      "distance_mm": {
+        "expected": 0.17188339815590853,
+        "native_median": 0.4719359237661716,
+        "directional": 0.1394585399684592,
+        "isotropic": 0.14755320889236798,
+        "gggs_proxy": 0.1962077928890172
+      },
+      "difference_vs_expected_mm": {
+        "expected": 0.0,
+        "native_median": 0.3000525256102631,
+        "directional": -0.032424858187449335,
+        "isotropic": -0.024330189263540553,
+        "gggs_proxy": 0.024324394733108684
+      }
+    },
+    {
+      "ray_index": 395,
+      "expected": 1.8154147006243953,
+      "native_median": 1.8147544860839844,
+      "directional": 1.8149437529606478,
+      "directional_status": "ok",
+      "isotropic": 1.8151248731468437,
+      "isotropic_status": "ok",
+      "gggs_proxy": 1.8134102935234493,
+      "gggs_proxy_status": "ok",
+      "pixel_xy": [
+        176,
+        155
+      ],
+      "valid": {
+        "expected": true,
+        "native_median": true,
+        "directional": true,
+        "isotropic": true,
+        "gggs_proxy": true
+      },
+      "common_valid": true,
+      "distance_mm": {
+        "expected": 0.1922690997601236,
+        "native_median": 0.14280408594644126,
+        "directional": 0.12321670946862645,
+        "isotropic": 0.1330175590510046,
+        "gggs_proxy": 0.16611078250343256
+      },
+      "difference_vs_expected_mm": {
+        "expected": 0.0,
+        "native_median": -0.049465013813682346,
+        "directional": -0.06905239029149715,
+        "isotropic": -0.059251540709119005,
+        "gggs_proxy": -0.026158317256691044
+      }
+    },
+    {
+      "ray_index": 412,
+      "expected": 2.042392594689703,
+      "native_median": 2.037548780441284,
+      "directional": 2.042637591238146,
+      "directional_status": "ok",
+      "isotropic": 2.0421094323927202,
+      "isotropic_status": "ok",
+      "gggs_proxy": 2.037969240830291,
+      "gggs_proxy_status": "ok",
+      "pixel_xy": [
+        110,
+        373
+      ],
+      "valid": {
+        "expected": true,
+        "native_median": true,
+        "directional": true,
+        "isotropic": true,
+        "gggs_proxy": true
+      },
+      "common_valid": true,
+      "distance_mm": {
+        "expected": 0.07660585378584932,
+        "native_median": 0.25743680998453977,
+        "directional": 0.07161348974716258,
+        "isotropic": 0.10249153860919917,
+        "gggs_proxy": 0.1990398299310585
+      },
+      "difference_vs_expected_mm": {
+        "expected": 0.0,
+        "native_median": 0.18083095619869044,
+        "directional": -0.0049923640386867335,
+        "isotropic": 0.025885684823349853,
+        "gggs_proxy": 0.12243397614520919
+      }
+    },
+    {
+      "ray_index": 428,
+      "expected": 1.8411335273980314,
+      "native_median": 1.83865225315094,
+      "directional": 1.8412592671308932,
+      "directional_status": "ok",
+      "isotropic": 1.8408811153489926,
+      "isotropic_status": "ok",
+      "gggs_proxy": 1.8392830453127798,
+      "gggs_proxy_status": "ok",
+      "pixel_xy": [
+        552,
+        267
+      ],
+      "valid": {
+        "expected": true,
+        "native_median": true,
+        "directional": true,
+        "isotropic": true,
+        "gggs_proxy": true
+      },
+      "common_valid": true,
+      "distance_mm": {
+        "expected": 0.22141630846646648,
+        "native_median": 0.11295319829397053,
+        "directional": 0.2063998308910564,
+        "isotropic": 0.19507673199976922,
+        "gggs_proxy": 0.0973258659770998
+      },
+      "difference_vs_expected_mm": {
+        "expected": 0.0,
+        "native_median": -0.10846311017249595,
+        "directional": -0.015016477575410081,
+        "isotropic": -0.026339576466697268,
+        "gggs_proxy": -0.12409044248936668
+      }
+    },
+    {
+      "ray_index": 445,
+      "expected": 2.059997043714829,
+      "native_median": 2.058779716491699,
+      "directional": 2.0495543479919434,
+      "directional_status": "ok",
+      "isotropic": 2.0564781515179633,
+      "isotropic_status": "ok",
+      "gggs_proxy": null,
+      "gggs_proxy_status": "no_finite_root",
+      "pixel_xy": [
+        486,
+        509
+      ],
+      "valid": {
+        "expected": true,
+        "native_median": true,
+        "directional": true,
+        "isotropic": true,
+        "gggs_proxy": false
+      },
+      "common_valid": false
+    },
+    {
+      "ray_index": 461,
+      "expected": 1.7851531036695876,
+      "native_median": 1.7838507890701294,
+      "directional": 1.7840173866626508,
+      "directional_status": "ok",
+      "isotropic": 1.784732403275411,
+      "isotropic_status": "ok",
+      "gggs_proxy": 1.7841827963998544,
+      "gggs_proxy_status": "ok",
+      "pixel_xy": [
+        219,
+        180
+      ],
+      "valid": {
+        "expected": true,
+        "native_median": true,
+        "directional": true,
+        "isotropic": true,
+        "gggs_proxy": true
+      },
+      "common_valid": true,
+      "distance_mm": {
+        "expected": 0.16773121417246184,
+        "native_median": 0.10025442746503477,
+        "directional": 0.1287063590383419,
+        "isotropic": 0.11964338441542795,
+        "gggs_proxy": 0.17060724159949042
+      },
+      "difference_vs_expected_mm": {
+        "expected": 0.0,
+        "native_median": -0.06747678670742707,
+        "directional": -0.039024855134119935,
+        "isotropic": -0.04808782975703389,
+        "gggs_proxy": 0.0028760274270285824
+      }
+    },
+    {
+      "ray_index": 478,
+      "expected": 1.7258911066563152,
+      "native_median": 1.7255704402923584,
+      "directional": 1.7228576059297362,
+      "directional_status": "ok",
+      "isotropic": 1.72432578226631,
+      "isotropic_status": "ok",
+      "gggs_proxy": 1.724458482399085,
+      "gggs_proxy_status": "ok",
+      "pixel_xy": [
+        364,
+        175
+      ],
+      "valid": {
+        "expected": true,
+        "native_median": true,
+        "directional": true,
+        "isotropic": true,
+        "gggs_proxy": true
+      },
+      "common_valid": true,
+      "distance_mm": {
+        "expected": 0.14668354913514808,
+        "native_median": 0.17918940387616739,
+        "directional": 0.3248282812633998,
+        "isotropic": 0.09565941349792499,
+        "gggs_proxy": 0.11128472126439347
+      },
+      "difference_vs_expected_mm": {
+        "expected": 0.0,
+        "native_median": 0.0325058547410193,
+        "directional": 0.17814473212825171,
+        "isotropic": -0.05102413563722309,
+        "gggs_proxy": -0.035398827870754615
+      }
+    },
+    {
+      "ray_index": 494,
+      "expected": 1.8450128268923534,
+      "native_median": 1.8431349992752075,
+      "directional": 1.8448386774815044,
+      "directional_status": "ok",
+      "isotropic": 1.8446302095301257,
+      "isotropic_status": "ok",
+      "gggs_proxy": 1.843518632484431,
+      "gggs_proxy_status": "ok",
+      "pixel_xy": [
+        542,
+        241
+      ],
+      "valid": {
+        "expected": true,
+        "native_median": true,
+        "directional": true,
+        "isotropic": true,
+        "gggs_proxy": true
+      },
+      "common_valid": true,
+      "distance_mm": {
+        "expected": 0.2614289312592372,
+        "native_median": 0.012620695617800756,
+        "directional": 0.23810364018208824,
+        "isotropic": 0.2269503878507585,
+        "gggs_proxy": 0.11663870430416655
+      },
+      "difference_vs_expected_mm": {
+        "expected": 0.0,
+        "native_median": -0.24880823564143645,
+        "directional": -0.02332529107714898,
+        "isotropic": -0.03447854340847872,
+        "gggs_proxy": -0.14479022695507066
+      }
+    },
+    {
+      "ray_index": 511,
+      "expected": 1.7072614320855748,
+      "native_median": 1.7056204080581665,
+      "directional": 1.706648115675315,
+      "directional_status": "ok",
+      "isotropic": 1.7067227539882175,
+      "isotropic_status": "ok",
+      "gggs_proxy": 1.7064205643879826,
+      "gggs_proxy_status": "ok",
+      "pixel_xy": [
+        373,
+        88
+      ],
+      "valid": {
+        "expected": true,
+        "native_median": true,
+        "directional": true,
+        "isotropic": true,
+        "gggs_proxy": true
+      },
+      "common_valid": true,
+      "distance_mm": {
+        "expected": 0.1920446345552535,
+        "native_median": 0.14286774272727418,
+        "directional": 0.10511787822891235,
+        "isotropic": 0.11105425820922474,
+        "gggs_proxy": 0.12142606296031094
+      },
+      "difference_vs_expected_mm": {
+        "expected": 0.0,
+        "native_median": -0.049176891827979324,
+        "directional": -0.08692675632634116,
+        "isotropic": -0.08099037634602876,
+        "gggs_proxy": -0.07061857159494256
+      }
+    }
+  ],
+  "elapsed_seconds": 52.2485453,
+  "definition": "one-way nearest independent GT point (mm), no ObsMask/Plane; not pixel depth GT, surface distance, Chamfer or formal DTU; no ICP. Engineering samples, not independent generalization. Host binary provenance and ID mapping gaps remain."
+}

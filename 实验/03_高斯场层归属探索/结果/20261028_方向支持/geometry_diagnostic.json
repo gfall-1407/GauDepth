@@ -1,0 +1,263 @@
+{
+  "scans": [
+    83,
+    118,
+    106
+  ],
+  "common_valid": 91,
+  "requested": 96,
+  "pooled_summary": {
+    "expected": {
+      "mean_mm": 1.728628214053561,
+      "median_mm": 0.1920446345552535,
+      "p90_mm": 0.5180514033563679,
+      "paired_mean_vs_expected_mm": 0.0,
+      "failure_count": 0
+    },
+    "native_median": {
+      "mean_mm": 0.4447975286177304,
+      "median_mm": 0.19541040340484114,
+      "p90_mm": 0.7936528923368041,
+      "paired_mean_vs_expected_mm": -1.2838306854358306,
+      "failure_count": 0
+    },
+    "directional": {
+      "mean_mm": 0.39719756084499386,
+      "median_mm": 0.18818071411307893,
+      "p90_mm": 0.5612792660188649,
+      "paired_mean_vs_expected_mm": -1.3314306532085671,
+      "failure_count": 2
+    },
+    "isotropic": {
+      "mean_mm": 0.38596552046430643,
+      "median_mm": 0.163653780403225,
+      "p90_mm": 0.5199122786761641,
+      "paired_mean_vs_expected_mm": -1.3426626935892543,
+      "failure_count": 2
+    },
+    "gggs_proxy": {
+      "mean_mm": 0.4281931025020686,
+      "median_mm": 0.19452780812231923,
+      "p90_mm": 0.6684559002234007,
+      "paired_mean_vs_expected_mm": -1.3004351115514923,
+      "failure_count": 1
+    }
+  },
+  "per_scan": [
+    {
+      "scan": 83,
+      "common_valid": 32,
+      "summary": {
+        "expected": {
+          "mean_mm": 2.4416802585599093,
+          "median_mm": 0.29860184504204174,
+          "p90_mm": 0.8658824726110228,
+          "paired_mean_vs_expected_mm": 0.0,
+          "failures": 0
+        },
+        "native_median": {
+          "mean_mm": 0.7630669636626173,
+          "median_mm": 0.337757351647734,
+          "p90_mm": 1.06434239960839,
+          "paired_mean_vs_expected_mm": -1.6786132948972916,
+          "failures": 0
+        },
+        "directional": {
+          "mean_mm": 0.7517247728479537,
+          "median_mm": 0.33469603458963026,
+          "p90_mm": 0.7156369887194584,
+          "paired_mean_vs_expected_mm": -1.6899554857119556,
+          "failures": 0
+        },
+        "isotropic": {
+          "mean_mm": 0.7485600094921276,
+          "median_mm": 0.2844625854519448,
+          "p90_mm": 0.9413786175078849,
+          "paired_mean_vs_expected_mm": -1.6931202490677815,
+          "failures": 0
+        },
+        "gggs_proxy": {
+          "mean_mm": 0.8066836043618694,
+          "median_mm": 0.3848084245465697,
+          "p90_mm": 0.9876533321766944,
+          "paired_mean_vs_expected_mm": -1.6349966541980399,
+          "failures": 0
+        }
+      },
+      "inputs_sha256": {
+        "model": "0c32a97c920e7eef1f0b11cc0a7e74b029222246d347026f5ed2e8c3df83cc00",
+        "camera": "f57a896d48d428901edee27168fade86b6b59b611375214611b26e19f0484b8d",
+        "stl": "30b163232639c7e97dac1c182623f9d38f20e29614703f618021f683bdc0b33e",
+        "metadata": "e121a04c59990e85aa907ce5ed3aeef8b83870cf4faa28dbe1219e9b077b9319",
+        "trace": "8a752fa19d9fabfc329fecd8742ad9b98ea64e3dae0a579c0de6f8609ef39569"
+      },
+      "camera_check": {
+        "center_max_abs": 1.3772864893013548e-07,
+        "intrinsics_lower_max_abs": 5.113964594842135e-05,
+        "K_from_projection": [
+          [
+            2892.3302556480803,
+            -0.00017418042333446136,
+            823.2062903490701
+          ],
+          [
+            -5.113964594842135e-05,
+            2883.175435968144,
+            619.0701868810937
+          ],
+          [
+            9.735127527519943e-10,
+            -8.589128707613965e-10,
+            1.0
+          ]
+        ],
+        "scale": 243.23257446289062
+      },
+      "code_head": "25ad0b9c94f2a1d9547bd813944b72e93cc5e668"
+    },
+    {
+      "scan": 118,
+      "common_valid": 28,
+      "summary": {
+        "expected": {
+          "mean_mm": 0.18958683425179626,
+          "median_mm": 0.1951120470488409,
+          "p90_mm": 0.26297264609318644,
+          "paired_mean_vs_expected_mm": 0.0,
+          "failures": 0
+        },
+        "native_median": {
+          "mean_mm": 0.3353857346237614,
+          "median_mm": 0.17325739126844653,
+          "p90_mm": 0.7119264545113525,
+          "paired_mean_vs_expected_mm": 0.14579890037196527,
+          "failures": 0
+        },
+        "directional": {
+          "mean_mm": 0.23559371574022347,
+          "median_mm": 0.19297083155564854,
+          "p90_mm": 0.35354216729238913,
+          "paired_mean_vs_expected_mm": 0.046006881488427256,
+          "failures": 2
+        },
+        "isotropic": {
+          "mean_mm": 0.20410538728863975,
+          "median_mm": 0.1661826525159708,
+          "p90_mm": 0.3063203724136327,
+          "paired_mean_vs_expected_mm": 0.014518553036843537,
+          "failures": 2
+        },
+        "gggs_proxy": {
+          "mean_mm": 0.24215359090809213,
+          "median_mm": 0.1687580220363839,
+          "p90_mm": 0.3841326935481416,
+          "paired_mean_vs_expected_mm": 0.0525667566562959,
+          "failures": 0
+        }
+      },
+      "inputs_sha256": {
+        "model": "df0d2ae37fbf718b99338453a44eb31b3f8a197e41a7b619c7562927314fcada",
+        "camera": "d5adfa2653b243c97908dac09fa4be5e3ef933d4de0b939df29eb7239b0eefbc",
+        "stl": "c4183cf7cc08ba7b949da6c4c27d06e7cd6f853142cb7396089cf56ccbcacfe8",
+        "metadata": "28ccf1adc88d9120b9a0cd5dab21eeb68cb242d341f9d8e8756a41313a8881bc",
+        "trace": "168434a432b76380b49f3063cdfede52c9bc91016f6a0bccea506f831e784500"
+      },
+      "camera_check": {
+        "center_max_abs": 2.135395749114366e-07,
+        "intrinsics_lower_max_abs": 5.113964552938368e-05,
+        "K_from_projection": [
+          [
+            2892.330225949628,
+            -0.0002098848188550358,
+            823.2063545590196
+          ],
+          [
+            -5.113964552938368e-05,
+            2883.175408368151,
+            619.0701377905758
+          ],
+          [
+            9.735127823751311e-10,
+            3.6731036823786033e-08,
+            1.0
+          ]
+        ],
+        "scale": 302.9843444824219
+      },
+      "code_head": "fd62bc235d015cd7b2b52007ec397f6074e9ea42"
+    },
+    {
+      "scan": 106,
+      "common_valid": 31,
+      "summary": {
+        "expected": {
+          "mean_mm": 2.382676382126021,
+          "median_mm": 0.16396879212743173,
+          "p90_mm": 0.2614289312592372,
+          "paired_mean_vs_expected_mm": 0.0,
+          "failures": 0
+        },
+        "native_median": {
+          "mean_mm": 0.21508489346917406,
+          "median_mm": 0.16967903054902625,
+          "p90_mm": 0.4719359237661716,
+          "paired_mean_vs_expected_mm": -2.1675914886568477,
+          "failures": 0
+        },
+        "directional": {
+          "mean_mm": 0.17719875048495706,
+          "median_mm": 0.16025838944464363,
+          "p90_mm": 0.2598352257838778,
+          "paired_mean_vs_expected_mm": -2.205477631641064,
+          "failures": 0
+        },
+        "isotropic": {
+          "mean_mm": 0.1759352004652224,
+          "median_mm": 0.14755320889236798,
+          "p90_mm": 0.25938637660024966,
+          "paired_mean_vs_expected_mm": -2.206741181660798,
+          "failures": 0
+        },
+        "gggs_proxy": {
+          "mean_mm": 0.20552891750586597,
+          "median_mm": 0.1622561940973889,
+          "p90_mm": 0.4861035687687272,
+          "paired_mean_vs_expected_mm": -2.1771474646201545,
+          "failures": 1
+        }
+      },
+      "inputs_sha256": {
+        "model": "1901bf477fabda932c19088e3801f95b590ed5dd8832f840fceb623c03026e76",
+        "camera": "ffb03dda2653c6204e57d4c5a87aed044f465bd239d4a07a6f102d1fdb9b3331",
+        "stl": "80dfb498c845cf7fa5b06712fdcad69bc5330913ef5b1d0afca484e3016f2fe7",
+        "metadata": "b4b122bc8ae316808f620a54ac97087bae1e61fba2083fdf59f261ce7aab7663",
+        "trace": "86a9e5fd29a3df1877308ab679b2ee1298fb24bc94149352b40c9b09aecd7931"
+      },
+      "camera_check": {
+        "center_max_abs": 1.0614050172108591e-07,
+        "intrinsics_lower_max_abs": 5.1139645966782654e-05,
+        "K_from_projection": [
+          [
+            2892.33025564808,
+            -0.00017418042335228838,
+            823.2062903490701
+          ],
+          [
+            -5.1139645966782654e-05,
+            2883.175435968144,
+            619.0701868810937
+          ],
+          [
+            9.73512732147308e-10,
+            -8.589128695541659e-10,
+            1.0
+          ]
+        ],
+        "scale": 329.365966796875
+      },
+      "code_head": "fd62bc235d015cd7b2b52007ec397f6074e9ea42"
+    }
+  ],
+  "definition": "one-way nearest independent GT point (mm), no ObsMask/Plane; not pixel depth GT, surface distance, Chamfer or formal DTU; no ICP. Engineering samples, not independent generalization. Host binary provenance and ID mapping gaps remain.",
+  "principal_point_note": "Original camera projection principal point differs from centered renderer; backprojection follows logged renderer pixel-center/focal convention, not original K principal point."
+}
