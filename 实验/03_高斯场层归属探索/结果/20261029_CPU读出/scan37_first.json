@@ -1,0 +1,1293 @@
+{
+  "scan": 37,
+  "code_head": "8f3448fe35cd5b880b25a6df8c32d2ce1ca03a9c",
+  "input_sha256": {
+    "model": "34fe9d7243208432410bcaf41e44f390e41009ef3730a5f5dfd63137bbe325c1",
+    "cfg": "d81c37f61020b0f39d465860921229fd8e8095dc1ab894b0e4360fbf7aef8d71",
+    "metadata": "1a50c9f0ae9105a70c9b1a360eb75fba4fb05297d89e95fc3434dbbb822f03e9",
+    "trace": "9152656e1154eaaa3febd2f6f844a272a78a220e07fce4f61587342318562ceb"
+  },
+  "metadata_source_sha256": {
+    "reader.cu": "059ca741793dedf0d8b2d58279105a0c27356772e5dfc3e584b4d7ee4304829d",
+    "sample.py": "f451c08d4f6194f0f5146b3b68c04a1532a9625f035c76aa3dbb2bbbc44eb106",
+    "analyze.py": "b1582511c3c43f69c9a93d3cd1d18e293faa4ded2d632956ca943f66751635b4",
+    "pixel_contribution.py": "6c70ea9f0297b535596e10c2132066b318889de82efb5d2a28f5cd942dfe028f"
+  },
+  "host_source_sha256": {
+    "cuda_rasterizer/rasterizer_impl.cu": "9dd902c2959d4c238e9cb663f35ff3606bdd3309f3c9130b274bcea874ceaf79",
+    "cuda_rasterizer/render_forward.cu": "147738ceaf62d423ee3fffae3a140667b50387c41e4ac029f9caedc7e05ad431",
+    "cuda_rasterizer/config.h": "493b8636b615b4f6aee2aad558a17e477c417ac2c8f7ba4c2abce29959502509"
+  },
+  "host_binary_sha256": "f97dcd66f55d9ddbf673c1d467238fe6f983b9f0bf062645a87bb12d20aa91df",
+  "projection": "derived symmetric getProjectionMatrix from metadata fov; w=z+1e-7, ndc2Pix; znear=.01 zfar=100 do not affect x/y",
+  "kernel_size": 0.0,
+  "indices": [
+    0,
+    16,
+    32,
+    49,
+    65,
+    82,
+    98,
+    115,
+    131,
+    148,
+    164,
+    181,
+    197,
+    214,
+    230,
+    247,
+    263,
+    280,
+    296,
+    313,
+    329,
+    346,
+    362,
+    379,
+    395,
+    412,
+    428,
+    445,
+    461,
+    478,
+    494,
+    511
+  ],
+  "first_id_mismatch": null,
+  "first_field_mismatch": {
+    "depth": null,
+    "alpha": {
+      "ray_index": 0,
+      "position": 17,
+      "id": 314487,
+      "logged": 0.04173917695879936,
+      "cpu": 0.04173554852604866
+    },
+    "transmittance": {
+      "ray_index": 461,
+      "position": 47,
+      "id": 8597,
+      "logged": 0.11588221043348312,
+      "cpu": 0.1158764585852623
+    },
+    "weight": {
+      "ray_index": 148,
+      "position": 36,
+      "id": 154459,
+      "logged": 0.03370150178670883,
+      "cpu": 0.033697839826345444
+    }
+  },
+  "first_host_mismatch": null,
+  "matched_id_rays": 32,
+  "field_error_matching_prefix": {
+    "depth": {
+      "n": 2365,
+      "max": 1.6689300537109375e-06,
+      "p50": 2.384185791015625e-07,
+      "p95": 4.76837158203125e-07
+    },
+    "alpha": {
+      "n": 2365,
+      "max": 2.2023916244506836e-05,
+      "p50": 1.043081283569336e-07,
+      "p95": 3.185868263244625e-06
+    },
+    "transmittance": {
+      "n": 2365,
+      "max": 1.1265277862548828e-05,
+      "p50": 3.427267074584961e-07,
+      "p95": 3.2380223274230916e-06
+    },
+    "weight": {
+      "n": 2365,
+      "max": 5.073845386505127e-06,
+      "p50": 2.176966518163681e-08,
+      "p95": 7.204711437225324e-07
+    }
+  },
+  "host_error": {
+    "expected": {
+      "n": 32,
+      "max": 1.1920928955078125e-06,
+      "p50": 2.384185791015625e-07,
+      "p95": 1.1920928955078125e-06
+    },
+    "native_median": {
+      "n": 32,
+      "max": 1.430511474609375e-06,
+      "p50": 2.384185791015625e-07,
+      "p95": 3.4570693969726546e-07
+    },
+    "opacity": {
+      "n": 32,
+      "max": 3.039836883544922e-06,
+      "p50": 2.9802322387695312e-08,
+      "p95": 1.862645149230956e-06
+    }
+  },
+  "host_max_abs": [
+    1.1920928955078125e-06,
+    1.430511474609375e-06,
+    3.039836883544922e-06
+  ],
+  "passed": false,
+  "rows": [
+    {
+      "ray_index": 0,
+      "pixel": [
+        348,
+        238
+      ],
+      "expected_count": 37,
+      "cpu_count": 37,
+      "id_order_equal": true,
+      "first_id_mismatch": null,
+      "field_errors": {
+        "depth": {
+          "max": 2.384185791015625e-07,
+          "within_tolerance": true
+        },
+        "alpha": {
+          "max": 3.6284327507019043e-06,
+          "within_tolerance": false
+        },
+        "transmittance": {
+          "max": 1.817941665649414e-06,
+          "within_tolerance": true
+        },
+        "weight": {
+          "max": 1.4398247003555298e-06,
+          "within_tolerance": true
+        }
+      },
+      "matching_id_prefix": 37,
+      "host_abs_errors": [
+        4.76837158203125e-07,
+        2.384185791015625e-07,
+        6.556510925292969e-07
+      ],
+      "host_within_tolerance": true
+    },
+    {
+      "ray_index": 16,
+      "pixel": [
+        163,
+        107
+      ],
+      "expected_count": 54,
+      "cpu_count": 54,
+      "id_order_equal": true,
+      "first_id_mismatch": null,
+      "field_errors": {
+        "depth": {
+          "max": 4.76837158203125e-07,
+          "within_tolerance": true
+        },
+        "alpha": {
+          "max": 3.9227306842803955e-06,
+          "within_tolerance": false
+        },
+        "transmittance": {
+          "max": 1.430511474609375e-06,
+          "within_tolerance": true
+        },
+        "weight": {
+          "max": 1.475214958190918e-06,
+          "within_tolerance": true
+        }
+      },
+      "matching_id_prefix": 54,
+      "host_abs_errors": [
+        2.384185791015625e-07,
+        2.384185791015625e-07,
+        0.0
+      ],
+      "host_within_tolerance": true
+    },
+    {
+      "ray_index": 32,
+      "pixel": [
+        260,
+        456
+      ],
+      "expected_count": 126,
+      "cpu_count": 126,
+      "id_order_equal": true,
+      "first_id_mismatch": null,
+      "field_errors": {
+        "depth": {
+          "max": 2.384185791015625e-07,
+          "within_tolerance": true
+        },
+        "alpha": {
+          "max": 2.0079314708709717e-06,
+          "within_tolerance": true
+        },
+        "transmittance": {
+          "max": 1.519918441772461e-06,
+          "within_tolerance": true
+        },
+        "weight": {
+          "max": 4.7497451305389404e-07,
+          "within_tolerance": true
+        }
+      },
+      "matching_id_prefix": 126,
+      "host_abs_errors": [
+        4.76837158203125e-07,
+        0.0,
+        0.0
+      ],
+      "host_within_tolerance": true
+    },
+    {
+      "ray_index": 49,
+      "pixel": [
+        201,
+        372
+      ],
+      "expected_count": 112,
+      "cpu_count": 112,
+      "id_order_equal": true,
+      "first_id_mismatch": null,
+      "field_errors": {
+        "depth": {
+          "max": 2.384185791015625e-07,
+          "within_tolerance": true
+        },
+        "alpha": {
+          "max": 8.83638858795166e-06,
+          "within_tolerance": false
+        },
+        "transmittance": {
+          "max": 1.519918441772461e-06,
+          "within_tolerance": true
+        },
+        "weight": {
+          "max": 2.4866312742233276e-06,
+          "within_tolerance": true
+        }
+      },
+      "matching_id_prefix": 112,
+      "host_abs_errors": [
+        2.384185791015625e-07,
+        0.0,
+        0.0
+      ],
+      "host_within_tolerance": true
+    },
+    {
+      "ray_index": 65,
+      "pixel": [
+        65,
+        190
+      ],
+      "expected_count": 99,
+      "cpu_count": 99,
+      "id_order_equal": true,
+      "first_id_mismatch": null,
+      "field_errors": {
+        "depth": {
+          "max": 4.76837158203125e-07,
+          "within_tolerance": true
+        },
+        "alpha": {
+          "max": 7.994472980499268e-06,
+          "within_tolerance": false
+        },
+        "transmittance": {
+          "max": 1.8775463104248047e-06,
+          "within_tolerance": true
+        },
+        "weight": {
+          "max": 8.754432201385498e-07,
+          "within_tolerance": true
+        }
+      },
+      "matching_id_prefix": 99,
+      "host_abs_errors": [
+        2.384185791015625e-07,
+        0.0,
+        0.0
+      ],
+      "host_within_tolerance": true
+    },
+    {
+      "ray_index": 82,
+      "pixel": [
+        436,
+        85
+      ],
+      "expected_count": 57,
+      "cpu_count": 57,
+      "id_order_equal": true,
+      "first_id_mismatch": null,
+      "field_errors": {
+        "depth": {
+          "max": 4.76837158203125e-07,
+          "within_tolerance": true
+        },
+        "alpha": {
+          "max": 6.690621376037598e-06,
+          "within_tolerance": false
+        },
+        "transmittance": {
+          "max": 2.0265579223632812e-06,
+          "within_tolerance": true
+        },
+        "weight": {
+          "max": 1.6205012798309326e-06,
+          "within_tolerance": true
+        }
+      },
+      "matching_id_prefix": 57,
+      "host_abs_errors": [
+        9.5367431640625e-07,
+        0.0,
+        0.0
+      ],
+      "host_within_tolerance": true
+    },
+    {
+      "ray_index": 98,
+      "pixel": [
+        297,
+        199
+      ],
+      "expected_count": 110,
+      "cpu_count": 110,
+      "id_order_equal": true,
+      "first_id_mismatch": null,
+      "field_errors": {
+        "depth": {
+          "max": 4.76837158203125e-07,
+          "within_tolerance": true
+        },
+        "alpha": {
+          "max": 4.157423973083496e-06,
+          "within_tolerance": false
+        },
+        "transmittance": {
+          "max": 1.5795230865478516e-06,
+          "within_tolerance": true
+        },
+        "weight": {
+          "max": 1.7061829566955566e-06,
+          "within_tolerance": true
+        }
+      },
+      "matching_id_prefix": 110,
+      "host_abs_errors": [
+        4.76837158203125e-07,
+        4.76837158203125e-07,
+        0.0
+      ],
+      "host_within_tolerance": true
+    },
+    {
+      "ray_index": 115,
+      "pixel": [
+        285,
+        271
+      ],
+      "expected_count": 46,
+      "cpu_count": 46,
+      "id_order_equal": true,
+      "first_id_mismatch": null,
+      "field_errors": {
+        "depth": {
+          "max": 4.76837158203125e-07,
+          "within_tolerance": true
+        },
+        "alpha": {
+          "max": 5.5283308029174805e-06,
+          "within_tolerance": false
+        },
+        "transmittance": {
+          "max": 1.8477439880371094e-06,
+          "within_tolerance": true
+        },
+        "weight": {
+          "max": 1.7173588275909424e-06,
+          "within_tolerance": true
+        }
+      },
+      "matching_id_prefix": 46,
+      "host_abs_errors": [
+        7.152557373046875e-07,
+        2.384185791015625e-07,
+        1.1920928955078125e-07
+      ],
+      "host_within_tolerance": true
+    },
+    {
+      "ray_index": 131,
+      "pixel": [
+        446,
+        477
+      ],
+      "expected_count": 127,
+      "cpu_count": 127,
+      "id_order_equal": true,
+      "first_id_mismatch": null,
+      "field_errors": {
+        "depth": {
+          "max": 4.76837158203125e-07,
+          "within_tolerance": true
+        },
+        "alpha": {
+          "max": 8.344650268554688e-06,
+          "within_tolerance": false
+        },
+        "transmittance": {
+          "max": 1.5497207641601562e-06,
+          "within_tolerance": true
+        },
+        "weight": {
+          "max": 9.685754776000977e-07,
+          "within_tolerance": true
+        }
+      },
+      "matching_id_prefix": 127,
+      "host_abs_errors": [
+        2.384185791015625e-07,
+        2.384185791015625e-07,
+        1.1920928955078125e-07
+      ],
+      "host_within_tolerance": true
+    },
+    {
+      "ray_index": 148,
+      "pixel": [
+        525,
+        222
+      ],
+      "expected_count": 60,
+      "cpu_count": 60,
+      "id_order_equal": true,
+      "first_id_mismatch": null,
+      "field_errors": {
+        "depth": {
+          "max": 4.76837158203125e-07,
+          "within_tolerance": true
+        },
+        "alpha": {
+          "max": 1.658499240875244e-05,
+          "within_tolerance": false
+        },
+        "transmittance": {
+          "max": 4.410743713378906e-06,
+          "within_tolerance": true
+        },
+        "weight": {
+          "max": 3.6619603633880615e-06,
+          "within_tolerance": false
+        }
+      },
+      "matching_id_prefix": 60,
+      "host_abs_errors": [
+        2.384185791015625e-07,
+        2.384185791015625e-07,
+        2.682209014892578e-06
+      ],
+      "host_within_tolerance": true
+    },
+    {
+      "ray_index": 164,
+      "pixel": [
+        270,
+        155
+      ],
+      "expected_count": 52,
+      "cpu_count": 52,
+      "id_order_equal": true,
+      "first_id_mismatch": null,
+      "field_errors": {
+        "depth": {
+          "max": 2.384185791015625e-07,
+          "within_tolerance": true
+        },
+        "alpha": {
+          "max": 3.11434268951416e-06,
+          "within_tolerance": true
+        },
+        "transmittance": {
+          "max": 9.685754776000977e-07,
+          "within_tolerance": true
+        },
+        "weight": {
+          "max": 5.513429641723633e-07,
+          "within_tolerance": true
+        }
+      },
+      "matching_id_prefix": 52,
+      "host_abs_errors": [
+        2.384185791015625e-07,
+        2.384185791015625e-07,
+        1.1920928955078125e-07
+      ],
+      "host_within_tolerance": true
+    },
+    {
+      "ray_index": 181,
+      "pixel": [
+        373,
+        245
+      ],
+      "expected_count": 18,
+      "cpu_count": 18,
+      "id_order_equal": true,
+      "first_id_mismatch": null,
+      "field_errors": {
+        "depth": {
+          "max": 2.384185791015625e-07,
+          "within_tolerance": true
+        },
+        "alpha": {
+          "max": 1.0728836059570312e-06,
+          "within_tolerance": true
+        },
+        "transmittance": {
+          "max": 1.0728836059570312e-06,
+          "within_tolerance": true
+        },
+        "weight": {
+          "max": 1.0728836059570312e-06,
+          "within_tolerance": true
+        }
+      },
+      "matching_id_prefix": 18,
+      "host_abs_errors": [
+        2.384185791015625e-07,
+        2.384185791015625e-07,
+        1.7881393432617188e-07
+      ],
+      "host_within_tolerance": true
+    },
+    {
+      "ray_index": 197,
+      "pixel": [
+        668,
+        90
+      ],
+      "expected_count": 81,
+      "cpu_count": 81,
+      "id_order_equal": true,
+      "first_id_mismatch": null,
+      "field_errors": {
+        "depth": {
+          "max": 4.76837158203125e-07,
+          "within_tolerance": true
+        },
+        "alpha": {
+          "max": 2.1025538444519043e-05,
+          "within_tolerance": false
+        },
+        "transmittance": {
+          "max": 4.351139068603516e-06,
+          "within_tolerance": true
+        },
+        "weight": {
+          "max": 5.073845386505127e-06,
+          "within_tolerance": false
+        }
+      },
+      "matching_id_prefix": 81,
+      "host_abs_errors": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "host_within_tolerance": true
+    },
+    {
+      "ray_index": 214,
+      "pixel": [
+        106,
+        118
+      ],
+      "expected_count": 76,
+      "cpu_count": 76,
+      "id_order_equal": true,
+      "first_id_mismatch": null,
+      "field_errors": {
+        "depth": {
+          "max": 4.76837158203125e-07,
+          "within_tolerance": true
+        },
+        "alpha": {
+          "max": 9.28342342376709e-06,
+          "within_tolerance": false
+        },
+        "transmittance": {
+          "max": 1.4603137969970703e-06,
+          "within_tolerance": true
+        },
+        "weight": {
+          "max": 1.8440186977386475e-06,
+          "within_tolerance": true
+        }
+      },
+      "matching_id_prefix": 76,
+      "host_abs_errors": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "host_within_tolerance": true
+    },
+    {
+      "ray_index": 230,
+      "pixel": [
+        154,
+        246
+      ],
+      "expected_count": 44,
+      "cpu_count": 44,
+      "id_order_equal": true,
+      "first_id_mismatch": null,
+      "field_errors": {
+        "depth": {
+          "max": 7.152557373046875e-07,
+          "within_tolerance": true
+        },
+        "alpha": {
+          "max": 7.62939453125e-06,
+          "within_tolerance": true
+        },
+        "transmittance": {
+          "max": 2.6971101760864258e-06,
+          "within_tolerance": true
+        },
+        "weight": {
+          "max": 2.5480985641479492e-06,
+          "within_tolerance": true
+        }
+      },
+      "matching_id_prefix": 44,
+      "host_abs_errors": [
+        2.384185791015625e-07,
+        2.384185791015625e-07,
+        2.980232238769531e-07
+      ],
+      "host_within_tolerance": true
+    },
+    {
+      "ray_index": 247,
+      "pixel": [
+        397,
+        72
+      ],
+      "expected_count": 68,
+      "cpu_count": 68,
+      "id_order_equal": true,
+      "first_id_mismatch": null,
+      "field_errors": {
+        "depth": {
+          "max": 7.152557373046875e-07,
+          "within_tolerance": true
+        },
+        "alpha": {
+          "max": 1.0788440704345703e-05,
+          "within_tolerance": false
+        },
+        "transmittance": {
+          "max": 2.6226043701171875e-06,
+          "within_tolerance": true
+        },
+        "weight": {
+          "max": 3.4421682357788086e-06,
+          "within_tolerance": true
+        }
+      },
+      "matching_id_prefix": 68,
+      "host_abs_errors": [
+        9.5367431640625e-07,
+        2.384185791015625e-07,
+        0.0
+      ],
+      "host_within_tolerance": true
+    },
+    {
+      "ray_index": 263,
+      "pixel": [
+        500,
+        387
+      ],
+      "expected_count": 88,
+      "cpu_count": 88,
+      "id_order_equal": true,
+      "first_id_mismatch": null,
+      "field_errors": {
+        "depth": {
+          "max": 7.152557373046875e-07,
+          "within_tolerance": true
+        },
+        "alpha": {
+          "max": 1.2636184692382812e-05,
+          "within_tolerance": false
+        },
+        "transmittance": {
+          "max": 4.470348358154297e-06,
+          "within_tolerance": true
+        },
+        "weight": {
+          "max": 4.567205905914307e-06,
+          "within_tolerance": false
+        }
+      },
+      "matching_id_prefix": 88,
+      "host_abs_errors": [
+        1.1920928955078125e-06,
+        2.384185791015625e-07,
+        4.172325134277344e-07
+      ],
+      "host_within_tolerance": true
+    },
+    {
+      "ray_index": 280,
+      "pixel": [
+        456,
+        192
+      ],
+      "expected_count": 72,
+      "cpu_count": 72,
+      "id_order_equal": true,
+      "first_id_mismatch": null,
+      "field_errors": {
+        "depth": {
+          "max": 2.384185791015625e-07,
+          "within_tolerance": true
+        },
+        "alpha": {
+          "max": 1.1488795280456543e-05,
+          "within_tolerance": false
+        },
+        "transmittance": {
+          "max": 1.6093254089355469e-06,
+          "within_tolerance": true
+        },
+        "weight": {
+          "max": 1.914799213409424e-06,
+          "within_tolerance": true
+        }
+      },
+      "matching_id_prefix": 72,
+      "host_abs_errors": [
+        2.384185791015625e-07,
+        0.0,
+        0.0
+      ],
+      "host_within_tolerance": true
+    },
+    {
+      "ray_index": 296,
+      "pixel": [
+        433,
+        113
+      ],
+      "expected_count": 154,
+      "cpu_count": 154,
+      "id_order_equal": true,
+      "first_id_mismatch": null,
+      "field_errors": {
+        "depth": {
+          "max": 7.152557373046875e-07,
+          "within_tolerance": true
+        },
+        "alpha": {
+          "max": 6.57886266708374e-06,
+          "within_tolerance": false
+        },
+        "transmittance": {
+          "max": 1.9371509552001953e-06,
+          "within_tolerance": true
+        },
+        "weight": {
+          "max": 3.0174851417541504e-06,
+          "within_tolerance": false
+        }
+      },
+      "matching_id_prefix": 154,
+      "host_abs_errors": [
+        1.1920928955078125e-06,
+        2.384185791015625e-07,
+        0.0
+      ],
+      "host_within_tolerance": true
+    },
+    {
+      "ray_index": 313,
+      "pixel": [
+        94,
+        330
+      ],
+      "expected_count": 44,
+      "cpu_count": 44,
+      "id_order_equal": true,
+      "first_id_mismatch": null,
+      "field_errors": {
+        "depth": {
+          "max": 2.384185791015625e-07,
+          "within_tolerance": true
+        },
+        "alpha": {
+          "max": 5.245208740234375e-06,
+          "within_tolerance": false
+        },
+        "transmittance": {
+          "max": 3.248453140258789e-06,
+          "within_tolerance": true
+        },
+        "weight": {
+          "max": 2.115964889526367e-06,
+          "within_tolerance": true
+        }
+      },
+      "matching_id_prefix": 44,
+      "host_abs_errors": [
+        1.1920928955078125e-06,
+        2.384185791015625e-07,
+        5.960464477539063e-08
+      ],
+      "host_within_tolerance": true
+    },
+    {
+      "ray_index": 329,
+      "pixel": [
+        278,
+        297
+      ],
+      "expected_count": 41,
+      "cpu_count": 41,
+      "id_order_equal": true,
+      "first_id_mismatch": null,
+      "field_errors": {
+        "depth": {
+          "max": 7.152557373046875e-07,
+          "within_tolerance": true
+        },
+        "alpha": {
+          "max": 4.798173904418945e-06,
+          "within_tolerance": false
+        },
+        "transmittance": {
+          "max": 4.589557647705078e-06,
+          "within_tolerance": true
+        },
+        "weight": {
+          "max": 1.3336539268493652e-06,
+          "within_tolerance": true
+        }
+      },
+      "matching_id_prefix": 41,
+      "host_abs_errors": [
+        4.76837158203125e-07,
+        0.0,
+        3.039836883544922e-06
+      ],
+      "host_within_tolerance": true
+    },
+    {
+      "ray_index": 346,
+      "pixel": [
+        565,
+        198
+      ],
+      "expected_count": 66,
+      "cpu_count": 66,
+      "id_order_equal": true,
+      "first_id_mismatch": null,
+      "field_errors": {
+        "depth": {
+          "max": 4.76837158203125e-07,
+          "within_tolerance": true
+        },
+        "alpha": {
+          "max": 6.018206477165222e-06,
+          "within_tolerance": false
+        },
+        "transmittance": {
+          "max": 2.384185791015625e-06,
+          "within_tolerance": true
+        },
+        "weight": {
+          "max": 1.4882534742355347e-06,
+          "within_tolerance": true
+        }
+      },
+      "matching_id_prefix": 66,
+      "host_abs_errors": [
+        2.384185791015625e-07,
+        0.0,
+        8.344650268554688e-07
+      ],
+      "host_within_tolerance": true
+    },
+    {
+      "ray_index": 362,
+      "pixel": [
+        349,
+        375
+      ],
+      "expected_count": 92,
+      "cpu_count": 92,
+      "id_order_equal": true,
+      "first_id_mismatch": null,
+      "field_errors": {
+        "depth": {
+          "max": 4.76837158203125e-07,
+          "within_tolerance": true
+        },
+        "alpha": {
+          "max": 4.4405460357666016e-06,
+          "within_tolerance": false
+        },
+        "transmittance": {
+          "max": 1.2218952178955078e-06,
+          "within_tolerance": true
+        },
+        "weight": {
+          "max": 7.417984306812286e-07,
+          "within_tolerance": true
+        }
+      },
+      "matching_id_prefix": 92,
+      "host_abs_errors": [
+        2.384185791015625e-07,
+        0.0,
+        0.0
+      ],
+      "host_within_tolerance": true
+    },
+    {
+      "ray_index": 379,
+      "pixel": [
+        509,
+        324
+      ],
+      "expected_count": 126,
+      "cpu_count": 126,
+      "id_order_equal": true,
+      "first_id_mismatch": null,
+      "field_errors": {
+        "depth": {
+          "max": 4.76837158203125e-07,
+          "within_tolerance": true
+        },
+        "alpha": {
+          "max": 3.4347176551818848e-06,
+          "within_tolerance": false
+        },
+        "transmittance": {
+          "max": 1.430511474609375e-06,
+          "within_tolerance": true
+        },
+        "weight": {
+          "max": 5.979090929031372e-07,
+          "within_tolerance": true
+        }
+      },
+      "matching_id_prefix": 126,
+      "host_abs_errors": [
+        7.152557373046875e-07,
+        0.0,
+        0.0
+      ],
+      "host_within_tolerance": true
+    },
+    {
+      "ray_index": 395,
+      "pixel": [
+        225,
+        341
+      ],
+      "expected_count": 31,
+      "cpu_count": 31,
+      "id_order_equal": true,
+      "first_id_mismatch": null,
+      "field_errors": {
+        "depth": {
+          "max": 4.76837158203125e-07,
+          "within_tolerance": true
+        },
+        "alpha": {
+          "max": 1.2218952178955078e-06,
+          "within_tolerance": true
+        },
+        "transmittance": {
+          "max": 7.748603820800781e-07,
+          "within_tolerance": true
+        },
+        "weight": {
+          "max": 7.450580596923828e-07,
+          "within_tolerance": true
+        }
+      },
+      "matching_id_prefix": 31,
+      "host_abs_errors": [
+        4.76837158203125e-07,
+        0.0,
+        0.0
+      ],
+      "host_within_tolerance": true
+    },
+    {
+      "ray_index": 412,
+      "pixel": [
+        266,
+        132
+      ],
+      "expected_count": 84,
+      "cpu_count": 84,
+      "id_order_equal": true,
+      "first_id_mismatch": null,
+      "field_errors": {
+        "depth": {
+          "max": 2.384185791015625e-07,
+          "within_tolerance": true
+        },
+        "alpha": {
+          "max": 3.9674341678619385e-06,
+          "within_tolerance": false
+        },
+        "transmittance": {
+          "max": 4.76837158203125e-06,
+          "within_tolerance": true
+        },
+        "weight": {
+          "max": 3.2391399145126343e-06,
+          "within_tolerance": false
+        }
+      },
+      "matching_id_prefix": 84,
+      "host_abs_errors": [
+        0.0,
+        0.0,
+        5.960464477539063e-08
+      ],
+      "host_within_tolerance": true
+    },
+    {
+      "ray_index": 428,
+      "pixel": [
+        408,
+        169
+      ],
+      "expected_count": 20,
+      "cpu_count": 20,
+      "id_order_equal": true,
+      "first_id_mismatch": null,
+      "field_errors": {
+        "depth": {
+          "max": 2.384185791015625e-07,
+          "within_tolerance": true
+        },
+        "alpha": {
+          "max": 2.205371856689453e-06,
+          "within_tolerance": true
+        },
+        "transmittance": {
+          "max": 1.1324882507324219e-06,
+          "within_tolerance": true
+        },
+        "weight": {
+          "max": 9.834766387939453e-07,
+          "within_tolerance": true
+        }
+      },
+      "matching_id_prefix": 20,
+      "host_abs_errors": [
+        2.384185791015625e-07,
+        0.0,
+        5.364418029785156e-07
+      ],
+      "host_within_tolerance": true
+    },
+    {
+      "ray_index": 445,
+      "pixel": [
+        559,
+        310
+      ],
+      "expected_count": 140,
+      "cpu_count": 140,
+      "id_order_equal": true,
+      "first_id_mismatch": null,
+      "field_errors": {
+        "depth": {
+          "max": 9.5367431640625e-07,
+          "within_tolerance": true
+        },
+        "alpha": {
+          "max": 8.910894393920898e-06,
+          "within_tolerance": false
+        },
+        "transmittance": {
+          "max": 1.1324882507324219e-06,
+          "within_tolerance": true
+        },
+        "weight": {
+          "max": 1.735985279083252e-06,
+          "within_tolerance": true
+        }
+      },
+      "matching_id_prefix": 140,
+      "host_abs_errors": [
+        2.384185791015625e-07,
+        2.384185791015625e-07,
+        5.960464477539063e-08
+      ],
+      "host_within_tolerance": true
+    },
+    {
+      "ray_index": 461,
+      "pixel": [
+        624,
+        90
+      ],
+      "expected_count": 89,
+      "cpu_count": 89,
+      "id_order_equal": true,
+      "first_id_mismatch": null,
+      "field_errors": {
+        "depth": {
+          "max": 4.76837158203125e-07,
+          "within_tolerance": true
+        },
+        "alpha": {
+          "max": 2.2023916244506836e-05,
+          "within_tolerance": false
+        },
+        "transmittance": {
+          "max": 5.751848220825195e-06,
+          "within_tolerance": false
+        },
+        "weight": {
+          "max": 2.808868885040283e-06,
+          "within_tolerance": false
+        }
+      },
+      "matching_id_prefix": 89,
+      "host_abs_errors": [
+        7.152557373046875e-07,
+        2.384185791015625e-07,
+        0.0
+      ],
+      "host_within_tolerance": true
+    },
+    {
+      "ray_index": 478,
+      "pixel": [
+        142,
+        63
+      ],
+      "expected_count": 60,
+      "cpu_count": 60,
+      "id_order_equal": true,
+      "first_id_mismatch": null,
+      "field_errors": {
+        "depth": {
+          "max": 2.384185791015625e-07,
+          "within_tolerance": true
+        },
+        "alpha": {
+          "max": 1.3649463653564453e-05,
+          "within_tolerance": false
+        },
+        "transmittance": {
+          "max": 5.364418029785156e-06,
+          "within_tolerance": false
+        },
+        "weight": {
+          "max": 2.5480985641479492e-06,
+          "within_tolerance": true
+        }
+      },
+      "matching_id_prefix": 60,
+      "host_abs_errors": [
+        9.5367431640625e-07,
+        0.0,
+        1.1920928955078125e-07
+      ],
+      "host_within_tolerance": true
+    },
+    {
+      "ray_index": 494,
+      "pixel": [
+        245,
+        552
+      ],
+      "expected_count": 13,
+      "cpu_count": 13,
+      "id_order_equal": true,
+      "first_id_mismatch": null,
+      "field_errors": {
+        "depth": {
+          "max": 4.76837158203125e-07,
+          "within_tolerance": true
+        },
+        "alpha": {
+          "max": 2.5890767574310303e-06,
+          "within_tolerance": true
+        },
+        "transmittance": {
+          "max": 2.682209014892578e-06,
+          "within_tolerance": true
+        },
+        "weight": {
+          "max": 2.5816261768341064e-06,
+          "within_tolerance": true
+        }
+      },
+      "matching_id_prefix": 13,
+      "host_abs_errors": [
+        0.0,
+        2.384185791015625e-07,
+        1.1920928955078125e-06
+      ],
+      "host_within_tolerance": true
+    },
+    {
+      "ray_index": 511,
+      "pixel": [
+        680,
+        100
+      ],
+      "expected_count": 78,
+      "cpu_count": 78,
+      "id_order_equal": true,
+      "first_id_mismatch": null,
+      "field_errors": {
+        "depth": {
+          "max": 1.6689300537109375e-06,
+          "within_tolerance": true
+        },
+        "alpha": {
+          "max": 1.3828277587890625e-05,
+          "within_tolerance": false
+        },
+        "transmittance": {
+          "max": 1.1265277862548828e-05,
+          "within_tolerance": true
+        },
+        "weight": {
+          "max": 4.4852495193481445e-06,
+          "within_tolerance": false
+        }
+      },
+      "matching_id_prefix": 78,
+      "host_abs_errors": [
+        4.76837158203125e-07,
+        1.430511474609375e-06,
+        0.0
+      ],
+      "host_within_tolerance": true
+    }
+  ],
+  "elapsed_seconds": 2.7590126,
+  "limitations": "CPU source-formula experiment; GPU FMA/fast math and host binary build provenance unresolved. Unmatched IDs compared only through common prefix; no new rays, no CUDA call, no claim of general equivalence."
+}
