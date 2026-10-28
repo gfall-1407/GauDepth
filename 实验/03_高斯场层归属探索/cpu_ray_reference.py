@@ -10,6 +10,16 @@ F=np.float32
 OUT=base.OUT.parent/'20261029_CPU读出'
 
 
+def factorization_check():
+    a=.73; b=.37
+    rotation=np.array([[np.cos(a),-np.sin(a),0],[np.sin(a),np.cos(a),0],[0,0,1.]])
+    world_view=np.array([[np.cos(b),0,np.sin(b)],[0,1,0],[-np.sin(b),0,np.cos(b)]])
+    s=np.array([.1,.03,.002]); J=np.array([[400.,0],[0,380.],[-20.,15.]])
+    m=np.diag(s)@rotation.T@world_view@J
+    independent=J.T@world_view.T@rotation@np.diag(s*s)@rotation.T@world_view@J
+    np.testing.assert_allclose(m.T@m,independent,atol=1e-12,rtol=1e-12)
+
+
 def prepare(p,view,kernel):
     # CUDA uses float32; numpy does not promise CUDA FMA, norm3df, or expf bit identity.
     W=np.asarray(view['world_view_transform'],dtype=F); h,w=view['image_size']; fx,fy=map(F,view['focal']); tx,ty=map(lambda x:F(np.tan(x/2)),view['fov'])
@@ -22,15 +32,16 @@ def prepare(p,view,kernel):
     pw=F(1)/(homogeneous[:,3]+F(1e-7))
     px=((homogeneous[:,0]*pw+F(1))*F(w)-F(1))*F(.5)
     py=((homogeneous[:,1]*pw+F(1))*F(h)-F(1))*F(.5)
-    ux=np.clip(cam[:,0]/z,-F(1.3)*tx,F(1.3)*tx); uy=np.clip(cam[:,1]/z,-F(1.3)*ty,F(1.3)*ty)
+    cx=np.clip(cam[:,0]/z,-F(1.3)*tx,F(1.3)*tx)*z; cy=np.clip(cam[:,1]/z,-F(1.3)*ty,F(1.3)*ty)*z
+    ux=cx/z; uy=cy/z
     raw=np.exp(np.stack([p[f'scale_{j}'] for j in range(3)],1).astype(F)); raw2=raw*raw
     filtered2=raw2+p['filter_3D'][:,None]**2; scales=np.sqrt(filtered2)
     opacity=F(1)/(F(1)+np.exp(-p['opacity']))*np.sqrt(np.prod(raw2,axis=1)/np.prod(filtered2,axis=1))
     q=np.stack([p[f'rot_{j}'] for j in range(4)],1).astype(F)
     rotation=base.rotation(q).astype(F); Rcam=np.einsum('ij,njk->nik',W[:3,:3].T,rotation)
-    C=np.einsum('nik,nk,njk->nij',Rcam,filtered2,Rcam,optimize=True)
-    J=np.zeros((len(p),2,3),dtype=F); J[:,0,0]=fx/z; J[:,1,1]=fy/z; J[:,0,2]=-fx*ux/z; J[:,1,2]=-fy*uy/z
-    cov=np.einsum('nki,nij,nlj->nkl',J,C,J,optimize=True); A=cov[:,0,0]; B=cov[:,0,1]; Cc=cov[:,1,1]
+    J=np.zeros((len(p),3,2),dtype=F); J[:,0,0]=fx/z; J[:,1,1]=fy/z; J[:,2,0]=-(fx*cx)/(z*z); J[:,2,1]=-(fy*cy)/(z*z)
+    T=np.matmul(W[:3,:3],J); RT=np.matmul(np.swapaxes(rotation,1,2),T); M=scales[:,:,None]*RT
+    cov=np.matmul(np.swapaxes(M,1,2),M); A=cov[:,0,0]; B=cov[:,0,1]; Cc=cov[:,1,1]
     k=F(kernel); det0=np.maximum(F(1e-6),A*Cc-B*B); det1=np.maximum(F(1e-6),(A+k)*(Cc+k)-B*B)
     opacity=opacity*np.sqrt(det0/det1); A=A+k; Cc=Cc+k; det=A*Cc-B*B
     mid=F(.5)*(A+Cc); lam=mid+np.sqrt(np.maximum(F(.1),mid*mid-det)); radius=np.ceil(F(3)*np.sqrt(lam)).astype(np.int32)
@@ -77,7 +88,7 @@ def trace(pre,x,y):
 
 
 def main(scan,label):
-    start=time.perf_counter(); idx=json.loads((base.DATA/'来源索引.json').read_text(encoding='utf8')); prefix='20261026_夜间深度方法/'
+    start=time.perf_counter(); factorization_check(); idx=json.loads((base.DATA/'来源索引.json').read_text(encoding='utf8')); prefix='20261026_夜间深度方法/'
     paths={k:base.indexed(prefix+p,idx) for k,p in {'model':f'inputs/scan{scan}/point_cloud.ply','cfg':f'inputs/scan{scan}/cfg_args','metadata':f'confirm_v1/scan{scan}/metadata.json','trace':f'confirm_v1/scan{scan}/view_000.npz'}.items()}
     meta=json.loads(paths['metadata'].read_text(encoding='utf8')); view=next(v for v in meta['views'] if v['view_index']==0); assert base.sha(paths['model'])==meta['model_sha256'] and base.sha(paths['cfg'])==meta['cfg_sha256'] and base.sha(paths['trace'])==view['npz_sha256']
     f=np.load(paths['trace']); ply=base.ply(paths['model']); pre=prepare(ply,view,meta['effective_model_args']['kernel_size']); chosen=np.linspace(0,len(f['offsets'])-2,32,dtype=int); rows=[]
