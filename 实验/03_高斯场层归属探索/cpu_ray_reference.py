@@ -16,7 +16,7 @@ def prepare(p,view,kernel):
     mu=np.stack([p[k] for k in ('x','y','z')],1).astype(F); cam=mu@W[:3,:3]+W[3,:3]; z=cam[:,2]; alive=z>F(.2)
     # Camera constructs full_proj_transform as float32 W @ P.T, then CUDA
     # transforms the original point; do not substitute sequential view projection.
-    projection=np.zeros((4,4),dtype=F); projection[0,0]=F(1)/tx; projection[1,1]=F(1)/ty
+    projection=np.zeros((4,4),dtype=F); projection[0,0]=F(1/np.tan(view['fov'][0]/2)); projection[1,1]=F(1/np.tan(view['fov'][1]/2))
     projection[2,2]=F(100/99.99); projection[2,3]=F(-1/99.99); projection[3,2]=F(1)
     full=W@projection.T; homogeneous=np.c_[mu,np.ones(len(mu),dtype=F)]@full
     pw=F(1)/(homogeneous[:,3]+F(1e-7))
@@ -26,7 +26,7 @@ def prepare(p,view,kernel):
     raw=np.exp(np.stack([p[f'scale_{j}'] for j in range(3)],1).astype(F)); raw2=raw*raw
     filtered2=raw2+p['filter_3D'][:,None]**2; scales=np.sqrt(filtered2)
     opacity=F(1)/(F(1)+np.exp(-p['opacity']))*np.sqrt(np.prod(raw2,axis=1)/np.prod(filtered2,axis=1))
-    q=np.stack([p[f'rot_{j}'] for j in range(4)],1).astype(F); q=q/np.sqrt(np.sum(q*q,axis=1))[:,None]
+    q=np.stack([p[f'rot_{j}'] for j in range(4)],1).astype(F)
     rotation=base.rotation(q).astype(F); Rcam=np.einsum('ij,njk->nik',W[:3,:3].T,rotation)
     C=np.einsum('nik,nk,njk->nij',Rcam,filtered2,Rcam,optimize=True)
     J=np.zeros((len(p),2,3),dtype=F); J[:,0,0]=fx/z; J[:,1,1]=fy/z; J[:,0,2]=-fx*ux/z; J[:,1,2]=-fy*uy/z
