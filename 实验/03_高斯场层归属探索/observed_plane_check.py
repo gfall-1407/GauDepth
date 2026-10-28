@@ -18,15 +18,20 @@ def epiline_residuals(F,x,y):
 
 def epiline_self_check():
     K=np.array([[800.,0,320],[0,800.,240],[0,0,1.]])
-    t=np.array([.3,.1,0.]); tx=np.array([[0,-t[2],t[1]],[t[2],0,-t[0]],[-t[1],t[0],0]])
-    F=np.linalg.inv(K).T@tx@np.linalg.inv(K); X=np.array([.2,.3,3.])
+    t=np.array([.3,.1,.05]); tx=np.array([[0,-t[2],t[1]],[t[2],0,-t[0]],[-t[1],t[0],0]])
+    angle=.2; R=np.array([[np.cos(angle),0,np.sin(angle)],[0,1,0],[-np.sin(angle),0,np.cos(angle)]])
+    F=np.linalg.inv(K).T@tx@R@np.linalg.inv(K)
     def project(v):
         q=K@v; return np.r_[q[:2]/q[2],1.]
-    x=project(X); y=project(X+t); base_error=epiline_residuals(F,x,y)
-    assert max(base_error)<1e-10
-    for dx,dy in ((np.array([0.,5.,0.]),np.zeros(3)),(np.zeros(3),np.array([0.,5.,0.]))):
-        assert min(epiline_residuals(F,x+dx,y+dy))>1.
-    return {'perfect_residuals_px':list(map(float,base_error)),'both_perturbations_detected':True}
+    errors=[]; wrong=[]
+    for X in (np.array([.2,.3,3.]),np.array([-.5,.4,4.]),np.array([.7,-.2,2.])):
+        x=project(X); y=project(R@X+t); base_error=epiline_residuals(F,x,y); errors.append(max(base_error))
+        wrong.append(abs(y@(F.T@y))/np.linalg.norm((F.T@y)[:2]))
+        assert max(base_error)<1e-10
+        for dx,dy in ((np.array([0.,5.,0.]),np.zeros(3)),(np.zeros(3),np.array([0.,5.,0.]))):
+            assert min(epiline_residuals(F,x+dx,y+dy))>1.
+    assert min(wrong)>1.
+    return {'camera_rotation_y_radians':angle,'translation':t.tolist(),'max_perfect_residual_px':float(max(errors)),'old_wrong_residuals_px':wrong,'both_perturbations_detected':True}
 
 def triangulate(points, projections):
     A=np.concatenate([np.stack([x*P[2]-P[0],y*P[2]-P[1]]) for (x,y),P in zip(points,projections)])
