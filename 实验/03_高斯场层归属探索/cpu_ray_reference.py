@@ -14,9 +14,14 @@ def prepare(p,view,kernel):
     # CUDA uses float32; numpy does not promise CUDA FMA, norm3df, or expf bit identity.
     W=np.asarray(view['world_view_transform'],dtype=F); h,w=view['image_size']; fx,fy=map(F,view['focal']); tx,ty=map(lambda x:F(np.tan(x/2)),view['fov'])
     mu=np.stack([p[k] for k in ('x','y','z')],1).astype(F); cam=mu@W[:3,:3]+W[3,:3]; z=cam[:,2]; alive=z>F(.2)
-    # Equivalent symmetric projection from Camera.getProjectionMatrix; CUDA adds 1e-7 to clip w.
-    px=((cam[:,0]/tx/(z+F(1e-7))+F(1))*F(w)-F(1))*F(.5)
-    py=((cam[:,1]/ty/(z+F(1e-7))+F(1))*F(h)-F(1))*F(.5)
+    # Camera constructs full_proj_transform as float32 W @ P.T, then CUDA
+    # transforms the original point; do not substitute sequential view projection.
+    projection=np.zeros((4,4),dtype=F); projection[0,0]=F(1)/tx; projection[1,1]=F(1)/ty
+    projection[2,2]=F(100/99.99); projection[2,3]=F(-1/99.99); projection[3,2]=F(1)
+    full=W@projection.T; homogeneous=np.c_[mu,np.ones(len(mu),dtype=F)]@full
+    pw=F(1)/(homogeneous[:,3]+F(1e-7))
+    px=((homogeneous[:,0]*pw+F(1))*F(w)-F(1))*F(.5)
+    py=((homogeneous[:,1]*pw+F(1))*F(h)-F(1))*F(.5)
     ux=np.clip(cam[:,0]/z,-F(1.3)*tx,F(1.3)*tx); uy=np.clip(cam[:,1]/z,-F(1.3)*ty,F(1.3)*ty)
     raw=np.exp(np.stack([p[f'scale_{j}'] for j in range(3)],1).astype(F)); raw2=raw*raw
     filtered2=raw2+p['filter_3D'][:,None]**2; scales=np.sqrt(filtered2)
@@ -71,7 +76,7 @@ def trace(pre,x,y):
     return out,[float(F(D*rln/F(F(1)-T))) if out else 0.,float(F(M*rln)),float(F(1)-T)]
 
 
-def main(scan):
+def main(scan,label):
     start=time.perf_counter(); idx=json.loads((base.DATA/'来源索引.json').read_text(encoding='utf8')); prefix='20261026_夜间深度方法/'
     paths={k:base.indexed(prefix+p,idx) for k,p in {'model':f'inputs/scan{scan}/point_cloud.ply','cfg':f'inputs/scan{scan}/cfg_args','metadata':f'confirm_v1/scan{scan}/metadata.json','trace':f'confirm_v1/scan{scan}/view_000.npz'}.items()}
     meta=json.loads(paths['metadata'].read_text(encoding='utf8')); view=next(v for v in meta['views'] if v['view_index']==0); assert base.sha(paths['model'])==meta['model_sha256'] and base.sha(paths['cfg'])==meta['cfg_sha256'] and base.sha(paths['trace'])==view['npz_sha256']
@@ -96,9 +101,9 @@ def main(scan):
         if first_host is None and not row['host_within_tolerance']: first_host={'ray_index':int(i),'cpu':host,'host':f['host_target'][i].tolist()}
     def stats(v): return {'n':len(v),'max':float(np.max(v)),'p50':float(np.quantile(v,.5)),'p95':float(np.quantile(v,.95))} if len(v) else {'n':0}
     report={'scan':scan,'code_head':subprocess.check_output(['git','rev-parse','HEAD'],cwd=base.REPO,text=True).strip(),'input_sha256':{k:base.sha(v) for k,v in paths.items()},'metadata_source_sha256':meta['source_sha256'],'host_source_sha256':meta['host_source_sha256'],'host_binary_sha256':meta['host_binary_sha256'],'projection':'derived symmetric getProjectionMatrix from metadata fov; w=z+1e-7, ndc2Pix; znear=.01 zfar=100 do not affect x/y','kernel_size':meta['effective_model_args']['kernel_size'],'indices':chosen.tolist(),'first_id_mismatch':first,'first_field_mismatch':first_field,'first_host_mismatch':first_host,'matched_id_rays':sum(r['id_order_equal'] for r in rows),'field_error_matching_prefix':{n:stats(v) for n,v in all_errors.items()},'host_error':{n:stats(np.asarray(host_errors)[:,j]) for j,n in enumerate(('expected','native_median','opacity'))},'host_max_abs':np.max(host_errors,axis=0).tolist(),'passed':all(r['id_order_equal'] and r['host_within_tolerance'] and all(v['within_tolerance'] for v in r['field_errors'].values()) for r in rows),'rows':rows,'elapsed_seconds':time.perf_counter()-start,'limitations':'CPU source-formula experiment; GPU FMA/fast math and host binary build provenance unresolved. Unmatched IDs compared only through common prefix; no new rays, no CUDA call, no claim of general equivalence.'}
-    OUT.mkdir(parents=True,exist_ok=True); path=OUT/f'scan{scan}_first.json'
+    OUT.mkdir(parents=True,exist_ok=True); path=OUT/f'scan{scan}_{label}.json'
     if path.exists(): raise FileExistsError(path)
     path.write_text(json.dumps(report,indent=2,ensure_ascii=False)+'\n',encoding='utf8');print(json.dumps({k:report[k] for k in ('scan','passed','matched_id_rays','first_id_mismatch','field_error_matching_prefix','host_max_abs','elapsed_seconds')},indent=2))
 
 
-if __name__=='__main__': main(int(sys.argv[1]))
+if __name__=='__main__': main(int(sys.argv[1]),sys.argv[2])
