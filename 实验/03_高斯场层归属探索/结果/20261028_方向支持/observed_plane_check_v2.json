@@ -1,0 +1,356 @@
+{
+  "git_head": "31e65a420ce8e2b8b492b142e0161e76bbaf1ae2",
+  "opencv": "4.12.0",
+  "epiline_synthetic_check": {
+    "camera_rotation_y_radians": 0.2,
+    "translation": [
+      0.3,
+      0.1,
+      0.05
+    ],
+    "max_perfect_residual_px": 1.1545067126359192e-13,
+    "old_wrong_residuals_px": [
+      47.315213379378314,
+      45.26540257472855,
+      93.98761764294728
+    ],
+    "both_perturbations_detected": true
+  },
+  "supersedes": "observed_plane_check.json had incorrect reverse epiline residual and its no-match conclusion is invalid",
+  "scans": [
+    {
+      "scan": 37,
+      "inputs_sha256": {
+        "camera_npz": "fbd4d03e10457cc36522f5a29d311ac50db867236bc4786c8c5a2a9c596c49ed",
+        "cameras_bin": "fe0aa32b87c96c1366500ccdf02493fb6f78ddd505ac484aa5f1315c4716f5b2",
+        "images_bin": "f2f04e4f7c54d4f53af5acf6f66346158671e78644cd883923609105ea73d705",
+        "image0": "b3c01bacdd66c09af63b417cd8ef184adb171eb91cd4c51a9d1791f30ce05404",
+        "image1": "3e767110c1ff4659e2e8cc1e586c9a68e465c60bd0f49efd4abc4ecc724b77f3",
+        "image2": "3cc777de6c94d29af15dac9f54826bb988bab235bed0df606aad0980cbeb7ee5",
+        "metadata": "1a50c9f0ae9105a70c9b1a360eb75fba4fb05297d89e95fc3434dbbb822f03e9"
+      },
+      "pose_rotation_max_abs": 2.855657110778509e-08,
+      "pose_translation_max_abs": 3.552551275376459e-08,
+      "status": "fixed_patch_fewer_than_four",
+      "native_intrinsics": [
+        [
+          [
+            2892.330078125,
+            0.0,
+            777.0
+          ],
+          [
+            0.0,
+            2883.175048828125,
+            581.0
+          ],
+          [
+            0.0,
+            0.0,
+            1.0
+          ]
+        ],
+        [
+          [
+            2892.330078125,
+            0.0,
+            777.0
+          ],
+          [
+            0.0,
+            2883.175048828125,
+            581.0
+          ],
+          [
+            0.0,
+            0.0,
+            1.0
+          ]
+        ],
+        [
+          [
+            2892.330078125,
+            0.0,
+            777.0
+          ],
+          [
+            0.0,
+            2883.175048828125,
+            581.0
+          ],
+          [
+            0.0,
+            0.0,
+            1.0
+          ]
+        ]
+      ],
+      "pixel_note": "native K coordinates; trace width 777 uses center 388 vs native cx/2 388.5",
+      "sift_keypoint_counts": [
+        20354,
+        19734,
+        16872
+      ],
+      "pairs": [
+        {
+          "lowe_forward": 4245,
+          "lowe_reverse": 4186,
+          "mutual": 3897,
+          "epipolar_2px": 3293,
+          "colmap_shared_id_residual_check": {
+            "count": 2350,
+            "forward": {
+              "count": 2350,
+              "median": 1.1055802673691697,
+              "p90": 2.156392935287686,
+              "max": 6.051762623700718
+            },
+            "reverse": {
+              "count": 2350,
+              "median": 1.1186288904181436,
+              "p90": 2.2164341823813816,
+              "max": 6.109225743328886
+            },
+            "both_within_2px": 1907
+          }
+        },
+        {
+          "lowe_forward": 1926,
+          "lowe_reverse": 1875,
+          "mutual": 1632,
+          "epipolar_2px": 1015,
+          "colmap_shared_id_residual_check": {
+            "count": 1460,
+            "forward": {
+              "count": 1460,
+              "median": 1.6797900684070362,
+              "p90": 3.0425491067968404,
+              "max": 5.381283014989086
+            },
+            "reverse": {
+              "count": 1460,
+              "median": 1.712237851948346,
+              "p90": 3.1037840162523858,
+              "max": 5.479535410925978
+            },
+            "both_within_2px": 849
+          }
+        }
+      ],
+      "three_view_before_triangulation": 582,
+      "positive_depth_count": 582,
+      "three_view_reprojection_2px_count": 581,
+      "angle_summary_degrees": {
+        "count": 581,
+        "median": 10.242765984040178,
+        "p90": 10.670543698839356,
+        "max": 11.074319316736114
+      },
+      "patch_center": [
+        751.6831665039062,
+        215.56399536132812
+      ],
+      "patch_reference_id": 12629,
+      "patch_match_count": 1,
+      "patch_matches": [
+        {
+          "reference_id": 12629,
+          "pixels": [
+            [
+              751.6831665039062,
+              215.56399536132812
+            ],
+            [
+              1023.6254272460938,
+              230.94659423828125
+            ],
+            [
+              1256.529296875,
+              367.97265625
+            ]
+          ],
+          "xyz": [
+            0.19410121520601334,
+            -0.306736056811052,
+            0.008941749262509555
+          ],
+          "reprojection_px": [
+            0.41655209490054057,
+            0.6778650990966294,
+            0.2776824643381185
+          ],
+          "min_triangulation_angle_degrees": 10.118693126245438,
+          "response": 0.08211568742990494
+        }
+      ]
+    },
+    {
+      "scan": 40,
+      "inputs_sha256": {
+        "camera_npz": "af1ba75cbb137e5e9c83036a8db6da463365c6f54079ec31d8b8a162779fad78",
+        "cameras_bin": "9dd012bebe2dea0514af3f784dbb8fff23354fd7e9476ae6f9c668c40162d06b",
+        "images_bin": "93a27c4b9fb598996665436de9850511b28533c7d94835d4d754c2887aad40a0",
+        "image0": "3e07c2d1d740d2aee03d06eaa312699ddd26a6523db68f8e81bf028c8317b8ea",
+        "image1": "cecd92c9dc51c21df7d9b7e845e9d4055e03ddb632ca3bc1b9b5aa44de35a9f9",
+        "image2": "d6b02ba41aad89620f5c97adc30768c9752dc65e60503b69a4a540f57ce59955",
+        "metadata": "14756654c12ba281ae1a0f018386c1334ddf2c0840828ab5cc6b34e194f4b74e"
+      },
+      "pose_rotation_max_abs": 2.8498004400745458e-08,
+      "pose_translation_max_abs": 1.4222717226175519e-08,
+      "status": "fixed_patch_fewer_than_four",
+      "native_intrinsics": [
+        [
+          [
+            2892.330322265625,
+            0.0,
+            777.0
+          ],
+          [
+            0.0,
+            2883.175048828125,
+            581.0
+          ],
+          [
+            0.0,
+            0.0,
+            1.0
+          ]
+        ],
+        [
+          [
+            2892.330322265625,
+            0.0,
+            777.0
+          ],
+          [
+            0.0,
+            2883.175048828125,
+            581.0
+          ],
+          [
+            0.0,
+            0.0,
+            1.0
+          ]
+        ],
+        [
+          [
+            2892.330322265625,
+            0.0,
+            777.0
+          ],
+          [
+            0.0,
+            2883.175048828125,
+            581.0
+          ],
+          [
+            0.0,
+            0.0,
+            1.0
+          ]
+        ]
+      ],
+      "pixel_note": "native K coordinates; trace width 777 uses center 388 vs native cx/2 388.5",
+      "sift_keypoint_counts": [
+        14620,
+        15498,
+        13115
+      ],
+      "pairs": [
+        {
+          "lowe_forward": 2753,
+          "lowe_reverse": 2760,
+          "mutual": 2522,
+          "epipolar_2px": 2330,
+          "colmap_shared_id_residual_check": {
+            "count": 2327,
+            "forward": {
+              "count": 2327,
+              "median": 1.159578500157815,
+              "p90": 1.9324073485204514,
+              "max": 6.986455120595036
+            },
+            "reverse": {
+              "count": 2327,
+              "median": 1.1852306502703462,
+              "p90": 1.945611097235251,
+              "max": 6.773969484482572
+            },
+            "both_within_2px": 2128
+          }
+        },
+        {
+          "lowe_forward": 596,
+          "lowe_reverse": 575,
+          "mutual": 479,
+          "epipolar_2px": 324,
+          "colmap_shared_id_residual_check": {
+            "count": 1073,
+            "forward": {
+              "count": 1073,
+              "median": 1.5277943075247185,
+              "p90": 2.4575010562150537,
+              "max": 5.17599895824996
+            },
+            "reverse": {
+              "count": 1073,
+              "median": 1.581784768511301,
+              "p90": 2.4611124260306907,
+              "max": 5.059469471052208
+            },
+            "both_within_2px": 739
+          }
+        }
+      ],
+      "three_view_before_triangulation": 207,
+      "positive_depth_count": 207,
+      "three_view_reprojection_2px_count": 207,
+      "angle_summary_degrees": {
+        "count": 207,
+        "median": 14.235084354683526,
+        "p90": 14.937301167182637,
+        "max": 15.20831480554661
+      },
+      "patch_center": [
+        642.8925170898438,
+        179.0685577392578
+      ],
+      "patch_reference_id": 9411,
+      "patch_match_count": 1,
+      "patch_matches": [
+        {
+          "reference_id": 9411,
+          "pixels": [
+            [
+              642.8925170898438,
+              179.0685577392578
+            ],
+            [
+              706.4022827148438,
+              168.4883270263672
+            ],
+            [
+              762.7347412109375,
+              186.241943359375
+            ]
+          ],
+          "xyz": [
+            0.19622120451864078,
+            -0.16328720363049454,
+            -0.453813227482422
+          ],
+          "reprojection_px": [
+            0.8598111444319243,
+            0.3116062893157007,
+            0.7082263340026973
+          ],
+          "min_triangulation_angle_degrees": 14.717918439891157,
+          "response": 0.08162214607000351
+        }
+      ]
+    }
+  ],
+  "elapsed_seconds": 12.8838871,
+  "thresholds": "Lowe .75 mutual, alpha > .5, 2 original-pixel epipolar and reprojection, fixed 64px patch, max 32 response points; 1 degree minimum angle is an engineering reliability flag, not calibrated. No GT, no ICP, no fit selection by residual."
+}
