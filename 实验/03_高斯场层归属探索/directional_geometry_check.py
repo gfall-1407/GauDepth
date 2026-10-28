@@ -69,7 +69,7 @@ def main(scan):
     W=np.array(view['world_view_transform'],float); h,width=view['image_size']; fx,fy=view['focal']
     for row in rows:
         i=row['ray_index']; x,y=f['pixel_xy'][i]; camera_ray=np.array([(x-(width-1)/2)/fx,(y-(h-1)/2)/fy,1.])
-        row['pixel_xy']=[int(x),int(y)]; row['valid']={m:row[m] is not None and np.isfinite(row[m]) and row[m]>0 for m in METHODS}
+        row['pixel_xy']=[int(x),int(y)]; row['valid']={m:bool(row[m] is not None and np.isfinite(row[m]) and row[m]>0) for m in METHODS}
         row['common_valid']=all(row['valid'].values())
         if row['common_valid']:
             xyz=np.array([camera_ray*row[m] for m in METHODS]); world=(xyz-W[3,:3])@W[:3,:3].T
@@ -88,4 +88,20 @@ def main(scan):
     print(json.dumps({'scan':scan,'camera':camera,'common':len(valid),'summary':summary,'elapsed':out['elapsed_seconds']},indent=2))
 
 
-if __name__=='__main__': main(int(sys.argv[1]))
+def combine():
+    scans=[json.loads((base.OUT/f'geometry_scan{s}.json').read_text(encoding='utf-8')) for s in (83,118,106)]
+    valid=[r for scan in scans for r in scan['rows'] if r['common_valid']]
+    summary={}
+    for m in METHODS:
+        v=np.array([r['distance_mm'][m] for r in valid]); delta=np.array([r['difference_vs_expected_mm'][m] for r in valid])
+        summary[m]={'mean_mm':float(v.mean()),'median_mm':float(np.median(v)),'p90_mm':float(np.quantile(v,.9)),'paired_mean_vs_expected_mm':float(delta.mean()),'failure_count':sum(not r['valid'][m] for scan in scans for r in scan['rows'])}
+    result={'scans':[83,118,106],'common_valid':len(valid),'requested':96,'pooled_summary':summary,'per_scan':[{'scan':s['scan'],'common_valid':s['common_valid'],'summary':s['summary'],'inputs_sha256':s['inputs_sha256'],'camera_check':s['camera_check'],'code_head':s['code_head']} for s in scans],'definition':scans[0]['definition'],'principal_point_note':'Original camera projection principal point differs from centered renderer; backprojection follows logged renderer pixel-center/focal convention, not original K principal point.'}
+    dest=base.OUT/'geometry_diagnostic.json'
+    if dest.exists(): raise FileExistsError(dest)
+    dest.write_text(json.dumps(result,indent=2,ensure_ascii=False)+'\n',encoding='utf-8')
+    print(json.dumps(result,indent=2))
+
+
+if __name__=='__main__':
+    if sys.argv[1]=='combine': combine()
+    else: main(int(sys.argv[1]))
