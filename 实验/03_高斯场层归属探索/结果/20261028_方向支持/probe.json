@@ -1,0 +1,117 @@
+{
+  "git_head": "c65d02f60a7da5bb4b5d5297e5b61e31d8194438",
+  "input_sha256": {
+    "model": "0c32a97c920e7eef1f0b11cc0a7e74b029222246d347026f5ed2e8c3df83cc00",
+    "trace": "8a752fa19d9fabfc329fecd8742ad9b98ea64e3dae0a579c0de6f8609ef39569",
+    "metadata": "e121a04c59990e85aa907ce5ed3aeef8b83870cf4faa28dbe1219e9b077b9319",
+    "cfg": "471ce635fcc93368525d4d90f8510e94dc1497db1c7998ac5cf73223e3607d78"
+  },
+  "reader_sources": {
+    "reader.cu": {
+      "recorded": "059ca741793dedf0d8b2d58279105a0c27356772e5dfc3e584b4d7ee4304829d",
+      "current_worktree": "f046f57ec1da98cf315bb8fa71ac9a3046bb9396d4a136436d62a301923cf8fc",
+      "recorded_commit_blob": "059ca741793dedf0d8b2d58279105a0c27356772e5dfc3e584b4d7ee4304829d",
+      "recorded_commit_matches": true
+    },
+    "sample.py": {
+      "recorded": "f451c08d4f6194f0f5146b3b68c04a1532a9625f035c76aa3dbb2bbbc44eb106",
+      "current_worktree": "8536a6536e69c1613f03c9e53f032fe3659463e0058b240012bde09df1de9335",
+      "recorded_commit_blob": "f451c08d4f6194f0f5146b3b68c04a1532a9625f035c76aa3dbb2bbbc44eb106",
+      "recorded_commit_matches": true
+    },
+    "analyze.py": {
+      "recorded": "b1582511c3c43f69c9a93d3cd1d18e293faa4ded2d632956ca943f66751635b4",
+      "current_worktree": "46ccb2918aa401d7f5456a91ef004ca32703914a1bdff533f89faa0ece9eba26",
+      "recorded_commit_blob": "b1582511c3c43f69c9a93d3cd1d18e293faa4ded2d632956ca943f66751635b4",
+      "recorded_commit_matches": true
+    },
+    "pixel_contribution.py": {
+      "recorded": "6c70ea9f0297b535596e10c2132066b318889de82efb5d2a28f5cd942dfe028f",
+      "current_worktree": "abf2b46d309a08a601338e0d36517dde0fe4560bccce52995a4eb3182daf2c91",
+      "recorded_commit_blob": "6c70ea9f0297b535596e10c2132066b318889de82efb5d2a28f5cd942dfe028f",
+      "recorded_commit_matches": true
+    }
+  },
+  "host_forward": {
+    "recorded": "147738ceaf62d423ee3fffae3a140667b50387c41e4ac029f9caedc7e05ad431",
+    "current_worktree": "b2aa5576e73c53f5c87ced3c03a133171c0629d869f4d65118b845ba8c832b01",
+    "recorded_commit_blob": "147738ceaf62d423ee3fffae3a140667b50387c41e4ac029f9caedc7e05ad431",
+    "binary": "f97dcd66f55d9ddbf673c1d467238fe6f983b9f0bf062645a87bb12d20aa91df",
+    "provenance": "Installed original host _C retained; binary SHA checked against G1 metadata. Original build source gap remains; exact accepted-ray replay verifies compatibility, not source identity."
+  },
+  "model_vertices": 235175,
+  "selected_ray_indices": [
+    0,
+    16,
+    32,
+    49,
+    65,
+    82,
+    98,
+    115,
+    131,
+    148,
+    164,
+    181,
+    197,
+    214,
+    230,
+    247,
+    263,
+    280,
+    296,
+    313,
+    329,
+    346,
+    362,
+    379,
+    395,
+    412,
+    428,
+    445,
+    461,
+    478,
+    494,
+    511
+  ],
+  "selected_members": 2318,
+  "id_bounds_valid": true,
+  "id_identity_note": "bounds and model hash only; cannot independently prove reader ID correspondence without source/binary provenance",
+  "replay_max_abs_host": [
+    1.430511474609375e-06,
+    0.0,
+    0.0
+  ],
+  "replay_max_abs_saved": [
+    1.430511474609375e-06,
+    0.0,
+    0.0
+  ],
+  "replay_matches_host": true,
+  "exact_section_minus_recorded_depth": {
+    "filtered": {
+      "count": 2318,
+      "abs_p50": 8.297279995117535e-05,
+      "abs_p95": 0.002054450012479199,
+      "abs_max": 0.06709684438713559
+    },
+    "unfiltered": {
+      "count": 2318,
+      "abs_p50": 0.00027263619790152127,
+      "abs_p95": 0.00339619239953184,
+      "abs_max": 0.06763814580786853
+    }
+  },
+  "section_sigma_z": {
+    "filtered": {
+      "p50": 0.0017082054705292908,
+      "p95": 0.007382182033546362
+    },
+    "unfiltered": {
+      "p50": 0.0008147943663134171,
+      "p95": 0.006701349923792661
+    }
+  },
+  "synthetic_tests": "passed: frontal, oblique, grazing, off-center, rigid transform and scale",
+  "limitations": "Host installed binary source not established. Render ray-plane is local linear approximation; exact Gaussian ray maximum need not equal trace. No GT or algorithm evaluation."
+}
