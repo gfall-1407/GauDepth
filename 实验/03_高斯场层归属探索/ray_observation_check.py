@@ -45,8 +45,7 @@ def process(scan,index,grid):
     imgs=[cv2.imdecode(np.fromfile(paths[f'image{i}'],dtype=np.uint8),cv2.IMREAD_UNCHANGED) for i in range(3)]
     assert all(im is not None and im.shape==(1162,1554,4) for im in imgs)
     gray=[cv2.cvtColor(im[:,:,:3],cv2.COLOR_BGR2GRAY) for im in imgs]
-    features=grid['all_three_view_matches']; fxy=np.array([v['pixels'][0] for v in features]); z=np.load(paths['trace']); ids=z['gaussian_id']; vertices=base.ply(paths['model'])
-    assert ids.min()>=0 and ids.max()<len(vertices)
+    features=grid['all_three_view_matches']; fxy=np.array([v['pixels'][0] for v in features]); z=np.load(paths['trace']); ids=z['gaussian_id']; vertices=None
     h,w=view['image_size']; fx,fy=view['focal']; center=np.array(view['camera_center']); chosen=np.linspace(0,len(z['offsets'])-2,16,dtype=int); rows=[]
     options=dict(winSize=(21,21),maxLevel=4,criteria=(cv2.TERM_CRITERIA_EPS|cv2.TERM_CRITERIA_COUNT,30,.01))
     for i in chosen:
@@ -60,18 +59,22 @@ def process(scan,index,grid):
         for j in (1,2):
             reference=np.array(ref,dtype='float32').reshape(1,1,2); init=np.array(ref+np.array(feat['pixels'][j])-np.array(feat['pixels'][0]),dtype='float32').reshape(1,1,2)
             dst,st,err=cv2.calcOpticalFlowPyrLK(gray[0],gray[j],reference,init,flags=cv2.OPTFLOW_USE_INITIAL_FLOW,**options)
-            if not st[0,0] or not valid_pixel(imgs[j],dst[0,0]): failure=f'view{j}_forward_or_alpha'; break
+            if not st[0,0]: failure=f'view{j}_forward'; break
+            if not valid_pixel(imgs[j],dst[0,0]): failure=f'view{j}_out_of_bounds_or_alpha'; break
             back,bst,berr=cv2.calcOpticalFlowPyrLK(gray[j],gray[0],dst,reference.copy(),flags=cv2.OPTFLOW_USE_INITIAL_FLOW,**options)
             if not bst[0,0]: failure=f'view{j}_backward'; break
             pos=dst[0,0].astype(float); fb=float(np.linalg.norm(back[0,0]-ref)); epi=list(map(float,obs.epiline_residuals(Fs[j-1],np.r_[ref,1.],np.r_[pos,1.])))
             tracks.append({'view':j,'pixel':pos.tolist(),'fb_px':fb,'epipolar_px':epi,'lk_error':float(err[0,0]),'back_lk_error':float(berr[0,0])})
-            if fb>1 or max(epi)>2: failure=f'view{j}_fb_or_epipolar'; break
+            if fb>1: failure=f'view{j}_fb_gt_1px'; break
+            if max(epi)>2: failure=f'view{j}_epipolar_gt_2px'; break
             pixels.append(pos)
         row['tracks']=tracks
         if failure: row['status']=failure; continue
         X=obs.triangulate(np.array(pixels[:2]),Ps[:2]); pred,dep=project(Ps[2],X[None]); z0=(R[0]@X+t[0])[2];z1=(R[1]@X+t[1])[2]
         if not np.isfinite(X).all() or min(z0,z1,dep[0])<=0: row['status']='triangulation_invalid'; continue
         row['anchor_xyz']=X.tolist(); row['anchor_third_view_residual_px']=float(np.linalg.norm(pred[0]-pixels[2])); row['status']='matched'
+        if vertices is None:
+            vertices=base.ply(paths['model']); assert ids.min()>=0 and ids.max()<len(vertices)
         a,b=z['offsets'][i:i+2]; p=vertices[ids[a:b]]; mu=np.stack([p[n] for n in ('x','y','z')],axis=1).astype(float)
         scales=np.exp(np.stack([p[f'scale_{j}'] for j in range(3)],axis=1).astype(float)); scales=np.sqrt(scales**2+p['filter_3D'][:,None].astype(float)**2)
         order=np.argsort(scales,axis=1); short=scales[np.arange(len(p)),order[:,0]]; unique=scales[np.arange(len(p)),order[:,1]]>short*1.001
@@ -88,13 +91,13 @@ def process(scan,index,grid):
             row['member_original_weighted_quantiles_px']=weighted_quantiles(orig,wt);row['member_plane_weighted_quantiles_px']=weighted_quantiles(pl,wt)
         for name,j in [('expected',0),('native_median',1)]:
             val=float(z['host_target'][i,j]); pred,zp=project(Ps[2],(center+val*direction)[None]);row[name+'_third_residual_px']=float(np.linalg.norm(pred[0]-pixels[2])) if val>0 and zp[0]>0 else None
-    return {'scan':scan,'inputs_sha256':{k:base.sha(p) for k,p in paths.items()},'ray_indices':chosen.tolist(),'rows':rows}
+    return {'scan':scan,'inputs_sha256':{k:base.sha(p) for k,p in paths.items()},'ray_indices':chosen.tolist(),'model_id_bounds_checked':vertices is not None,'rows':rows}
 
 
 def main():
     start=time.perf_counter(); index=json.loads((base.DATA/'来源索引.json').read_text(encoding='utf8')); grid_path=base.OUT/'observed_grid_plane_check.json'; grid=json.loads(grid_path.read_text(encoding='utf8'))
     results=[process(s,index,next(x for x in grid['scans'] if x['scan']==s)) for s in (37,40)]
-    out={'git_head':subprocess.check_output(['git','rev-parse','HEAD'],cwd=base.REPO,text=True).strip(),'independent_sift_source_sha256':base.sha(grid_path),'parameters':'16 fixed linspace rays per scan; original pixels; nearest existing three-view SIFT within 64px; LK win21 level4 iter30 eps .01, initialized and FB <=1px, alpha >.5, epipolar <=2px; filtered unique short axis relative 1e-3, plane denominator >1e-8','scans':results,'elapsed_seconds':time.perf_counter()-start,'interpretation':'Third view independent tracking is not ground truth. No training or new estimator. Observed features are engineering samples, not independent test set. Accepted IDs bounded and model SHA verified but reader/host binary origin remains unproven; no reordered or recomputed occlusion weights.'}
+    out={'git_head':subprocess.check_output(['git','rev-parse','HEAD'],cwd=base.REPO,text=True).strip(),'independent_sift_source_sha256':base.sha(grid_path),'parameters':'16 fixed linspace rays per scan; original pixels; nearest existing three-view SIFT within 64px; LK win21 level4 iter30 eps .01, initialized and FB <=1px, alpha >.5, epipolar <=2px; filtered unique short axis relative 1e-3, plane denominator >1e-8','scans':results,'elapsed_seconds':time.perf_counter()-start,'interpretation':'Third view independent tracking is not ground truth. No training or new estimator. Observed features are engineering samples, not independent test set. Model SHA verified; ID bounds checked only if any ray matched, reader/host binary origin remains unproven; no reordered or recomputed occlusion weights.'}
     dest=base.OUT/'ray_observation_check.json'
     if dest.exists(): raise FileExistsError(dest)
     dest.write_text(json.dumps(out,indent=2,ensure_ascii=False)+'\n',encoding='utf8')
