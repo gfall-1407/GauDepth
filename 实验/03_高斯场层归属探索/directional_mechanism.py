@@ -17,7 +17,7 @@ def peaks(d, w, h):
     if len(d)==0 or np.any(~np.isfinite(h)) or np.any(h<=0) or np.any(~np.isfinite(d)) or np.any(w<0) or not np.any(w>0):
         return None, [], 'invalid_or_empty'
     breaks = np.unique(np.r_[0., np.maximum(0., d-h), np.maximum(0., d+h)])
-    cand = [float(x) for x in breaks if x>0]
+    cand = []
     for left,right in zip(breaks[:-1], breaks[1:]):
         if right<=left: continue
         center=(left+right)/2; scale=(right-left)/2
@@ -35,20 +35,22 @@ def peaks(d, w, h):
     unique=[]
     for x in cand:
         if not unique or abs(x-unique[-1])>1e-10*max(1,abs(x)): unique.append(x)
-    local=[]
+    local=[]; flat=[]
     for x in unique:
-        val=score(x,d,w,h)
-        if val<=0: continue
-        eps=max(1e-9*np.min(h), 1e-12*max(1,abs(x)))
-        if val+1e-12*max(1,val)>=score(max(x-eps,0),d,w,h) and val+1e-12*max(1,val)>=score(x+eps,d,w,h):
-            # Candidates that are support endpoints rather than maxima are excluded
-            # using a finite neighborhood large enough to resolve float cancellation.
-            eps=max(1e-4*np.min(h), 1e-10*max(1,abs(x)))
-            if val+1e-12*max(1,val)>=score(max(x-eps,0),d,w,h) and val+1e-12*max(1,val)>=score(x+eps,d,w,h): local.append((x,val))
-    if not local: return None, [], 'no_positive_maximum'
+        r=x-d; q=np.maximum(1-(r/h)**2,0); val=score(x,d,w,h)
+        if val <= np.finfo(float).eps*np.sum(w): continue
+        F=np.sum(w*r*q*q/h**2)
+        Fs=np.sum(w*(q*q-4*q*(r/h)**2)/h**2)
+        scale_f=np.sum(w/h); scale_fs=np.sum(w/h**2)
+        if abs(F)>1e-8*scale_f: continue
+        if Fs>1e-9*scale_fs: local.append((x,val))
+        elif abs(Fs)<=1e-9*scale_fs: flat.append((x,val))
+    if not local: return None, flat, 'flat_ambiguous' if flat else 'no_positive_maximum'
     best=max(local,key=lambda x:x[1])
     if score(0.,d,w,h)>best[1]+1e-12*max(1,best[1]):
         return None, local, 'supremum_at_excluded_zero'
+    if flat:
+        return None, local+flat, 'flat_ambiguous'
     return best[0], local, 'ok'
 
 
@@ -84,9 +86,20 @@ def tests():
     eps=1e-6; grad=(score(x+eps,d,w,h)-score(x-eps,d,w,h))/(2*eps)
     q=np.maximum(1-((x-d)/h)**2,0); mm=np.sum(w*q*q*d/h**2)/np.sum(w*q*q/h**2)
     assert abs(grad)<1e-7 and abs(mm-x)<1e-8 and abs(calc(d,w+[1e-5,0],h)-x)<1e-4
+    r=x-d; Fs=np.sum(w*(q*q-4*q*(r/h)**2)/h**2)
+    for j in range(2):
+        dw=np.zeros(2); dw[j]=1e-5
+        fd=(calc(d,w+dw,h)-calc(d,w-dw,h))/(2*dw[j])
+        assert np.isclose(fd,-r[j]*q[j]**2/(h[j]**2*Fs),rtol=1e-5,atol=1e-7)
+        dd=np.zeros(2); dd[j]=1e-5
+        fd=(calc(d+dd,w,h)-calc(d-dd,w,h))/(2*dd[j])
+        analytic=w[j]*(q[j]**2-4*q[j]*(r[j]/h[j])**2)/(h[j]**2*Fs)
+        assert np.isclose(fd,analytic,rtol=1e-5,atol=1e-7)
+    # Zero-score support endpoints and nonstationary interior points are not peaks.
+    _, pp, status=peaks(np.array([2.]),np.array([1.]),np.array([.5])); assert status=='ok' and len(pp)==1 and abs(pp[0][0]-2)<1e-9
     root,status,_=gg(np.array([2.]),np.array([.6]),np.array([.2])); assert status=='ok' and root>2
     assert gg(np.array([2.]),np.array([.5]),np.array([.2]))[1]=='no_finite_root'
-    return 'passed: single, middle, peak switching, weak foreground, common shift failure, scale, MM/FD/perturbation, GGGS finite-root cases'
+    return 'passed: single, middle, peak switching, weak foreground, common shift failure, scale, MM, implicit weight/center gradient central FD, GGGS finite-root cases'
 
 
 def main():
@@ -140,8 +153,8 @@ def main():
         t=time.perf_counter(); root,status,res=gg(d,alpha,sigma); times['gggs_proxy']+=time.perf_counter()-t
         row.update(gggs_proxy=root,gggs_proxy_status=status,gggs_residual=res); rows.append(row)
     paired=[abs(r['directional']-r['isotropic']) for r in rows if r['directional'] is not None and r['isotropic'] is not None]
-    report={'git_head':subprocess.check_output(['git','rev-parse','HEAD'],cwd=base.REPO,text=True).strip(), 'input_model_sha256':base.sha(model),'input_trace_sha256':base.sha(trace),'stl_header':header,'stl_has_faces':any(x.startswith('element face ') for x in header),'synthetic':test,'sigma_definition':'filtered covariance, clamped Gaussian-center camera direction, 1/sqrt(v Q v) / current pixel ray norm; float64 CPU reconstruction, host binary origin unverified', 'isotropic':'filtered geometric-mean scale / current pixel ray norm; identical Tukey kernel, h=2 sigma', 'ambiguity':'all numerically detected local maxima; near tie is heuristic >=99% of best, nearer peak is any separate nearer detected maximum', 'reference_grid_max_score_minus_peak':ref_errors,'runtime_seconds':times,'direction_isotropic_abs_difference':{'median':float(np.median(paired)), 'max':float(max(paired))} if paired else None,'rows':rows,'limitations':'No GT or accuracy claim. Host source/binary provenance and ID identity not independently established. GGGS proxy is not official GGGS; exact globally continuous selection is not claimed.'}
-    base.OUT.mkdir(parents=True,exist_ok=True); out=base.OUT/'mechanism.json'
+    report={'git_head':subprocess.check_output(['git','rev-parse','HEAD'],cwd=base.REPO,text=True).strip(), 'input_model_sha256':base.sha(model),'input_trace_sha256':base.sha(trace),'stl_header':header,'stl_has_faces':any(x.startswith('element face ') for x in header),'synthetic':test,'sigma_definition':'filtered covariance, clamped Gaussian-center camera direction, 1/sqrt(v Q v) / current pixel ray norm; float64 CPU reconstruction, host binary origin unverified', 'isotropic':'filtered geometric-mean scale / current pixel ray norm; identical Tukey kernel, h=2 sigma', 'ambiguity':'stationary roots classified by scaled residual and analytic curvature; near tie is heuristic >=99% of best, nearer peak is any separate nearer nondegenerate maximum; flat roots flagged ambiguous if competitive', 'reference_grid_max_score_minus_peak':ref_errors,'runtime_seconds':times,'direction_isotropic_abs_difference':{'median':float(np.median(paired)), 'max':float(max(paired))} if paired else None,'rows':rows,'limitations':'No GT or accuracy claim. Host source/binary provenance and ID identity not independently established. GGGS proxy is not official GGGS; exact globally continuous selection is not claimed. Previous mechanism.json competition peak counts are invalid.'}
+    base.OUT.mkdir(parents=True,exist_ok=True); out=base.OUT/'mechanism_v2.json'
     if out.exists(): raise FileExistsError(out)
     out.write_text(json.dumps(report,indent=2,ensure_ascii=False)+'\n',encoding='utf-8')
     print(json.dumps({'git_head':report['git_head'],'synthetic':test,'runtime_seconds':times,'stl_has_faces':report['stl_has_faces'],'paired_difference':report['direction_isotropic_abs_difference'],'rows':len(rows),'directional_near_tie':sum(r.get('directional_near_tie_1pct',False) for r in rows),'directional_nearer_peak':sum(r.get('directional_nearer_competing_peak',False) for r in rows),'gggs_status':{s:sum(r['gggs_proxy_status']==s for r in rows) for s in sorted(set(r['gggs_proxy_status'] for r in rows))}},indent=2))
