@@ -12,6 +12,22 @@ import directional_support_probe as base
 spec=importlib.util.spec_from_file_location('colmap_loader',base.REPO/'scene/colmap_loader.py')
 col=importlib.util.module_from_spec(spec); spec.loader.exec_module(col)
 
+def epiline_residuals(F,x,y):
+    l=F@x; l0=F.T@y
+    return abs(y@l)/np.linalg.norm(l[:2]),abs(x@l0)/np.linalg.norm(l0[:2])
+
+def epiline_self_check():
+    K=np.array([[800.,0,320],[0,800.,240],[0,0,1.]])
+    t=np.array([.3,.1,0.]); tx=np.array([[0,-t[2],t[1]],[t[2],0,-t[0]],[-t[1],t[0],0]])
+    F=np.linalg.inv(K).T@tx@np.linalg.inv(K); X=np.array([.2,.3,3.])
+    def project(v):
+        q=K@v; return np.r_[q[:2]/q[2],1.]
+    x=project(X); y=project(X+t); base_error=epiline_residuals(F,x,y)
+    assert max(base_error)<1e-10
+    for dx,dy in ((np.array([0.,5.,0.]),np.zeros(3)),(np.zeros(3),np.array([0.,5.,0.]))):
+        assert min(epiline_residuals(F,x+dx,y+dy))>1.
+    return {'perfect_residuals_px':list(map(float,base_error)),'both_perturbations_detected':True}
+
 def triangulate(points, projections):
     A=np.concatenate([np.stack([x*P[2]-P[0],y*P[2]-P[1]]) for (x,y),P in zip(points,projections)])
     _,_,vh=np.linalg.svd(A); return vh[-1,:3]/vh[-1,3]
@@ -58,9 +74,13 @@ def process(scan, index):
         R=rotations[j]@rotations[0].T; t=ts[j]-R@ts[0]; tx=np.array([[0,-t[2],t[1]],[t[2],0,-t[0]],[-t[1],t[0],0]])
         F=np.linalg.inv(Ks[j]).T@tx@R@np.linalg.inv(Ks[0]); accepted={}
         for a,b in mutual.items():
-            x=np.r_[features[0][0][a].pt,1.]; y=np.r_[features[j][0][b].pt,1.]; l=F@x; l0=F.T@y
-            if max(abs(y@l)/np.linalg.norm(l[:2]),abs(y@l0)/np.linalg.norm(l0[:2]))<=2: accepted[a]=b
+            x=np.r_[features[0][0][a].pt,1.]; y=np.r_[features[j][0][b].pt,1.]
+            if max(epiline_residuals(F,x,y))<=2: accepted[a]=b
+        stored={int(k):xy for k,xy in zip(images[j].point3D_ids,images[j].xys) if k>=0}
+        checks=[epiline_residuals(F,np.r_[xy,1.],np.r_[stored[int(k)],1.]) for k,xy in zip(images[0].point3D_ids,images[0].xys) if k>=0 and int(k) in stored]
+        checks=np.asarray(checks)
         pairmaps.append(accepted); paircounts.append({'lowe_forward':len(fwd),'lowe_reverse':len(rev),'mutual':len(mutual),'epipolar_2px':len(accepted)})
+        paircounts[-1]['colmap_shared_id_residual_check']={'count':len(checks),'forward':summary(checks[:,0]),'reverse':summary(checks[:,1]),'both_within_2px':int(np.sum(np.max(checks,axis=1)<=2))} if len(checks) else {'count':0}
     out['pairs']=paircounts; common=sorted(set(pairmaps[0])&set(pairmaps[1])); out['three_view_before_triangulation']=len(common)
     centers=[-R.T@t for R,t in zip(rotations,ts)]; good=[]; positive=0
     for i in common:
@@ -107,8 +127,8 @@ def process(scan, index):
 def main():
     started=time.perf_counter(); index=json.loads((base.DATA/'来源索引.json').read_text(encoding='utf8')); scans=[]
     for s in (37,40): scans.append(process(s,index))
-    result={'git_head':subprocess.check_output(['git','rev-parse','HEAD'],cwd=base.REPO,text=True).strip(),'opencv':cv2.__version__,'scans':scans,'elapsed_seconds':time.perf_counter()-started,'thresholds':'Lowe .75 mutual, alpha > .5, 2 original-pixel epipolar and reprojection, fixed 64px patch, max 32 response points; 1 degree minimum angle is an engineering reliability flag, not calibrated. No GT, no ICP, no fit selection by residual.'}
-    path=base.OUT/'observed_plane_check.json'
+    result={'git_head':subprocess.check_output(['git','rev-parse','HEAD'],cwd=base.REPO,text=True).strip(),'opencv':cv2.__version__,'epiline_synthetic_check':epiline_self_check(),'supersedes':'observed_plane_check.json had incorrect reverse epiline residual and its no-match conclusion is invalid','scans':scans,'elapsed_seconds':time.perf_counter()-started,'thresholds':'Lowe .75 mutual, alpha > .5, 2 original-pixel epipolar and reprojection, fixed 64px patch, max 32 response points; 1 degree minimum angle is an engineering reliability flag, not calibrated. No GT, no ICP, no fit selection by residual.'}
+    path=base.OUT/'observed_plane_check_v2.json'
     if path.exists(): raise FileExistsError(path)
     path.write_text(json.dumps(result,indent=2,ensure_ascii=False)+'\n',encoding='utf8')
     for x in scans: print(x['scan'],x['status'],x.get('sift_keypoint_counts'),x.get('pairs'),x.get('three_view_reprojection_2px_count'),x.get('patch_match_count'))
