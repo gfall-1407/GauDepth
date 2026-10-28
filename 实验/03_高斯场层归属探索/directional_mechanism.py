@@ -47,6 +47,8 @@ def peaks(d, w, h):
             if val+1e-12*max(1,val)>=score(max(x-eps,0),d,w,h) and val+1e-12*max(1,val)>=score(x+eps,d,w,h): local.append((x,val))
     if not local: return None, [], 'no_positive_maximum'
     best=max(local,key=lambda x:x[1])
+    if score(0.,d,w,h)>best[1]+1e-12*max(1,best[1]):
+        return None, local, 'supremum_at_excluded_zero'
     return best[0], local, 'ok'
 
 
@@ -76,6 +78,7 @@ def tests():
     assert calc([2,4],[1.01,1],[.3,.3])<3 and calc([2,4],[1,1.01],[.3,.3])>3
     assert calc([2,4],[.2,.9],[.3,.3])>3
     assert abs(calc([7],[1],[.4])-7)<1e-10 # shifted evidence stays shifted
+    assert peaks(np.array([-.1]),np.array([1.]),np.array([1.]))[2]=='no_positive_maximum'
     x=calc([2.,2.1],[.5,.8],[.4,.7]); assert abs(calc([20,21],[.5,.8],[4,7])-10*x)<1e-8
     d=np.array([2.,2.1]); w=np.array([.5,.8]); h=np.array([.4,.7]); x=calc(d,w,h)
     eps=1e-6; grad=(score(x+eps,d,w,h)-score(x-eps,d,w,h))/(2*eps)
@@ -127,7 +130,13 @@ def main():
                 row[name+'_mm_residual']=abs(value-np.sum(w*q*q*d/(2*s)**2)/denom) if denom else None
                 if name=='directional' and len(ref_errors)<3:
                     grid=np.linspace(max(0,float(np.min(d-2*s))),float(np.max(d+2*s)),20001)
-                    vals=np.array([score(v,d,w,2*s) for v in grid]); ref_errors.append(float(max(vals)-best))
+                    vals=np.array([score(v,d,w,2*s) for v in grid]); gi=int(np.argmax(vals))
+                    lo=grid[max(0,gi-1)]; hi=grid[min(len(grid)-1,gi+1)]
+                    for _ in range(80):
+                        x1=lo+(hi-lo)*.3819660112501051; x2=hi-(hi-lo)*.3819660112501051
+                        if score(x1,d,w,2*s)<score(x2,d,w,2*s): lo=x1
+                        else: hi=x2
+                    ref_errors.append(float(score((lo+hi)/2,d,w,2*s)-best))
         t=time.perf_counter(); root,status,res=gg(d,alpha,sigma); times['gggs_proxy']+=time.perf_counter()-t
         row.update(gggs_proxy=root,gggs_proxy_status=status,gggs_residual=res); rows.append(row)
     paired=[abs(r['directional']-r['isotropic']) for r in rows if r['directional'] is not None and r['isotropic'] is not None]
