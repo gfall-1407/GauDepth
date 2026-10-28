@@ -1,0 +1,707 @@
+{
+  "git_head": "bc8b80ad0b63a596e75a308296f70ea49d972074",
+  "independent_sift_source_sha256": "c044c857d6afd80c1e43942d60f25975f48f675db164652dd33dd4da4563ade5",
+  "parameters": "16 fixed linspace rays per scan; original pixels; nearest existing three-view SIFT within 64px; LK win21 level4 iter30 eps .01, initialized and FB <=1px, alpha >.5, epipolar <=2px; filtered unique short axis relative 1e-3, plane denominator >1e-8",
+  "scans": [
+    {
+      "scan": 37,
+      "inputs_sha256": {
+        "cameras_bin": "fe0aa32b87c96c1366500ccdf02493fb6f78ddd505ac484aa5f1315c4716f5b2",
+        "images_bin": "f2f04e4f7c54d4f53af5acf6f66346158671e78644cd883923609105ea73d705",
+        "image0": "b3c01bacdd66c09af63b417cd8ef184adb171eb91cd4c51a9d1791f30ce05404",
+        "image1": "3e767110c1ff4659e2e8cc1e586c9a68e465c60bd0f49efd4abc4ecc724b77f3",
+        "image2": "3cc777de6c94d29af15dac9f54826bb988bab235bed0df606aad0980cbeb7ee5",
+        "model": "34fe9d7243208432410bcaf41e44f390e41009ef3730a5f5dfd63137bbe325c1",
+        "metadata": "1a50c9f0ae9105a70c9b1a360eb75fba4fb05297d89e95fc3434dbbb822f03e9",
+        "trace": "9152656e1154eaaa3febd2f6f844a272a78a220e07fce4f61587342318562ceb"
+      },
+      "ray_indices": [
+        0,
+        34,
+        68,
+        102,
+        136,
+        170,
+        204,
+        238,
+        272,
+        306,
+        340,
+        374,
+        408,
+        442,
+        476,
+        511
+      ],
+      "model_id_bounds_checked": false,
+      "rows": [
+        {
+          "ray_index": 0,
+          "trace_pixel": [
+            348,
+            238
+          ],
+          "reference_native_pixel": [
+            696.9999988851913,
+            476.9999499780323
+          ],
+          "mapping_error_vs_2xy_plus_1": 5.0034388679392595e-05,
+          "status": "view1_fb_gt_1px",
+          "nearest_feature_distance_px": 13.089685578684351,
+          "tracks": [
+            {
+              "view": 1,
+              "pixel": [
+                977.5040893554688,
+                366.37628173828125
+              ],
+              "fb_px": 117.06050235378622,
+              "epipolar_px": [
+                72.45471202725356,
+                71.9895627700719
+              ],
+              "lk_error": 59.940547943115234,
+              "back_lk_error": 112.94416046142578
+            }
+          ]
+        },
+        {
+          "ray_index": 34,
+          "trace_pixel": [
+            313,
+            405
+          ],
+          "reference_native_pixel": [
+            626.9999796857775,
+            811.0000457718501
+          ],
+          "mapping_error_vs_2xy_plus_1": 5.007723929551169e-05,
+          "status": "view1_fb_gt_1px",
+          "nearest_feature_distance_px": 8.959756035872582,
+          "tracks": [
+            {
+              "view": 1,
+              "pixel": [
+                639.052734375,
+                735.6780395507812
+              ],
+              "fb_px": 643.8529687689398,
+              "epipolar_px": [
+                24.501925126186173,
+                24.879037503655148
+              ],
+              "lk_error": 26.67502784729004,
+              "back_lk_error": 27.061153411865234
+            }
+          ]
+        },
+        {
+          "ray_index": 68,
+          "trace_pixel": [
+            24,
+            274
+          ],
+          "reference_native_pixel": [
+            48.99982122928022,
+            548.9999709030025
+          ],
+          "mapping_error_vs_2xy_plus_1": 0.00018112317774244283,
+          "status": "no_common_feature_within_64px",
+          "nearest_feature_distance_px": 101.50845720926603
+        },
+        {
+          "ray_index": 102,
+          "trace_pixel": [
+            398,
+            334
+          ],
+          "reference_native_pixel": [
+            797.0000266344977,
+            669.0000050492519
+          ],
+          "mapping_error_vs_2xy_plus_1": 2.7108880644199787e-05,
+          "status": "no_common_feature_within_64px",
+          "nearest_feature_distance_px": 111.0522712309954
+        },
+        {
+          "ray_index": 136,
+          "trace_pixel": [
+            288,
+            338
+          ],
+          "reference_native_pixel": [
+            576.9999658469528,
+            677.0000073480384
+          ],
+          "mapping_error_vs_2xy_plus_1": 3.493457169639527e-05,
+          "status": "no_common_feature_within_64px",
+          "nearest_feature_distance_px": 89.31988556689099
+        },
+        {
+          "ray_index": 170,
+          "trace_pixel": [
+            267,
+            430
+          ],
+          "reference_native_pixel": [
+            534.9999543406612,
+            861.0000600572768
+          ],
+          "mapping_error_vs_2xy_plus_1": 7.54430361702257e-05,
+          "status": "view1_forward",
+          "nearest_feature_distance_px": 42.808388546276,
+          "tracks": []
+        },
+        {
+          "ray_index": 204,
+          "trace_pixel": [
+            327,
+            534
+          ],
+          "reference_native_pixel": [
+            654.9999875161204,
+            1069.000119827426
+          ],
+          "mapping_error_vs_2xy_plus_1": 0.00012047596971568724,
+          "status": "view1_fb_gt_1px",
+          "nearest_feature_distance_px": 17.03515058092029,
+          "tracks": [
+            {
+              "view": 1,
+              "pixel": [
+                563.830078125,
+                847.5353393554688
+              ],
+              "fb_px": 202.23789034617403,
+              "epipolar_px": [
+                99.62585748348795,
+                101.86297332914461
+              ],
+              "lk_error": 19.991992950439453,
+              "back_lk_error": 20.72711181640625
+            }
+          ]
+        },
+        {
+          "ray_index": 238,
+          "trace_pixel": [
+            100,
+            397
+          ],
+          "reference_native_pixel": [
+            200.9998627127683,
+            795.0000410191194
+          ],
+          "mapping_error_vs_2xy_plus_1": 0.00014328416571082547,
+          "status": "no_common_feature_within_64px",
+          "nearest_feature_distance_px": 148.41803309229613
+        },
+        {
+          "ray_index": 272,
+          "trace_pixel": [
+            476,
+            110
+          ],
+          "reference_native_pixel": [
+            953.0000697079099,
+            220.99987620459987
+          ],
+          "mapping_error_vs_2xy_plus_1": 0.00014207214293346485,
+          "status": "no_common_feature_within_64px",
+          "nearest_feature_distance_px": 75.6142636892787
+        },
+        {
+          "ray_index": 306,
+          "trace_pixel": [
+            503,
+            33
+          ],
+          "reference_native_pixel": [
+            1007.0000846432915,
+            66.99983184292687
+          ],
+          "mapping_error_vs_2xy_plus_1": 0.00018825856699179665,
+          "status": "no_common_feature_within_64px",
+          "nearest_feature_distance_px": 70.56582459017903
+        },
+        {
+          "ray_index": 340,
+          "trace_pixel": [
+            387,
+            316
+          ],
+          "reference_native_pixel": [
+            775.0000205254431,
+            632.9999947120807
+          ],
+          "mapping_error_vs_2xy_plus_1": 2.119565770863259e-05,
+          "status": "no_common_feature_within_64px",
+          "nearest_feature_distance_px": 126.22961750565719
+        },
+        {
+          "ray_index": 374,
+          "trace_pixel": [
+            311,
+            267
+          ],
+          "reference_native_pixel": [
+            622.9999784779867,
+            534.9999666469055
+          ],
+          "mapping_error_vs_2xy_plus_1": 3.969415537161072e-05,
+          "status": "view1_fb_gt_1px",
+          "nearest_feature_distance_px": 6.739932747630644,
+          "tracks": [
+            {
+              "view": 1,
+              "pixel": [
+                804.7698974609375,
+                438.32476806640625
+              ],
+              "fb_px": 50.09247189278912,
+              "epipolar_px": [
+                24.475141636599925,
+                24.561863210943
+              ],
+              "lk_error": 23.5048885345459,
+              "back_lk_error": 18.633148193359375
+            }
+          ]
+        },
+        {
+          "ray_index": 408,
+          "trace_pixel": [
+            384,
+            354
+          ],
+          "reference_native_pixel": [
+            769.0000188971434,
+            709.0000165369466
+          ],
+          "mapping_error_vs_2xy_plus_1": 2.511120531129621e-05,
+          "status": "view1_fb_gt_1px",
+          "nearest_feature_distance_px": 62.542162656566475,
+          "tracks": [
+            {
+              "view": 1,
+              "pixel": [
+                709.7461547851562,
+                661.7813110351562
+              ],
+              "fb_px": 47.477336438289335,
+              "epipolar_px": [
+                28.57535576650198,
+                28.749654818357108
+              ],
+              "lk_error": 14.764455795288086,
+              "back_lk_error": 15.587726593017578
+            }
+          ]
+        },
+        {
+          "ray_index": 442,
+          "trace_pixel": [
+            32,
+            374
+          ],
+          "reference_native_pixel": [
+            64.99982561552399,
+            749.000027860572
+          ],
+          "mapping_error_vs_2xy_plus_1": 0.00017659602754919318,
+          "status": "no_common_feature_within_64px",
+          "nearest_feature_distance_px": 130.10700505999392
+        },
+        {
+          "ray_index": 476,
+          "trace_pixel": [
+            298,
+            326
+          ],
+          "reference_native_pixel": [
+            596.999971351445,
+            653.0000004698934
+          ],
+          "mapping_error_vs_2xy_plus_1": 2.86524083653725e-05,
+          "status": "view1_fb_gt_1px",
+          "nearest_feature_distance_px": 61.726451900197596,
+          "tracks": [
+            {
+              "view": 1,
+              "pixel": [
+                701.9273071289062,
+                531.4874267578125
+              ],
+              "fb_px": 44.623113492022846,
+              "epipolar_px": [
+                26.237336322853135,
+                26.515747617888557
+              ],
+              "lk_error": 75.08234405517578,
+              "back_lk_error": 31.698837280273438
+            }
+          ]
+        },
+        {
+          "ray_index": 511,
+          "trace_pixel": [
+            680,
+            100
+          ],
+          "reference_native_pixel": [
+            1361.000183625962,
+            200.99986981532956
+          ],
+          "mapping_error_vs_2xy_plus_1": 0.00022509229746422643,
+          "status": "no_common_feature_within_64px",
+          "nearest_feature_distance_px": 124.93529681805661
+        }
+      ]
+    },
+    {
+      "scan": 40,
+      "inputs_sha256": {
+        "cameras_bin": "9dd012bebe2dea0514af3f784dbb8fff23354fd7e9476ae6f9c668c40162d06b",
+        "images_bin": "93a27c4b9fb598996665436de9850511b28533c7d94835d4d754c2887aad40a0",
+        "image0": "3e07c2d1d740d2aee03d06eaa312699ddd26a6523db68f8e81bf028c8317b8ea",
+        "image1": "cecd92c9dc51c21df7d9b7e845e9d4055e03ddb632ca3bc1b9b5aa44de35a9f9",
+        "image2": "d6b02ba41aad89620f5c97adc30768c9752dc65e60503b69a4a540f57ce59955",
+        "model": "d1df2e5ac7048dc2ba3b76197bb252d59134faf4220242bfb3e39238f6e5e0d8",
+        "metadata": "14756654c12ba281ae1a0f018386c1334ddf2c0840828ab5cc6b34e194f4b74e",
+        "trace": "503c96ac7633b5689b4f0b3b010720942a75372fb20b1e8dc2a0ef6eff1aef8b"
+      },
+      "ray_indices": [
+        0,
+        34,
+        68,
+        102,
+        136,
+        170,
+        204,
+        238,
+        272,
+        306,
+        340,
+        374,
+        408,
+        442,
+        476,
+        511
+      ],
+      "model_id_bounds_checked": false,
+      "rows": [
+        {
+          "ray_index": 0,
+          "trace_pixel": [
+            464,
+            251
+          ],
+          "reference_native_pixel": [
+            928.999868156274,
+            502.99996382129666
+          ],
+          "mapping_error_vs_2xy_plus_1": 0.0001367174701792194,
+          "status": "view1_fb_gt_1px",
+          "nearest_feature_distance_px": 40.91756258219914,
+          "tracks": [
+            {
+              "view": 1,
+              "pixel": [
+                1017.9180908203125,
+                585.7267456054688
+              ],
+              "fb_px": 3.5089840216323265,
+              "epipolar_px": [
+                10.321217892042336,
+                10.173255610326255
+              ],
+              "lk_error": 20.537202835083008,
+              "back_lk_error": 20.170068740844727
+            }
+          ]
+        },
+        {
+          "ray_index": 34,
+          "trace_pixel": [
+            418,
+            431
+          ],
+          "reference_native_pixel": [
+            836.9998546759101,
+            863.0000505340369
+          ],
+          "mapping_error_vs_2xy_plus_1": 0.0001538596112769786,
+          "status": "view1_backward",
+          "nearest_feature_distance_px": 4.543164840155566,
+          "tracks": []
+        },
+        {
+          "ray_index": 68,
+          "trace_pixel": [
+            380,
+            286
+          ],
+          "reference_native_pixel": [
+            760.9998435794888,
+            572.999980743263
+          ],
+          "mapping_error_vs_2xy_plus_1": 0.00015760139035146607,
+          "status": "no_common_feature_within_64px",
+          "nearest_feature_distance_px": 77.16808623461279
+        },
+        {
+          "ray_index": 102,
+          "trace_pixel": [
+            209,
+            353
+          ],
+          "reference_native_pixel": [
+            418.9997940975951,
+            707.0000129285331
+          ],
+          "mapping_error_vs_2xy_plus_1": 0.00020630789445025234,
+          "status": "view1_forward",
+          "nearest_feature_distance_px": 22.014336312051867,
+          "tracks": []
+        },
+        {
+          "ray_index": 136,
+          "trace_pixel": [
+            203,
+            357
+          ],
+          "reference_native_pixel": [
+            406.9997923742747,
+            715.0000148419606
+          ],
+          "mapping_error_vs_2xy_plus_1": 0.00020815553223149243,
+          "status": "view1_forward",
+          "nearest_feature_distance_px": 36.31489475858859,
+          "tracks": []
+        },
+        {
+          "ray_index": 170,
+          "trace_pixel": [
+            145,
+            458
+          ],
+          "reference_native_pixel": [
+            290.99977573672055,
+            917.0000631094922
+          ],
+          "mapping_error_vs_2xy_plus_1": 0.0002329738751778257,
+          "status": "no_common_feature_within_64px",
+          "nearest_feature_distance_px": 264.36699854654853
+        },
+        {
+          "ray_index": 204,
+          "trace_pixel": [
+            196,
+            546
+          ],
+          "reference_native_pixel": [
+            392.99979030689184,
+            1093.0001053404617
+          ],
+          "mapping_error_vs_2xy_plus_1": 0.0002346653201447092,
+          "status": "no_common_feature_within_64px",
+          "nearest_feature_distance_px": 207.0660295953193
+        },
+        {
+          "ray_index": 238,
+          "trace_pixel": [
+            219,
+            422
+          ],
+          "reference_native_pixel": [
+            438.9997969504422,
+            845.0000459785977
+          ],
+          "mapping_error_vs_2xy_plus_1": 0.00020819018796237009,
+          "status": "no_common_feature_within_64px",
+          "nearest_feature_distance_px": 131.40343719333652
+        },
+        {
+          "ray_index": 272,
+          "trace_pixel": [
+            50,
+            120
+          ],
+          "reference_native_pixel": [
+            100.9997489038692,
+            240.99990191854215
+          ],
+          "mapping_error_vs_2xy_plus_1": 0.0002695723266115376,
+          "status": "no_common_feature_within_64px",
+          "nearest_feature_distance_px": 190.4996070165725
+        },
+        {
+          "ray_index": 306,
+          "trace_pixel": [
+            301,
+            30
+          ],
+          "reference_native_pixel": [
+            602.9998206750797,
+            60.99985807522752
+          ],
+          "mapping_error_vs_2xy_plus_1": 0.00022869208136082816,
+          "status": "view1_backward",
+          "nearest_feature_distance_px": 28.21556852635049,
+          "tracks": []
+        },
+        {
+          "ray_index": 340,
+          "trace_pixel": [
+            359,
+            334
+          ],
+          "reference_native_pixel": [
+            718.9998374597908,
+            669.0000038254544
+          ],
+          "mapping_error_vs_2xy_plus_1": 0.00016258521983680314,
+          "status": "view1_fb_gt_1px",
+          "nearest_feature_distance_px": 59.76752036119176,
+          "tracks": [
+            {
+              "view": 1,
+              "pixel": [
+                625.431640625,
+                630.2786254882812
+              ],
+              "fb_px": 160.9930796319716,
+              "epipolar_px": [
+                5.0278153872534315,
+                5.078394370605245
+              ],
+              "lk_error": 31.78458023071289,
+              "back_lk_error": 40.087303161621094
+            }
+          ]
+        },
+        {
+          "ray_index": 374,
+          "trace_pixel": [
+            198,
+            280
+          ],
+          "reference_native_pixel": [
+            396.9997909638732,
+            560.9999779973957
+          ],
+          "mapping_error_vs_2xy_plus_1": 0.0002101909058703733,
+          "status": "view1_fb_gt_1px",
+          "nearest_feature_distance_px": 10.90720315539164,
+          "tracks": [
+            {
+              "view": 1,
+              "pixel": [
+                445.7823181152344,
+                342.8222351074219
+              ],
+              "fb_px": 260.7110299236783,
+              "epipolar_px": [
+                53.53698185689165,
+                54.85776393198453
+              ],
+              "lk_error": 31.3895263671875,
+              "back_lk_error": 22.07624626159668
+            }
+          ]
+        },
+        {
+          "ray_index": 408,
+          "trace_pixel": [
+            248,
+            374
+          ],
+          "reference_native_pixel": [
+            496.9998053093236,
+            749.000023000961
+          ],
+          "mapping_error_vs_2xy_plus_1": 0.0001960446471566224,
+          "status": "view1_forward",
+          "nearest_feature_distance_px": 31.21919454174754,
+          "tracks": []
+        },
+        {
+          "ray_index": 442,
+          "trace_pixel": [
+            449,
+            395
+          ],
+          "reference_native_pixel": [
+            898.9998637609175,
+            791.0000332179188
+          ],
+          "mapping_error_vs_2xy_plus_1": 0.00014023023116913955,
+          "status": "view1_fb_gt_1px",
+          "nearest_feature_distance_px": 30.43084701473217,
+          "tracks": [
+            {
+              "view": 1,
+              "pixel": [
+                676.5011596679688,
+                1014.8652954101562
+              ],
+              "fb_px": 225.65241281234478,
+              "epipolar_px": [
+                187.37912792960196,
+                188.37918946514904
+              ],
+              "lk_error": 34.607357025146484,
+              "back_lk_error": 27.15816307067871
+            }
+          ]
+        },
+        {
+          "ray_index": 476,
+          "trace_pixel": [
+            445,
+            344
+          ],
+          "reference_native_pixel": [
+            890.9998625851607,
+            689.0000086389487
+          ],
+          "mapping_error_vs_2xy_plus_1": 0.0001376861267163891,
+          "status": "view1_fb_gt_1px",
+          "nearest_feature_distance_px": 7.947154144456048,
+          "tracks": [
+            {
+              "view": 1,
+              "pixel": [
+                941.2113647460938,
+                711.2235717773438
+              ],
+              "fb_px": 3.7340155820187713,
+              "epipolar_px": [
+                11.993896963021166,
+                11.914221903781328
+              ],
+              "lk_error": 16.642290115356445,
+              "back_lk_error": 14.776573181152344
+            }
+          ]
+        },
+        {
+          "ray_index": 511,
+          "trace_pixel": [
+            490,
+            108
+          ],
+          "reference_native_pixel": [
+            980.9998757854955,
+            216.99989487519764
+          ],
+          "mapping_error_vs_2xy_plus_1": 0.00016272820035641926,
+          "status": "no_common_feature_within_64px",
+          "nearest_feature_distance_px": 136.425117408159
+        }
+      ]
+    }
+  ],
+  "elapsed_seconds": 2.3339271000000004,
+  "interpretation": "Third view independent tracking is not ground truth. No training or new estimator. Observed features are engineering samples, not independent test set. Model SHA verified; ID bounds checked only if any ray matched, reader/host binary origin remains unproven; no reordered or recomputed occlusion weights."
+}
