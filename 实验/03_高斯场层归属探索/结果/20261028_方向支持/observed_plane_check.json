@@ -1,0 +1,196 @@
+{
+  "git_head": "69fcf4d15e75497d809af695b00661a6a02e77f8",
+  "opencv": "4.12.0",
+  "scans": [
+    {
+      "scan": 37,
+      "inputs_sha256": {
+        "camera_npz": "fbd4d03e10457cc36522f5a29d311ac50db867236bc4786c8c5a2a9c596c49ed",
+        "cameras_bin": "fe0aa32b87c96c1366500ccdf02493fb6f78ddd505ac484aa5f1315c4716f5b2",
+        "images_bin": "f2f04e4f7c54d4f53af5acf6f66346158671e78644cd883923609105ea73d705",
+        "image0": "b3c01bacdd66c09af63b417cd8ef184adb171eb91cd4c51a9d1791f30ce05404",
+        "image1": "3e767110c1ff4659e2e8cc1e586c9a68e465c60bd0f49efd4abc4ecc724b77f3",
+        "image2": "3cc777de6c94d29af15dac9f54826bb988bab235bed0df606aad0980cbeb7ee5",
+        "metadata": "1a50c9f0ae9105a70c9b1a360eb75fba4fb05297d89e95fc3434dbbb822f03e9"
+      },
+      "pose_rotation_max_abs": 2.855657110778509e-08,
+      "pose_translation_max_abs": 3.552551275376459e-08,
+      "status": "no_three_view_matches",
+      "native_intrinsics": [
+        [
+          [
+            2892.330078125,
+            0.0,
+            777.0
+          ],
+          [
+            0.0,
+            2883.175048828125,
+            581.0
+          ],
+          [
+            0.0,
+            0.0,
+            1.0
+          ]
+        ],
+        [
+          [
+            2892.330078125,
+            0.0,
+            777.0
+          ],
+          [
+            0.0,
+            2883.175048828125,
+            581.0
+          ],
+          [
+            0.0,
+            0.0,
+            1.0
+          ]
+        ],
+        [
+          [
+            2892.330078125,
+            0.0,
+            777.0
+          ],
+          [
+            0.0,
+            2883.175048828125,
+            581.0
+          ],
+          [
+            0.0,
+            0.0,
+            1.0
+          ]
+        ]
+      ],
+      "pixel_note": "native K coordinates; trace width 777 uses center 388 vs native cx/2 388.5",
+      "sift_keypoint_counts": [
+        20354,
+        19734,
+        16872
+      ],
+      "pairs": [
+        {
+          "lowe_forward": 4245,
+          "lowe_reverse": 4186,
+          "mutual": 3897,
+          "epipolar_2px": 34
+        },
+        {
+          "lowe_forward": 1926,
+          "lowe_reverse": 1875,
+          "mutual": 1632,
+          "epipolar_2px": 3
+        }
+      ],
+      "three_view_before_triangulation": 0,
+      "positive_depth_count": 0,
+      "three_view_reprojection_2px_count": 0,
+      "angle_summary_degrees": {
+        "count": 0
+      }
+    },
+    {
+      "scan": 40,
+      "inputs_sha256": {
+        "camera_npz": "af1ba75cbb137e5e9c83036a8db6da463365c6f54079ec31d8b8a162779fad78",
+        "cameras_bin": "9dd012bebe2dea0514af3f784dbb8fff23354fd7e9476ae6f9c668c40162d06b",
+        "images_bin": "93a27c4b9fb598996665436de9850511b28533c7d94835d4d754c2887aad40a0",
+        "image0": "3e07c2d1d740d2aee03d06eaa312699ddd26a6523db68f8e81bf028c8317b8ea",
+        "image1": "cecd92c9dc51c21df7d9b7e845e9d4055e03ddb632ca3bc1b9b5aa44de35a9f9",
+        "image2": "d6b02ba41aad89620f5c97adc30768c9752dc65e60503b69a4a540f57ce59955",
+        "metadata": "14756654c12ba281ae1a0f018386c1334ddf2c0840828ab5cc6b34e194f4b74e"
+      },
+      "pose_rotation_max_abs": 2.8498004400745458e-08,
+      "pose_translation_max_abs": 1.4222717226175519e-08,
+      "status": "no_three_view_matches",
+      "native_intrinsics": [
+        [
+          [
+            2892.330322265625,
+            0.0,
+            777.0
+          ],
+          [
+            0.0,
+            2883.175048828125,
+            581.0
+          ],
+          [
+            0.0,
+            0.0,
+            1.0
+          ]
+        ],
+        [
+          [
+            2892.330322265625,
+            0.0,
+            777.0
+          ],
+          [
+            0.0,
+            2883.175048828125,
+            581.0
+          ],
+          [
+            0.0,
+            0.0,
+            1.0
+          ]
+        ],
+        [
+          [
+            2892.330322265625,
+            0.0,
+            777.0
+          ],
+          [
+            0.0,
+            2883.175048828125,
+            581.0
+          ],
+          [
+            0.0,
+            0.0,
+            1.0
+          ]
+        ]
+      ],
+      "pixel_note": "native K coordinates; trace width 777 uses center 388 vs native cx/2 388.5",
+      "sift_keypoint_counts": [
+        14620,
+        15498,
+        13115
+      ],
+      "pairs": [
+        {
+          "lowe_forward": 2753,
+          "lowe_reverse": 2760,
+          "mutual": 2522,
+          "epipolar_2px": 7
+        },
+        {
+          "lowe_forward": 596,
+          "lowe_reverse": 575,
+          "mutual": 479,
+          "epipolar_2px": 1
+        }
+      ],
+      "three_view_before_triangulation": 0,
+      "positive_depth_count": 0,
+      "three_view_reprojection_2px_count": 0,
+      "angle_summary_degrees": {
+        "count": 0
+      }
+    }
+  ],
+  "elapsed_seconds": 12.54575,
+  "thresholds": "Lowe .75 mutual, alpha > .5, 2 original-pixel epipolar and reprojection, fixed 64px patch, max 32 response points; 1 degree minimum angle is an engineering reliability flag, not calibrated. No GT, no ICP, no fit selection by residual."
+}
