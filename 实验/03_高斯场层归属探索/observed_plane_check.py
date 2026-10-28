@@ -111,10 +111,10 @@ def process(scan, index, selection='maximum_response'):
         for v in unique.values():
             x,y=v['pixels'][0]; key=(int(np.floor(y/64)),int(np.floor(x/64)))
             windows.setdefault(key,[]).append(v)
-        key=min(windows,key=lambda k:(-len(windows[k]),k[0],k[1])); row,col=key
-        x0,y0=col*64,row*64; x1,y1=min(x0+64,cam.width),min(y0+64,cam.height)
+        key=min(windows,key=lambda k:(-len(windows[k]),k[0],k[1])); row,column=key
+        x0,y0=column*64,row*64; x1,y1=min(x0+64,cam.width),min(y0+64,cam.height)
         patch=windows[key]; cx,cy=(x0+x1)/2,(y0+y1)/2
-        out.update(selection=selection,selection_definition='round reference xy to 0.001 px; retain maximum response; select max-count 64px grid window, ties row then col; bounds half-open; no model/GT/plane selection',unique_common_points=len(unique),window_counts=[{'row':k[0],'col':k[1],'count':len(v)} for k,v in sorted(windows.items())],selected_window={'row':row,'col':col,'bounds':[x0,y0,x1,y1]})
+        out.update(selection=selection,selection_definition='round reference xy to 0.001 px; retain maximum response; select max-count 64px grid window, ties row then col; bounds half-open; no model/GT/plane selection',unique_common_points=len(unique),window_counts=[{'row':k[0],'col':k[1],'count':len(v)} for k,v in sorted(windows.items())],selected_window={'row':row,'col':column,'bounds':[x0,y0,x1,y1]})
         anchor=max(patch,key=lambda x:x['response'])
     else:
         anchor=max(good,key=lambda x:x['response']); cx,cy=anchor['pixels'][0]; patch=[v for v in good if abs(v['pixels'][0][0]-cx)<=32 and abs(v['pixels'][0][1]-cy)<=32]
