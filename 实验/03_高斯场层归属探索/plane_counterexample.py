@@ -28,6 +28,7 @@ def main():
                 't_star':t.tolist(),'t_star_minus_original_2':(t-2).tolist(),
                 't_star_range':[float(t.min()),float(t.max())], 'sigma':sigma.tolist(),
                 'response_at_own_plane_over_peak':ratio.tolist(),
+                'response_at_original_t2_over_peak':np.exp(-.5*((2-t)/sigma)**2).tolist(),
                 'max_abs_coplanarity_residual':float(np.max(np.abs((mu-center)@n)))})
     result={'git_head':subprocess.check_output(['git','rev-parse','HEAD'],cwd=base.REPO,text=True).strip(),
         'ray_origin':origin.tolist(),'ray_direction':ray.tolist(),'original_plane_point':p.tolist(),
