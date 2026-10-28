@@ -3,6 +3,7 @@ import importlib.util
 import itertools
 import json
 import subprocess
+import sys
 import time
 from pathlib import Path
 import cv2
@@ -45,7 +46,7 @@ def plane(points, ids):
 def summary(a):
     a=np.asarray(a); return {'count':len(a),'median':float(np.median(a)),'p90':float(np.quantile(a,.9)),'max':float(np.max(a))} if len(a) else {'count':0}
 
-def process(scan, index):
+def process(scan, index, selection='maximum_response'):
     pre=f'20261026_观测约束表面/observations_v1/scan{scan}/'
     inputs={k:base.indexed(pre+p,index) for k,p in {'camera_npz':'cameras.npz','cameras_bin':'sparse/0/cameras.bin','images_bin':'sparse/0/images.bin',**{f'image{i}':f'images/{i:04d}.png' for i in range(3)}}.items()}
     inputs['metadata']=base.indexed(f'20261026_夜间深度方法/confirm_v1/scan{scan}/metadata.json',index)
@@ -100,11 +101,30 @@ def process(scan, index):
         good.append({'reference_id':i,'pixels':pixel.tolist(),'xyz':X.tolist(),'reprojection_px':repro,'min_triangulation_angle_degrees':float(min(angles)),'response':float(features[0][0][i].response)})
     out.update(positive_depth_count=positive,three_view_reprojection_2px_count=len(good),angle_summary_degrees=summary([v['min_triangulation_angle_degrees'] for v in good]))
     if not good: out['status']='no_three_view_matches'; return out
-    anchor=max(good,key=lambda x:x['response']); cx,cy=anchor['pixels'][0]; patch=[v for v in good if abs(v['pixels'][0][0]-cx)<=32 and abs(v['pixels'][0][1]-cy)<=32]
+    if selection=='fixed_grid_density':
+        out['all_three_view_matches']=good
+        unique={}
+        for v in good:
+            key=tuple(round(float(x),3) for x in v['pixels'][0])
+            if key not in unique or v['response']>unique[key]['response']: unique[key]=v
+        windows={}
+        for v in unique.values():
+            x,y=v['pixels'][0]; key=(int(np.floor(y/64)),int(np.floor(x/64)))
+            windows.setdefault(key,[]).append(v)
+        key=min(windows,key=lambda k:(-len(windows[k]),k[0],k[1])); row,col=key
+        x0,y0=col*64,row*64; x1,y1=min(x0+64,cam.width),min(y0+64,cam.height)
+        patch=windows[key]; cx,cy=(x0+x1)/2,(y0+y1)/2
+        out.update(selection=selection,selection_definition='round reference xy to 0.001 px; retain maximum response; select max-count 64px grid window, ties row then col; bounds half-open; no model/GT/plane selection',unique_common_points=len(unique),window_counts=[{'row':k[0],'col':k[1],'count':len(v)} for k,v in sorted(windows.items())],selected_window={'row':row,'col':col,'bounds':[x0,y0,x1,y1]})
+        anchor=max(patch,key=lambda x:x['response'])
+    else:
+        anchor=max(good,key=lambda x:x['response']); cx,cy=anchor['pixels'][0]; patch=[v for v in good if abs(v['pixels'][0][0]-cx)<=32 and abs(v['pixels'][0][1]-cy)<=32]
+        out['selection']=selection
     patch=sorted(patch,key=lambda x:-x['response'])[:32]; out.update(patch_center=[cx,cy],patch_reference_id=anchor['reference_id'],patch_match_count=len(patch),patch_matches=patch)
     if len(patch)<4: out['status']='fixed_patch_fewer_than_four'; return out
     xyz=np.array([r['xyz'] for r in patch]); triples=list(itertools.combinations(range(len(xyz)),3)); ids=max(triples,key=lambda ids:np.linalg.norm(np.cross(xyz[ids[1]]-xyz[ids[0]],xyz[ids[2]]-xyz[ids[0]])))
     pl=plane(xyz,ids); out['triangle_indices']=list(ids)
+    singular=np.linalg.svd(np.stack([xyz[ids[1]]-xyz[ids[0]],xyz[ids[2]]-xyz[ids[0]]]),compute_uv=False)
+    out['triangle_singular_values']=singular.tolist(); out['triangle_condition_number']=float(singular[0]/singular[1]) if singular[1]>0 else None
     if pl is None: out['status']='fixed_patch_collinear'; return out
     if min(r['min_triangulation_angle_degrees'] for r in patch)<1.: out['status']='fixed_patch_low_parallax_below_1_degree'; return out
     p,n=pl; hold=[i for i in range(len(xyz)) if i not in ids]; residual=np.abs((xyz[hold]-p)@n)
@@ -117,10 +137,12 @@ def process(scan, index):
         shifted=np.array(shifted); pl2=plane(shifted,ids)
         if pl2:
             dot=np.clip(abs(n@pl2[1]),0,1); perturb.append({'reference_pixel_shift':sign*.5,'max_point_shift':float(np.max(np.linalg.norm(shifted-xyz,axis=1))),'plane_normal_angle_deg':float(np.rad2deg(np.arccos(dot)))})
-    out['pixel_perturbation_sensitivity']=perturb
+    out['pixel_perturbation_sensitivity']=perturb; out['pixel_perturbation_note']='Only simultaneous +/-0.5 reference pixel x and y; finite sensitivity examples, not a total error bound.'
     model=base.indexed(f'20261026_夜间深度方法/inputs/scan{scan}/point_cloud.ply',index); assert base.sha(model)==meta['model_sha256']; out['inputs_sha256']['model']=base.sha(model)
     verts=base.ply(model); mu=np.stack([verts[k] for k in ('x','y','z')],axis=1).astype(float); projected=mu@Ps[0][:,:3].T+Ps[0][:,3]; positive=projected[:,2]>0; xy=projected[:,:2]/projected[:,2,None]
-    chosen=positive&(np.abs(xy[:,0]-cx)<=32)&(np.abs(xy[:,1]-cy)<=32); v=verts[chosen]; points=mu[chosen]
+    if selection=='fixed_grid_density': chosen=positive&(xy[:,0]>=x0)&(xy[:,0]<x1)&(xy[:,1]>=y0)&(xy[:,1]<y1)
+    else: chosen=positive&(np.abs(xy[:,0]-cx)<=32)&(np.abs(xy[:,1]-cy)<=32)
+    v=verts[chosen]; points=mu[chosen]
     scales=np.exp(np.stack([v[f'scale_{j}'] for j in range(3)],axis=1).astype(float)); scales=np.sqrt(scales**2+v['filter_3D'][:,None].astype(float)**2)
     order=np.argsort(scales,axis=1); short=scales[np.arange(len(v)),order[:,0]]; second=scales[np.arange(len(v)),order[:,1]]; unique=second>short*(1+1e-3)
     rot=base.rotation(np.stack([v[f'rot_{j}'] for j in range(4)],axis=1).astype(float)); axes=rot[np.arange(len(v)),:,order[:,0]]
@@ -129,14 +151,18 @@ def process(scan, index):
     out['status']='completed_observation_diagnostic'; return out
 
 
-def main():
+def main(selection='maximum_response'):
     started=time.perf_counter(); index=json.loads((base.DATA/'来源索引.json').read_text(encoding='utf8')); scans=[]
-    for s in (37,40): scans.append(process(s,index))
+    for s in (37,40): scans.append(process(s,index,selection))
     result={'git_head':subprocess.check_output(['git','rev-parse','HEAD'],cwd=base.REPO,text=True).strip(),'opencv':cv2.__version__,'epiline_synthetic_check':epiline_self_check(),'supersedes':'observed_plane_check.json had incorrect reverse epiline residual and its no-match conclusion is invalid','scans':scans,'elapsed_seconds':time.perf_counter()-started,'thresholds':'Lowe .75 mutual, alpha > .5, 2 original-pixel epipolar and reprojection, fixed 64px patch, max 32 response points; 1 degree minimum angle is an engineering reliability flag, not calibrated. No GT, no ICP, no fit selection by residual.'}
-    path=base.OUT/'observed_plane_check_v2.json'
+    result['selection']=selection
+    path=base.OUT/('observed_grid_plane_check.json' if selection=='fixed_grid_density' else 'observed_plane_check_v2.json')
     if path.exists(): raise FileExistsError(path)
     path.write_text(json.dumps(result,indent=2,ensure_ascii=False)+'\n',encoding='utf8')
     for x in scans: print(x['scan'],x['status'],x.get('sift_keypoint_counts'),x.get('pairs'),x.get('three_view_reprojection_2px_count'),x.get('patch_match_count'))
 
 
-if __name__=='__main__': main()
+if __name__=='__main__':
+    selection=sys.argv[1] if len(sys.argv)>1 else 'maximum_response'
+    assert selection in ('maximum_response','fixed_grid_density')
+    main(selection)
