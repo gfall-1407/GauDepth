@@ -102,6 +102,18 @@ def tests():
     return 'passed: single, middle, peak switching, weak foreground, common shift failure, scale, MM, implicit weight/center gradient central FD, GGGS finite-root cases'
 
 
+def ray_bandwidths(p, view, pixel):
+    W=np.array(view['world_view_transform'],float); H,Wid=view['image_size']; fx,fy=view['focal']; tanx,tany=np.tan(np.array(view['fov'])/2)
+    r=base.rotation(np.stack([p[f'rot_{j}'] for j in range(4)],axis=1).astype(float))
+    scales=np.exp(np.stack([p[f'scale_{j}'] for j in range(3)],axis=1).astype(float)); scales=np.sqrt(scales**2+p['filter_3D'][:,None].astype(float)**2)
+    mu=np.stack([p[n] for n in ('x','y','z')],axis=1).astype(float); cam=mu@W[:3,:3]+W[3,:3]
+    uv=np.column_stack((np.clip(cam[:,0]/cam[:,2],-1.3*tanx,1.3*tanx),np.clip(cam[:,1]/cam[:,2],-1.3*tany,1.3*tany),np.ones(len(p))))
+    uv/=np.linalg.norm(uv,axis=1)[:,None]; world=uv@W[:3,:3].T
+    local=np.einsum('nji,nj->ni',r,world); inv_sigma=np.sqrt(np.sum((local/scales)**2,axis=1))
+    x,y=pixel; raynorm=np.sqrt(1+((x-(Wid-1)/2)/fx)**2+((y-(H-1)/2)/fy)**2)
+    return 1/inv_sigma/raynorm, np.prod(scales,axis=1)**(1/3)/raynorm
+
+
 def main():
     test=tests(); index=json.loads((base.DATA/'来源索引.json').read_text(encoding='utf-8'))
     model=base.indexed('20261026_夜间深度方法/inputs/scan83/point_cloud.ply',index)
@@ -121,14 +133,7 @@ def main():
     for i in chosen:
         a,b=f['offsets'][i:i+2]; p=vertices[f['gaussian_id'][a:b]]
         d=f['depth'][a:b].astype(float); w=f['weight'][a:b].astype(float); alpha=f['alpha'][a:b].astype(float)
-        r=base.rotation(np.stack([p[f'rot_{j}'] for j in range(4)],axis=1).astype(float))
-        scales=np.exp(np.stack([p[f'scale_{j}'] for j in range(3)],axis=1).astype(float)); scales=np.sqrt(scales**2+p['filter_3D'][:,None].astype(float)**2)
-        mu=np.stack([p[n] for n in ('x','y','z')],axis=1).astype(float); cam=mu@W[:3,:3]+W[3,:3]
-        uv=np.column_stack((np.clip(cam[:,0]/cam[:,2],-1.3*tanx,1.3*tanx),np.clip(cam[:,1]/cam[:,2],-1.3*tany,1.3*tany),np.ones(len(p))))
-        uv/=np.linalg.norm(uv,axis=1)[:,None]; world=uv@W[:3,:3].T
-        local=np.einsum('nji,nj->ni',r,world); inv_sigma=np.sqrt(np.sum((local/scales)**2,axis=1))
-        x,y=f['pixel_xy'][i]; raynorm=np.sqrt(1+((x-(Wid-1)/2)/fx)**2+((y-(H-1)/2)/fy)**2)
-        sigma=1/inv_sigma/raynorm; iso=np.prod(scales,axis=1)**(1/3)/raynorm
+        sigma,iso=ray_bandwidths(p,view,f['pixel_xy'][i])
         row={'ray_index':int(i),'members':int(b-a)}
         t=time.perf_counter(); row['expected']=float(np.sum(d*w)/np.sum(w)) if len(d) and sum(w)>0 else None; times['expected']+=time.perf_counter()-t
         t=time.perf_counter(); mid=np.flatnonzero(f['transmittance'][a:b]>.5); row['native_median']=float(d[mid[-1]]) if len(mid) else None; times['native_median']+=time.perf_counter()-t
