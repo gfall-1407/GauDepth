@@ -1,0 +1,71 @@
+{
+  "code_commit": "1455f908a9d066dd611da8f0da21019e86c0a9c2",
+  "checks": {
+    "positive_definite_2.0": true,
+    "analytic_parameters_2.0": true,
+    "plane_2.0": true,
+    "positive_definite_2.2": true,
+    "analytic_parameters_2.2": true,
+    "plane_2.2": true,
+    "identical_profiles": true,
+    "mixture_rejected": true,
+    "collinear_normal_nonunique": true
+  },
+  "passed": true,
+  "max_profile_difference": 1.3877787807814457e-17,
+  "scenes": [
+    {
+      "S": 2.0,
+      "min_Q_eigenvalue": 1.0,
+      "geometry": {
+        "eigenvalues": [
+          4.930380657631324e-32,
+          0.5395698176481849,
+          0.5435600901155091
+        ],
+        "residual": 4.930380657631324e-32,
+        "denominator": 1.0,
+        "intersection": 1.9999999999999998
+      },
+      "length_tolerance": 5.684341886080802e-14,
+      "squared_tolerance": 1.1368683772161603e-13
+    },
+    {
+      "S": 2.2,
+      "min_Q_eigenvalue": 0.6720784389125771,
+      "geometry": {
+        "eigenvalues": [
+          0.0,
+          0.5395698176481849,
+          0.5435600901155091
+        ],
+        "residual": 0.0,
+        "denominator": 1.0,
+        "intersection": 2.2
+      },
+      "length_tolerance": 6.252776074688882e-14,
+      "squared_tolerance": 1.3756107364315542e-13
+    }
+  ],
+  "mixture": {
+    "eigenvalues": [
+      0.008927896959744145,
+      0.5395698176481848,
+      0.5435600901155091
+    ],
+    "residual": 0.008927896959744145,
+    "denominator": 1.0,
+    "intersection": 2.06725701540397
+  },
+  "collinear": {
+    "eigenvalues": [
+      0.0,
+      0.0,
+      0.5499449186301858
+    ],
+    "residual": 0.0,
+    "denominator": 0.0,
+    "intersection": null
+  },
+  "note": "Synthetic ordered weights; mixture is not a certified surface; collinear normal is nonunique."
+}
