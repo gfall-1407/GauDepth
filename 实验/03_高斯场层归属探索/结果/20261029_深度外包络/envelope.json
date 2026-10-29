@@ -1,0 +1,110 @@
+{
+  "code_commit": "7d26d154ec42de9dc09498523b9cc12812ff8330",
+  "delta": "1/100",
+  "eta": "1/5",
+  "sqrt_grid": "1/18446744073709551616",
+  "budget_per_case": 1365,
+  "case2_proof": "Plane y=0 contains both points with weight 1 and the entire positive z ray; every z>0 is feasible.",
+  "cases": [
+    {
+      "case": "single_plane",
+      "counts": {
+        "processed": 1364,
+        "pruned": 282,
+        "retained_leaves": 403,
+        "queued": 403,
+        "unbounded_unexcluded": false
+      },
+      "outer_envelope": [
+        {
+          "lo": "3670902026687788089219/1844674407370955161600",
+          "lo_open": false,
+          "hi": "3707795602796032557181/1844674407370955161600",
+          "hi_open": false
+        }
+      ],
+      "witnesses": [
+        {
+          "z": "2",
+          "retained": true
+        }
+      ],
+      "single_plane_budget_failure": false
+    },
+    {
+      "case": "collinear",
+      "counts": {
+        "processed": 1364,
+        "pruned": 429,
+        "retained_leaves": 256,
+        "queued": 256,
+        "unbounded_unexcluded": true
+      },
+      "outer_envelope": [
+        {
+          "lo": "0",
+          "lo_open": true,
+          "hi": "inf",
+          "hi_open": true
+        }
+      ],
+      "witnesses": [
+        {
+          "z": "1/10",
+          "retained": true
+        },
+        {
+          "z": "1",
+          "retained": true
+        },
+        {
+          "z": "2",
+          "retained": true
+        },
+        {
+          "z": "10",
+          "retained": true
+        }
+      ],
+      "single_plane_budget_failure": false
+    },
+    {
+      "case": "two_planes",
+      "counts": {
+        "processed": 1364,
+        "pruned": 297,
+        "retained_leaves": 388,
+        "queued": 388,
+        "unbounded_unexcluded": false
+      },
+      "outer_envelope": [
+        {
+          "lo": "1739753449423066094369/1808645610351991193600",
+          "lo_open": false,
+          "hi": "216621707257649358759/208967022709991014400",
+          "hi_open": false
+        },
+        {
+          "lo": "112027032140972031/56514897667686400",
+          "lo_open": false,
+          "hi": "908935792832498052233/450359962737049600000",
+          "hi_open": false
+        }
+      ],
+      "witnesses": [
+        {
+          "z": "1",
+          "retained": true
+        },
+        {
+          "z": "2",
+          "retained": true
+        }
+      ],
+      "single_plane_budget_failure": false
+    }
+  ],
+  "algorithm_error": false,
+  "elapsed_seconds": 3.2660000000032596,
+  "limitations": "Outer envelope, not inner witness or proof of unboundedness. Fixed synthetic cases only; no real data, efficiency or method validation."
+}
