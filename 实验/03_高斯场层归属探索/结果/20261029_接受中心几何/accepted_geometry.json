@@ -1,0 +1,888 @@
+{
+  "code_commit": "56412c549fe764f138966fdfef9f054470c823c2",
+  "unverified_mapping": true,
+  "source_commit": "b63b967c4d95e923ef4961ae16b16bdc2a035ec4",
+  "host_binary_sha256": "f97dcd66f55d9ddbf673c1d467238fe6f983b9f0bf062645a87bb12d20aa91df",
+  "host_build_provenance": "Installed original host _C retained; binary SHA checked against G1 metadata. Original build source gap remains; exact accepted-ray replay verifies compatibility, not source identity.",
+  "input_sha256": {
+    "model": "34fe9d7243208432410bcaf41e44f390e41009ef3730a5f5dfd63137bbe325c1",
+    "cfg": "d81c37f61020b0f39d465860921229fd8e8095dc1ab894b0e4360fbf7aef8d71",
+    "metadata": "1a50c9f0ae9105a70c9b1a360eb75fba4fb05297d89e95fc3434dbbb822f03e9",
+    "trace": "9152656e1154eaaa3febd2f6f844a272a78a220e07fce4f61587342318562ceb"
+  },
+  "counts": {
+    "inside": 32,
+    "outside": 0,
+    "degenerate": 0,
+    "unavailable": 0,
+    "normal_unique": 32,
+    "positive_intersection": 32
+  },
+  "rows": [
+    {
+      "index": 0,
+      "pixel": [
+        348,
+        238
+      ],
+      "count": 37,
+      "weight_sum": 0.8844491127529182,
+      "eigenvalues": [
+        8.910346586494348e-06,
+        4.7792535576327075e-05,
+        0.0004046412697393403
+      ],
+      "residual": 8.9103465864944e-06,
+      "normal_unique": true,
+      "normal": [
+        -0.14040559378569237,
+        0.25982445184883607,
+        0.955393910099462
+      ],
+      "incidence": 0.9384363697700276,
+      "z_depth": 2.592143136937263,
+      "positive_intersection": true,
+      "hull": "inside",
+      "boundary_distance": 0.013467932412854431,
+      "jacobian_norm": 0.3514298605522901
+    },
+    {
+      "index": 16,
+      "pixel": [
+        163,
+        107
+      ],
+      "count": 54,
+      "weight_sum": 0.999593192785369,
+      "eigenvalues": [
+        4.24570278225417e-06,
+        4.436402483133847e-05,
+        0.000275846590816791
+      ],
+      "residual": 4.245702782254189e-06,
+      "normal_unique": true,
+      "normal": [
+        0.0761305959031205,
+        0.3708518131052024,
+        0.925566348288452
+      ],
+      "incidence": 0.7557409205844781,
+      "z_depth": 2.7547959131573676,
+      "positive_intersection": true,
+      "hull": "inside",
+      "boundary_distance": 0.015575789600109163,
+      "jacobian_norm": 0.4221722475907034
+    },
+    {
+      "index": 32,
+      "pixel": [
+        260,
+        456
+      ],
+      "count": 126,
+      "weight_sum": 0.9998857205010836,
+      "eigenvalues": [
+        3.252913002214191e-05,
+        7.194391608374297e-05,
+        0.00010478343349829624
+      ],
+      "residual": 3.252913002214189e-05,
+      "normal_unique": true,
+      "normal": [
+        0.08422592337115364,
+        0.4510398936142956,
+        0.8885206852970173
+      ],
+      "incidence": 0.8466641159644611,
+      "z_depth": 2.442441697850625,
+      "positive_intersection": true,
+      "hull": "inside",
+      "boundary_distance": 0.03245715063032279,
+      "jacobian_norm": 0.3531465685991458
+    },
+    {
+      "index": 49,
+      "pixel": [
+        201,
+        372
+      ],
+      "count": 112,
+      "weight_sum": 0.9998600761832677,
+      "eigenvalues": [
+        2.4747664742884077e-06,
+        5.063425902353992e-05,
+        0.00012864860713118206
+      ],
+      "residual": 2.474766474288425e-06,
+      "normal_unique": true,
+      "normal": [
+        -0.02124943026189084,
+        -0.9966215985473559,
+        0.07933379495812853
+      ],
+      "incidence": 0.0569912748258504,
+      "z_depth": 2.503309853232452,
+      "positive_intersection": true,
+      "hull": "inside",
+      "boundary_distance": 0.024103656233686828,
+      "jacobian_norm": 3.8627320868270028
+    },
+    {
+      "index": 65,
+      "pixel": [
+        65,
+        190
+      ],
+      "count": 99,
+      "weight_sum": 0.9995766347194603,
+      "eigenvalues": [
+        1.4207300504293883e-05,
+        4.397572395352305e-05,
+        0.00081106166763418
+      ],
+      "residual": 1.420730050429382e-05,
+      "normal_unique": true,
+      "normal": [
+        0.4369137117125309,
+        0.43720708019294946,
+        0.7861020147199316
+      ],
+      "incidence": 0.46158099136542097,
+      "z_depth": 2.7107180142898994,
+      "positive_intersection": true,
+      "hull": "inside",
+      "boundary_distance": 0.02844378379866528,
+      "jacobian_norm": 0.5810621770843314
+    },
+    {
+      "index": 82,
+      "pixel": [
+        436,
+        85
+      ],
+      "count": 57,
+      "weight_sum": 0.9998885832337692,
+      "eigenvalues": [
+        1.198163891142734e-06,
+        5.783436506905812e-05,
+        0.00019245948585237073
+      ],
+      "residual": 1.1981638911427196e-06,
+      "normal_unique": true,
+      "normal": [
+        -0.615587214563838,
+        0.7106937048708595,
+        -0.3405390419944053
+      ],
+      "incidence": 0.32343878492386197,
+      "z_depth": 2.6092319706520524,
+      "positive_intersection": true,
+      "hull": "inside",
+      "boundary_distance": 0.015401027635139583,
+      "jacobian_norm": 0.9821240843291457
+    },
+    {
+      "index": 98,
+      "pixel": [
+        297,
+        199
+      ],
+      "count": 110,
+      "weight_sum": 0.9996549112736375,
+      "eigenvalues": [
+        9.728203406049283e-06,
+        4.209911481658643e-05,
+        0.0006173461012978813
+      ],
+      "residual": 9.728203406049317e-06,
+      "normal_unique": true,
+      "normal": [
+        0.7357596537231745,
+        0.6243948987026293,
+        0.2622760805473645
+      ],
+      "incidence": 0.030974594692393418,
+      "z_depth": 2.575069258853614,
+      "positive_intersection": true,
+      "hull": "inside",
+      "boundary_distance": 0.03382785096360382,
+      "jacobian_norm": 8.077912318596615
+    },
+    {
+      "index": 115,
+      "pixel": [
+        285,
+        271
+      ],
+      "count": 46,
+      "weight_sum": 0.9617950543615734,
+      "eigenvalues": [
+        9.74891079446877e-06,
+        2.5017957041890877e-05,
+        8.2063177346837e-05
+      ],
+      "residual": 9.748910794468764e-06,
+      "normal_unique": true,
+      "normal": [
+        0.20331512195360923,
+        0.5629709058906791,
+        0.8010784732506656
+      ],
+      "incidence": 0.6728132262010837,
+      "z_depth": 2.596018148349795,
+      "positive_intersection": true,
+      "hull": "inside",
+      "boundary_distance": 0.015550729225498218,
+      "jacobian_norm": 0.39286362576625883
+    },
+    {
+      "index": 131,
+      "pixel": [
+        446,
+        477
+      ],
+      "count": 127,
+      "weight_sum": 0.9960619661887904,
+      "eigenvalues": [
+        1.2166178384945624e-05,
+        1.9544704247145326e-05,
+        4.3581315070905484e-05
+      ],
+      "residual": 1.216617838494562e-05,
+      "normal_unique": true,
+      "normal": [
+        0.04680008813206384,
+        0.5686659742838547,
+        0.8212361179603741
+      ],
+      "incidence": 0.8464332288773158,
+      "z_depth": 2.3851873301615876,
+      "positive_intersection": true,
+      "hull": "inside",
+      "boundary_distance": 0.008246477303012062,
+      "jacobian_norm": 0.21608268497689617
+    },
+    {
+      "index": 148,
+      "pixel": [
+        525,
+        222
+      ],
+      "count": 60,
+      "weight_sum": 0.9084059786400758,
+      "eigenvalues": [
+        3.514652209643752e-05,
+        5.5145557410716374e-05,
+        0.00010155450619159494
+      ],
+      "residual": 3.514652209643753e-05,
+      "normal_unique": true,
+      "normal": [
+        -0.22997532622502484,
+        0.7498725671627033,
+        0.620324497617586
+      ],
+      "incidence": 0.5879824663636697,
+      "z_depth": 2.5644384281780632,
+      "positive_intersection": true,
+      "hull": "inside",
+      "boundary_distance": 0.019468264322769553,
+      "jacobian_norm": 0.7203039362351653
+    },
+    {
+      "index": 164,
+      "pixel": [
+        270,
+        155
+      ],
+      "count": 52,
+      "weight_sum": 0.9669235451729037,
+      "eigenvalues": [
+        6.699728268024475e-05,
+        0.00024804474943713035,
+        0.0002919650673969875
+      ],
+      "residual": 6.699728268024471e-05,
+      "normal_unique": true,
+      "normal": [
+        0.03228250251010494,
+        0.6171956914853342,
+        0.7861471353656551
+      ],
+      "incidence": 0.6523001678451494,
+      "z_depth": 2.683167140970478,
+      "positive_intersection": true,
+      "hull": "inside",
+      "boundary_distance": 0.04628715178788352,
+      "jacobian_norm": 0.3908498895548931
+    },
+    {
+      "index": 181,
+      "pixel": [
+        373,
+        245
+      ],
+      "count": 18,
+      "weight_sum": 0.6269911878043786,
+      "eigenvalues": [
+        7.137906607441265e-06,
+        0.00014948978316296272,
+        0.00041672516992681985
+      ],
+      "residual": 7.137906607441258e-06,
+      "normal_unique": true,
+      "normal": [
+        0.4120246317894753,
+        0.5945096366504232,
+        0.6905027116011413
+      ],
+      "incidence": 0.5265800244784329,
+      "z_depth": 2.5780312870842494,
+      "positive_intersection": true,
+      "hull": "inside",
+      "boundary_distance": 0.02184543298855798,
+      "jacobian_norm": 0.7672429413434203
+    },
+    {
+      "index": 197,
+      "pixel": [
+        668,
+        90
+      ],
+      "count": 81,
+      "weight_sum": 0.9998965799549637,
+      "eigenvalues": [
+        9.276258419626707e-06,
+        1.849837253148989e-05,
+        3.4692836965669865e-05
+      ],
+      "residual": 9.276258419626703e-06,
+      "normal_unique": true,
+      "normal": [
+        0.7499352042293904,
+        -0.3156234550029507,
+        -0.5813596340557393
+      ],
+      "incidence": 0.5588661617587203,
+      "z_depth": 2.6604022810106733,
+      "positive_intersection": true,
+      "hull": "inside",
+      "boundary_distance": 0.017884957896658282,
+      "jacobian_norm": 0.5710790644581044
+    },
+    {
+      "index": 214,
+      "pixel": [
+        106,
+        118
+      ],
+      "count": 76,
+      "weight_sum": 0.9998620013591335,
+      "eigenvalues": [
+        1.594192160465226e-05,
+        3.6186718366911904e-05,
+        0.0008439036401713477
+      ],
+      "residual": 1.594192160465245e-05,
+      "normal_unique": true,
+      "normal": [
+        0.22471528135168387,
+        0.3943772619746021,
+        0.8910497278852901
+      ],
+      "incidence": 0.6462766217360569,
+      "z_depth": 2.7631181104071403,
+      "positive_intersection": true,
+      "hull": "inside",
+      "boundary_distance": 0.023345225944689216,
+      "jacobian_norm": 0.4546720045703684
+    },
+    {
+      "index": 230,
+      "pixel": [
+        154,
+        246
+      ],
+      "count": 44,
+      "weight_sum": 0.977710787919932,
+      "eigenvalues": [
+        4.415661064779525e-05,
+        6.710456936408467e-05,
+        0.000806069729390144
+      ],
+      "residual": 4.41566106477952e-05,
+      "normal_unique": true,
+      "normal": [
+        0.018284864064847337,
+        0.30918367300979016,
+        0.9508265457433889
+      ],
+      "incidence": 0.8460975940364698,
+      "z_depth": 2.63768422021148,
+      "positive_intersection": true,
+      "hull": "inside",
+      "boundary_distance": 0.023310376930528464,
+      "jacobian_norm": 0.47173695915266634
+    },
+    {
+      "index": 247,
+      "pixel": [
+        397,
+        72
+      ],
+      "count": 68,
+      "weight_sum": 0.9998977285280262,
+      "eigenvalues": [
+        9.21823153133694e-06,
+        4.5886634863142784e-05,
+        6.925198077244803e-05
+      ],
+      "residual": 9.21823153133695e-06,
+      "normal_unique": true,
+      "normal": [
+        0.03648629568295049,
+        0.9991965015090861,
+        -0.016586187004250075
+      ],
+      "incidence": 0.20413330278761346,
+      "z_depth": 2.6140092027887234,
+      "positive_intersection": true,
+      "hull": "inside",
+      "boundary_distance": 0.02662420131027793,
+      "jacobian_norm": 1.6703667940044138
+    },
+    {
+      "index": 263,
+      "pixel": [
+        500,
+        387
+      ],
+      "count": 88,
+      "weight_sum": 0.9836841577780433,
+      "eigenvalues": [
+        2.3813593131560455e-05,
+        7.735951066084288e-05,
+        0.00022938909792206323
+      ],
+      "residual": 2.381359313156044e-05,
+      "normal_unique": true,
+      "normal": [
+        0.8052109557780337,
+        0.004487775356861179,
+        -0.5929714803996659
+      ],
+      "incidence": 0.7182485756588934,
+      "z_depth": 2.444755685528015,
+      "positive_intersection": true,
+      "hull": "inside",
+      "boundary_distance": 0.037254946920767446,
+      "jacobian_norm": 0.3660270870079033
+    },
+    {
+      "index": 280,
+      "pixel": [
+        456,
+        192
+      ],
+      "count": 72,
+      "weight_sum": 0.9998731239816152,
+      "eigenvalues": [
+        3.436787687119513e-05,
+        6.273922032460171e-05,
+        0.00012467470388833482
+      ],
+      "residual": 3.436787687119516e-05,
+      "normal_unique": true,
+      "normal": [
+        0.4273705704554792,
+        0.7501603723796504,
+        0.5045927181596885
+      ],
+      "incidence": 0.3357683434039976,
+      "z_depth": 2.5556348154502424,
+      "positive_intersection": true,
+      "hull": "inside",
+      "boundary_distance": 0.014877207981551318,
+      "jacobian_norm": 0.797301761870498
+    },
+    {
+      "index": 296,
+      "pixel": [
+        433,
+        113
+      ],
+      "count": 154,
+      "weight_sum": 0.999785336867717,
+      "eigenvalues": [
+        3.384464356430673e-06,
+        1.482528814274688e-05,
+        6.910673449211609e-05
+      ],
+      "residual": 3.384464356430676e-06,
+      "normal_unique": true,
+      "normal": [
+        -0.5390558957977396,
+        0.818199008175845,
+        -0.1999227956631281
+      ],
+      "incidence": 0.20562500363469258,
+      "z_depth": 2.566875536739783,
+      "positive_intersection": true,
+      "hull": "inside",
+      "boundary_distance": 0.0029766016979323566,
+      "jacobian_norm": 1.2105979458489686
+    },
+    {
+      "index": 313,
+      "pixel": [
+        94,
+        330
+      ],
+      "count": 44,
+      "weight_sum": 0.9996388259485229,
+      "eigenvalues": [
+        2.2007496642163282e-05,
+        3.2730890928087795e-05,
+        5.38604354215517e-05
+      ],
+      "residual": 2.2007496642163285e-05,
+      "normal_unique": true,
+      "normal": [
+        0.007579915299623121,
+        0.5196659570226847,
+        0.8543359046626495
+      ],
+      "incidence": 0.7655127423466016,
+      "z_depth": 2.5830567587678646,
+      "positive_intersection": true,
+      "hull": "inside",
+      "boundary_distance": 0.01767318311311015,
+      "jacobian_norm": 0.5294428609785695
+    },
+    {
+      "index": 329,
+      "pixel": [
+        278,
+        297
+      ],
+      "count": 41,
+      "weight_sum": 0.8128194538876414,
+      "eigenvalues": [
+        7.756800764295582e-06,
+        4.7616751797040914e-05,
+        0.0005681682681112071
+      ],
+      "residual": 7.756800764295545e-06,
+      "normal_unique": true,
+      "normal": [
+        0.37068247141597954,
+        0.5803821732175449,
+        0.7250869178217336
+      ],
+      "incidence": 0.5559723283801663,
+      "z_depth": 2.5675673474126097,
+      "positive_intersection": true,
+      "hull": "inside",
+      "boundary_distance": 0.019869880003339172,
+      "jacobian_norm": 0.5077393684619409
+    },
+    {
+      "index": 346,
+      "pixel": [
+        565,
+        198
+      ],
+      "count": 66,
+      "weight_sum": 0.9376284883765038,
+      "eigenvalues": [
+        4.409632574748344e-05,
+        6.074659878870767e-05,
+        0.00017824333348787354
+      ],
+      "residual": 4.409632574748345e-05,
+      "normal_unique": true,
+      "normal": [
+        -0.02275652698301305,
+        0.8727508941796619,
+        0.48763512710660195
+      ],
+      "incidence": 0.4035741776201065,
+      "z_depth": 2.5780536682959596,
+      "positive_intersection": true,
+      "hull": "inside",
+      "boundary_distance": 0.018945626114286292,
+      "jacobian_norm": 0.8893535934907053
+    },
+    {
+      "index": 362,
+      "pixel": [
+        349,
+        375
+      ],
+      "count": 92,
+      "weight_sum": 0.9879072084149811,
+      "eigenvalues": [
+        1.8852403389571504e-05,
+        9.006503571694676e-05,
+        0.0001228219761790369
+      ],
+      "residual": 1.885240338957149e-05,
+      "normal_unique": true,
+      "normal": [
+        0.011957035437995289,
+        0.4637368885670615,
+        0.8858922775855287
+      ],
+      "incidence": 0.8627631901134828,
+      "z_depth": 2.4830313165905302,
+      "positive_intersection": true,
+      "hull": "inside",
+      "boundary_distance": 0.020874931272337287,
+      "jacobian_norm": 0.19488767159459736
+    },
+    {
+      "index": 379,
+      "pixel": [
+        509,
+        324
+      ],
+      "count": 126,
+      "weight_sum": 0.9998893772893211,
+      "eigenvalues": [
+        6.356091492899383e-06,
+        9.259908550035884e-06,
+        0.0005404453268577931
+      ],
+      "residual": 6.356091492899415e-06,
+      "normal_unique": true,
+      "normal": [
+        0.16953184116573003,
+        0.955985650157651,
+        -0.2394794177452661
+      ],
+      "incidence": 0.2699662359685068,
+      "z_depth": 2.3746186245276304,
+      "positive_intersection": true,
+      "hull": "inside",
+      "boundary_distance": 0.009582027844468401,
+      "jacobian_norm": 0.8762273472514934
+    },
+    {
+      "index": 395,
+      "pixel": [
+        225,
+        341
+      ],
+      "count": 31,
+      "weight_sum": 0.9994990601007885,
+      "eigenvalues": [
+        3.6582831324701335e-05,
+        0.00012488636906689483,
+        0.00022315787239653154
+      ],
+      "residual": 3.6582831324701335e-05,
+      "normal_unique": true,
+      "normal": [
+        0.07963287788147709,
+        0.9509049858625097,
+        0.2990623891801417
+      ],
+      "incidence": 0.25582010563970026,
+      "z_depth": 2.535105844959503,
+      "positive_intersection": true,
+      "hull": "inside",
+      "boundary_distance": 0.01994401302323545,
+      "jacobian_norm": 1.8499815260528238
+    },
+    {
+      "index": 412,
+      "pixel": [
+        266,
+        132
+      ],
+      "count": 84,
+      "weight_sum": 0.9765127175414818,
+      "eigenvalues": [
+        4.97789245485963e-05,
+        0.0001101080349935439,
+        0.006505282876809787
+      ],
+      "residual": 4.9778924548596614e-05,
+      "normal_unique": true,
+      "normal": [
+        0.3899477411340624,
+        0.8966251934187845,
+        0.20977135579284734
+      ],
+      "incidence": 0.05301262920876367,
+      "z_depth": 2.5884969760119074,
+      "positive_intersection": true,
+      "hull": "inside",
+      "boundary_distance": 0.03093253342693505,
+      "jacobian_norm": 3.184491478795378
+    },
+    {
+      "index": 428,
+      "pixel": [
+        408,
+        169
+      ],
+      "count": 20,
+      "weight_sum": 0.8896344146342017,
+      "eigenvalues": [
+        3.941076871477543e-06,
+        4.2543198669723063e-05,
+        0.00011082095036000413
+      ],
+      "residual": 3.941076871477542e-06,
+      "normal_unique": true,
+      "normal": [
+        -0.04534208913671463,
+        -0.40087384250861063,
+        -0.9150105230788879
+      ],
+      "incidence": 0.8290642265486903,
+      "z_depth": 2.634506839642093,
+      "positive_intersection": true,
+      "hull": "inside",
+      "boundary_distance": 0.016196069107037605,
+      "jacobian_norm": 0.4257251293699552
+    },
+    {
+      "index": 445,
+      "pixel": [
+        559,
+        310
+      ],
+      "count": 140,
+      "weight_sum": 0.9998938356436042,
+      "eigenvalues": [
+        7.119687264803656e-06,
+        1.8514270032463084e-05,
+        0.00015909745253462116
+      ],
+      "residual": 7.1196872648036566e-06,
+      "normal_unique": true,
+      "normal": [
+        0.19110460157020753,
+        0.9763120422741732,
+        0.10145850072381868
+      ],
+      "incidence": 0.06081322676126513,
+      "z_depth": 2.3652074019088727,
+      "positive_intersection": true,
+      "hull": "inside",
+      "boundary_distance": 0.015748596284233876,
+      "jacobian_norm": 8.196190646665313
+    },
+    {
+      "index": 461,
+      "pixel": [
+        624,
+        90
+      ],
+      "count": 89,
+      "weight_sum": 0.9961407732680527,
+      "eigenvalues": [
+        1.1867512642848602e-05,
+        4.002626886146677e-05,
+        0.00016051106783734648
+      ],
+      "residual": 1.186751264284861e-05,
+      "normal_unique": true,
+      "normal": [
+        0.035010532528865296,
+        0.42152262898941856,
+        0.9061417857387962
+      ],
+      "incidence": 0.8186821202197002,
+      "z_depth": 2.649097504925993,
+      "positive_intersection": true,
+      "hull": "inside",
+      "boundary_distance": 0.017295873015281002,
+      "jacobian_norm": 0.25375216908693066
+    },
+    {
+      "index": 478,
+      "pixel": [
+        142,
+        63
+      ],
+      "count": 60,
+      "weight_sum": 0.9953755804435787,
+      "eigenvalues": [
+        1.2516612746754618e-05,
+        6.340942147818727e-05,
+        0.0014671619538460141
+      ],
+      "residual": 1.251661274675455e-05,
+      "normal_unique": true,
+      "normal": [
+        0.18617163978105025,
+        0.437474816462321,
+        0.8797476373952324
+      ],
+      "incidence": 0.6379949701136471,
+      "z_depth": 2.8047654813192087,
+      "positive_intersection": true,
+      "hull": "inside",
+      "boundary_distance": 0.03266544472641325,
+      "jacobian_norm": 0.4542472578569919
+    },
+    {
+      "index": 494,
+      "pixel": [
+        245,
+        552
+      ],
+      "count": 13,
+      "weight_sum": 0.8047730652615428,
+      "eigenvalues": [
+        8.434718911684182e-06,
+        0.00015396081867976745,
+        0.0003849505451878933
+      ],
+      "residual": 8.434718911684141e-06,
+      "normal_unique": true,
+      "normal": [
+        -0.24646655167107068,
+        0.8759889052965094,
+        -0.41460544702740576
+      ],
+      "incidence": 0.17539222285734174,
+      "z_depth": 2.5486645249666005,
+      "positive_intersection": true,
+      "hull": "inside",
+      "boundary_distance": 0.00864572755956949,
+      "jacobian_norm": 3.9592678936785055
+    },
+    {
+      "index": 511,
+      "pixel": [
+        680,
+        100
+      ],
+      "count": 78,
+      "weight_sum": 0.9851782648256631,
+      "eigenvalues": [
+        7.324118591095439e-06,
+        0.0004126533515399114,
+        0.0008996599783387073
+      ],
+      "residual": 7.324118591095468e-06,
+      "normal_unique": true,
+      "normal": [
+        0.9660525894461225,
+        0.24326827238917936,
+        0.0869651773598216
+      ],
+      "incidence": 0.0066054758561063884,
+      "z_depth": 2.7327587731548117,
+      "positive_intersection": true,
+      "hull": "inside",
+      "boundary_distance": 0.008812424466363496,
+      "jacobian_norm": 49.38837130906099
+    }
+  ],
+  "limitations": "Conditional on unverified source ID to PLY row mapping; CPU alpha/weight strict compatibility failed. No surface membership certification; synthetic mixture can interpolate a false intermediate plane. z_depth uses camera z parameter; Jacobian is local and not a real error bound."
+}
