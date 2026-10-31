@@ -12,15 +12,15 @@ import numpy as np
 
 
 ROOT = Path(__file__).resolve().parents[4]
-DATA = ROOT / "数据"
+DEFAULT_DATA = ROOT / "数据"
 
 
-def indexed(suffix):
-    index = json.loads((DATA / "来源索引.json").read_text(encoding="utf8"))
+def indexed(suffix, data_root):
+    index = json.loads((data_root / "来源索引.json").read_text(encoding="utf8"))
     rows = [r for r in index["files"] if r["path"].replace("\\", "/").endswith(suffix)]
     if len(rows) != 1:
         raise ValueError((suffix, len(rows)))
-    path = DATA / rows[0]["path"]
+    path = data_root / rows[0]["path"]
     h = hashlib.sha256()
     with path.open("rb") as stream:
         for chunk in iter(lambda: stream.read(1024 * 1024), b""):
@@ -37,7 +37,7 @@ def uniform_hazards(alpha, intervals, representative):
     intervals = np.asarray(intervals, dtype=float)
     d = np.asarray(representative, dtype=float)
     n = len(alpha)
-    if n == 0 or intervals.shape != (n, 2) or d.shape != (n,) or not np.all(np.isfinite(intervals)):
+    if alpha.ndim != 1 or n == 0 or intervals.shape != (n, 2) or d.shape != (n,) or not np.all(np.isfinite(intervals)):
         raise ValueError("shape or finite interval error")
     if not np.all(np.isfinite(alpha)) or np.any(alpha < 0) or np.any(alpha >= 1) or np.any(intervals[:, 0] < 0) or np.any(intervals[:, 1] <= intervals[:, 0]) or not np.all(np.isfinite(d)):
         raise ValueError("invalid alpha, interval, or representative")
@@ -126,6 +126,12 @@ def controls():
             pass
         else:
             raise AssertionError(f"invalid alpha accepted: {bad}")
+    try:
+        uniform_hazards([[.5]], [[1., 2.]], [1.])
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("two-dimensional alpha accepted")
     for a in (1e-8, 1e-10, 1e-12):
         tiny = uniform_hazards([a], [[1., 2.]], [1.5])
         oracle = numerical_oracle([a], [[1., 2.]], [1.5])
@@ -134,11 +140,34 @@ def controls():
         assert 1. <= mean <= 2.
         np.testing.assert_allclose(mean, oracle_mean, atol=1e-10, rtol=0)
     assert replay_transmittance(np.empty(0)).shape == (0,)
+    valid = {key: np.empty(0) for key in ("gaussian_id", "depth", "alpha", "transmittance", "weight")}
+    validate_native_structure(np.array([0, 0], dtype=np.uint64), valid)
+    for offsets, arrays in (
+        (np.array([0, 2, 1], dtype=np.uint64), {key: np.zeros(1) for key in valid}),
+        (np.array([0, 2], dtype=np.uint64), {key: np.zeros(1) for key in valid}),
+        (np.array([0, 1], dtype=np.uint64), {key: np.zeros((1, 1)) for key in valid}),
+    ):
+        try:
+            validate_native_structure(offsets, arrays)
+        except ValueError:
+            pass
+        else:
+            raise AssertionError("damaged native structure accepted")
     return out
 
 
 def replay_transmittance(alpha):
     return np.r_[1., np.cumprod(1-alpha)[:-1]] if len(alpha) else np.empty(0)
+
+
+def validate_native_structure(offsets, arrays):
+    members = len(arrays["gaussian_id"])
+    if (offsets.ndim != 1 or offsets.dtype.kind not in "iu" or len(offsets) < 2
+            or offsets[0] != 0 or offsets[-1] != members
+            or np.any(offsets[1:] < offsets[:-1]) or np.any(offsets > members)
+            or any(arrays[key].ndim != 1 or len(arrays[key]) != members
+                   for key in ("gaussian_id", "depth", "alpha", "transmittance", "weight"))):
+        raise ValueError("invalid accepted-list structure")
 
 
 def numerical_oracle(alpha, intervals, representative, nodes_count=256):
@@ -166,24 +195,21 @@ def numerical_oracle(alpha, intervals, representative, nodes_count=256):
     return dict(mass=mass, moment=moment, prefix=prefix)
 
 
-def native_audit():
+def native_audit(data_root):
     prefix = "20261026_夜间深度方法/confirm_v1/scan37/"
-    trace, trace_sha = indexed(prefix + "view_000.npz")
-    meta, meta_sha = indexed(prefix + "metadata.json")
+    trace, trace_sha = indexed(prefix + "view_000.npz", data_root)
+    meta, meta_sha = indexed(prefix + "metadata.json", data_root)
     m = json.loads(meta.read_text(encoding="utf8"))
     if m["views"][0]["npz_sha256"] != trace_sha:
         raise ValueError("metadata trace mismatch")
-    model, model_sha = indexed("20261026_夜间深度方法/inputs/scan37/point_cloud.ply")
-    cfg, cfg_sha = indexed("20261026_夜间深度方法/inputs/scan37/cfg_args")
+    model, model_sha = indexed("20261026_夜间深度方法/inputs/scan37/point_cloud.ply", data_root)
+    cfg, cfg_sha = indexed("20261026_夜间深度方法/inputs/scan37/cfg_args", data_root)
     if model_sha != m["model_sha256"] or cfg_sha != m["cfg_sha256"]:
         raise ValueError("metadata model/config mismatch")
     with np.load(trace) as f:
         offsets = f["offsets"]
-        members = len(f["gaussian_id"])
-        if (offsets.ndim != 1 or offsets.dtype.kind not in "iu" or len(offsets) < 2
-                or offsets[0] != 0 or offsets[-1] != members or np.any(np.diff(offsets) < 0)
-                or any(len(f[key]) != members for key in ("depth", "alpha", "transmittance", "weight"))):
-            raise ValueError("invalid accepted-list structure")
+        validate_native_structure(offsets, {key: f[key] for key in
+                                  ("gaussian_id", "depth", "alpha", "transmittance", "weight")})
         if len(offsets)-1 < 32:
             raise ValueError("fewer than 32 distinct recorded rays")
         selected = np.linspace(0, len(f["offsets"]) - 2, 32, dtype=int)
@@ -204,7 +230,7 @@ def native_audit():
             rows.append(dict(ray=int(ray), count=int(b-a), native_mass=float(w.sum()),
                              max_weight_product_error=float(np.max(abs(w-T*alpha))) if b>a else None,
                              max_transmittance_recurrence_error=float(np.max(abs(T-replay_T))) if b>a else None))
-    return dict(trace_sha256=trace_sha, metadata_sha256=meta_sha, model_sha256=model_sha,
+    return dict(data_root=str(data_root.resolve()), trace_sha256=trace_sha, metadata_sha256=meta_sha, model_sha256=model_sha,
                 cfg_sha256=cfg_sha, recorded_commit=m["git_commit"],
                 host_binary_sha256=m["host_binary_sha256"], host_build_provenance=m["host_build_provenance"],
                 mapping_verified=False, rays=rows,
@@ -215,8 +241,10 @@ if __name__ == "__main__":
     p = argparse.ArgumentParser()
     p.add_argument("mode", choices=["controls", "native"])
     p.add_argument("--output", type=Path)
+    p.add_argument("--data-root", type=Path, default=DEFAULT_DATA,
+                   help="project 数据 directory containing 来源索引.json (native mode)")
     args = p.parse_args()
-    report = controls() if args.mode == "controls" else native_audit()
+    report = controls() if args.mode == "controls" else native_audit(args.data_root)
     payload = json.dumps(report, ensure_ascii=False, indent=2) + "\n"
     if args.output:
         args.output.parent.mkdir(parents=True, exist_ok=True)
