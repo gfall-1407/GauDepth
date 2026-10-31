@@ -94,12 +94,18 @@ def analyze_hypotheses(proxy_dir, native_dir, output):
         ordered = np.asarray([abs(row['depth50_minus_native_mm']) for row in group if np.isfinite(row['depth50_minus_native_mm'])])
         depth50_ref = [row for row in accepted if np.isfinite(row['depth50_abs_reference_mm'])]
         deletion_ref = [row for row in accepted if np.isfinite(row['without_max_influence_abs_reference_mm'])]
+        high_impact_ref = [row for row in deletion_ref if row['max_deletion_impact_mm'] > 1.]
+        high_disagreement_ref = [row for row in depth50_ref if abs(row['depth50_minus_native_mm']) > 1.]
         summaries.append(dict(scan=scan, rays=len(group), reference_valid=len(accepted),
             no_crossing=len(fallback), no_crossing_reference_valid=sum(row['reference_valid'] for row in fallback),
             max_deletion_impact_mm_median=float(np.median(impacts)) if len(impacts) else np.nan,
             max_deletion_impact_mm_p95=float(np.quantile(impacts,.95)) if len(impacts) else np.nan,
             impact_over_1mm=int((impacts>1.).sum()),
+            impact_over_1mm_reference_paired=len(high_impact_ref),
+            impact_over_1mm_reference_improved=sum(row['without_max_influence_abs_reference_mm'] < row['expected_abs_reference_mm'] for row in high_impact_ref),
             depth50_defined=len(ordered), depth50_disagrees_over_1mm=int((ordered>1.).sum()),
+            depth50_disagrees_over_1mm_reference_paired=len(high_disagreement_ref),
+            depth50_disagrees_over_1mm_reference_improved=sum(row['depth50_abs_reference_mm'] < row['median_abs_reference_mm'] for row in high_disagreement_ref),
             depth50_disagreement_mm_p95=float(np.quantile(ordered,.95)) if len(ordered) else np.nan,
             near_threshold_and_gap_over_1mm=sum(np.isfinite(row['threshold_margin']) and row['threshold_margin']<=.01 and np.isfinite(row['next_depth_gap_mm']) and row['next_depth_gap_mm']>1. for row in group),
             deletion_reference_paired=len(deletion_ref),
@@ -160,6 +166,26 @@ def estimate(z, w, host_median):
     return expected, float(host_median) if np.isfinite(host_median) else np.nan
 
 
+def positive_depth(value):
+    return bool(np.isfinite(value) and value > 0)
+
+
+def strongest_deletion(z, w):
+    """Largest algebraic leave-one-out shift among positive, deletable members."""
+    mass = float(w.sum())
+    if mass <= 0:
+        return -1, np.nan, np.nan
+    mean = float(np.dot(w, z) / mass)
+    rest = mass - w
+    valid = (w > 0) & (rest > 0)
+    if not valid.any():
+        return -1, np.nan, np.nan
+    shifts = np.abs(w * (z-mean) / np.where(valid, rest, np.nan))
+    member = int(np.argmax(np.where(valid, shifts, -np.inf)))
+    without = float((mass*mean-w[member]*z[member])/rest[member])
+    return member, float(shifts[member]), without
+
+
 def native_semantics(root, output, scans):
     """Replay the exact pre-T>0.5 native branch without GT or fitted thresholds."""
     if output.exists() and any(output.iterdir()):
@@ -190,6 +216,7 @@ def native_semantics(root, output, scans):
                     rows.append(dict(scan=scan, view=view['image_name'], ray=i, members=0,
                                      branch='empty', replay_abs=np.nan, expected_replay_abs=np.nan,
                                      opacity_replay_abs=np.nan, max_talpha_residual=np.nan,
+                                     max_t_recurrence_residual=np.nan,
                                      opacity=0., max_deletion_influence=np.nan, threshold_margin=np.nan,
                                      next_depth_gap=np.nan, depth50=np.nan,
                                      native_median=np.nan,
@@ -197,7 +224,7 @@ def native_semantics(root, output, scans):
                                      expected_without_max_influence=np.nan,
                                      trace_sha256=trace['sha256']))
                     continue
-                if not (np.isfinite(dz).all() and np.isfinite(dw).all() and np.isfinite(da).all() and np.isfinite(dt).all()) or np.any(dw < 0) or np.any(da < 0) or np.any(da >= 1):
+                if not (np.isfinite(dz).all() and np.isfinite(dw).all() and np.isfinite(da).all() and np.isfinite(dt).all()) or np.any(dw < 0) or np.any(da < 0) or np.any(da >= 1) or np.any(dt < 0) or np.any(dt > 1) or np.any(dt[1:] > dt[:-1]):
                     raise ValueError(f'Nonfinite or invalid native member: {path}, ray {i}')
                 before = np.flatnonzero(dt > .5)
                 chosen = int(before[-1]) if len(before) else -1
@@ -205,9 +232,7 @@ def native_semantics(root, output, scans):
                 branch = 'crossed_half' if chosen >= 0 and dt[chosen]*(1-da[chosen]) <= .5 else 'last_without_crossing' if chosen == len(dz)-1 else 'no_pre_t_above_half'
                 mass = float(dw.sum())
                 mu = float(np.dot(dw, dz)/mass) if mass > 0 else np.nan
-                denominator = mass - dw
-                influence = np.abs(dw * (dz-mu) / np.where(denominator > 0, denominator, np.nan)) if mass > 0 else np.full(len(dw), np.nan)
-                max_member = int(np.nanargmax(influence)) if np.isfinite(influence).any() else -1
+                max_member, max_impact, without = strongest_deletion(dz, dw)
                 depth_order = np.argsort(dz, kind='stable')
                 depth_cumulative = np.cumsum(dw[depth_order])
                 depth50 = float(dz[depth_order[np.searchsorted(depth_cumulative, .5)]]) if mass >= .5 and depth_cumulative[-1] >= .5 else np.nan
@@ -217,11 +242,12 @@ def native_semantics(root, output, scans):
                     expected_replay_abs=abs(mu-host[i, 0]),
                     opacity_replay_abs=abs(mass-host[i, 2]),
                     max_talpha_residual=float(np.max(np.abs(dw-dt*da))),
+                    max_t_recurrence_residual=float(np.max(np.abs(dt[1:]-dt[:-1]*(1-da[:-1])))) if len(dt)>1 else np.nan,
                     opacity=float(1-dt[-1]*(1-da[-1])),
-                    max_deletion_influence=float(np.max(influence)) if np.isfinite(influence).any() else np.nan,
+                    max_deletion_influence=max_impact,
                     max_influence_member=max_member,
                     max_influence_weight_fraction=float(dw[max_member]/mass) if max_member >= 0 else np.nan,
-                    expected_without_max_influence=float((mass*mu-dw[max_member]*dz[max_member])/(mass-dw[max_member])) if max_member >= 0 else np.nan,
+                    expected_without_max_influence=without,
                     threshold_margin=float(np.min(np.abs(dt-.5))),
                     next_depth_gap=abs(float(dz[chosen+1]-dz[chosen])) if 0 <= chosen < len(dz)-1 else np.nan,
                     depth50=depth50,
@@ -240,6 +266,8 @@ def native_semantics(root, output, scans):
             max_expected_replay_abs=max(row['expected_replay_abs'] for row in group if np.isfinite(row['expected_replay_abs'])),
             max_opacity_replay_abs=max(row['opacity_replay_abs'] for row in group if np.isfinite(row['opacity_replay_abs'])),
             max_talpha_residual=max(row['max_talpha_residual'] for row in group if np.isfinite(row['max_talpha_residual'])),
+            max_t_recurrence_residual=max((row['max_t_recurrence_residual'] for row in group if np.isfinite(row['max_t_recurrence_residual'])), default=np.nan),
+            no_deletable_member=sum(row['max_influence_member'] < 0 for row in group),
             mean_opacity=finite_mean('opacity'),
             mean_max_deletion_influence_scene_units=finite_mean('max_deletion_influence'),
             depth50_defined=sum(np.isfinite(row['depth50']) for row in group),
@@ -252,6 +280,7 @@ def native_semantics(root, output, scans):
         command_argv=[sys.executable, *sys.argv], data_root=str(root.resolve()),
         median_definition='Last accepted member with pre-transmittance T>0.5; if threshold never crosses and initial T=1, this is the final accepted member.',
         influence_definition='Absolute change in normalized expected after deleting exactly one accepted member while holding other weights fixed; no GT choice or learned threshold.',
+        recurrence_definition='alpha and pre-T range/monotonicity are input checks. w-T*alpha and adjacent accepted pre-T recurrence are measured residuals only; no newly chosen pass tolerance claims host equivalence.',
         units='Native scene camera-z for depths/influence; threshold_margin is dimensionless.'
     ), indent=2), encoding='utf-8')
 
@@ -367,7 +396,8 @@ def run(root, output, scans):
                     status_1p5=a['status'], status_3p0=b['status'],
                     reference_mm=target, reference_rms_z_mm=a['rms_z_mm'] if status == 'accepted' else np.nan,
                     cross_scale_gap_mm=gap, expected_mm=expected, native_median_mm=median,
-                    expected_abs_mm=abs(expected - target), native_median_abs_mm=abs(median - target),
+                    expected_abs_mm=abs(expected - target) if positive_depth(expected) else np.nan,
+                    native_median_abs_mm=abs(median - target) if positive_depth(median) else np.nan,
                     expected_nearest_scan_mm=nearest[i, 0],
                     native_median_nearest_scan_mm=nearest[i, 1],
                     accepted_members=hi-lo, trace_sha256=trace['sha256']))
@@ -383,8 +413,8 @@ def run(root, output, scans):
         paired = [row for row in valid if np.isfinite(row['expected_abs_mm']) and np.isfinite(row['native_median_abs_mm'])]
         spatial = [row for row in group if np.isfinite(row['expected_nearest_scan_mm']) and np.isfinite(row['native_median_nearest_scan_mm'])]
         summaries.append(dict(scan=scan, sampled=len(group), reference_accepted=len(valid), paired=len(paired),
-            expected_invalid_on_reference=sum(not np.isfinite(row['expected_mm']) for row in valid),
-            native_median_invalid_on_reference=sum(not np.isfinite(row['native_median_mm']) for row in valid),
+            expected_invalid_on_reference=sum(not positive_depth(row['expected_mm']) for row in valid),
+            native_median_invalid_on_reference=sum(not positive_depth(row['native_median_mm']) for row in valid),
             expected_invalid_on_all=sum(not np.isfinite(row['expected_nearest_scan_mm']) for row in group),
             native_median_invalid_on_all=sum(not np.isfinite(row['native_median_nearest_scan_mm']) for row in group),
             expected_mae_mm=float(np.mean([row['expected_abs_mm'] for row in paired])) if paired else np.nan,
@@ -403,7 +433,7 @@ def run(root, output, scans):
         source_index_sha256=sha(index), reference_code_sha256=sha(ref_path),
         protocol=reference.PROTOCOL, reference_radii_px=[1.5, 3.0], agreement_mm=.1,
         definition='Prediction-blind DTU scan-point local front-plane agreement; no prediction-selected anchor. Exact 3D nearest scan-point distance is measured at each predicted ray point with no reference gating.',
-        limitation='Neither proxy is pixel first-hit GT. Object masks are not used even where present, so background/stand contamination is possible. Principal-point/crop provenance is not fully resolved. Plane comparisons use identical accepted rays only; nearest-scan distances use all valid saved rays but can match occluded/back surfaces. No whole-image claims.',
+        limitation='Neither proxy is pixel first-hit GT. Object masks are not used even where present, so background/stand contamination is possible. Principal-point/crop provenance is not fully resolved. Plane comparisons require the same positive finite outputs on the same accepted rays; nearest-scan distances use all positive finite saved depths but can match occluded/back surfaces. Missing/negative/nonfinite depths remain in sampled denominators and are counted invalid. No whole-image claims.',
         methods=['expected', 'native_median'], scans=list(scans), inputs=inputs,
         elapsed_seconds=time.monotonic()-start), indent=2, ensure_ascii=False), encoding='utf-8')
 
