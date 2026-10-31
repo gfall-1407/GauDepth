@@ -146,7 +146,7 @@ def run(args):
         gt = np.column_stack([vertex[x] for x in ('x', 'y', 'z')]).astype(float)
         ids = np.arange(len(gt))
         finite_gt = np.isfinite(gt).all(1)
-        gt, ids = gt[finite_gt], ids[finite_gt]
+        gt, source_ids = gt[finite_gt], ids[finite_gt]
         scene = (gt-scale_mat[:3, 3])/scale
         for trace, _, view in source.view_records(args.data_root, items):
             path = args.data_root / trace['path']
@@ -161,7 +161,7 @@ def run(args):
             world_view = np.asarray(view['world_view_transform'], float).T
             cam = (scene @ world_view[:3, :3].T+world_view[:3, 3])*scale
             positive = cam[:, 2] > 0
-            cam, ids = cam[positive], ids[positive]
+            cam, ids = cam[positive], source_ids[positive]
             height, width = view['image_size']
             focal = np.asarray(view['focal'], float)
             center = np.array([(width-1)/2., (height-1)/2.])
