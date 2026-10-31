@@ -51,6 +51,11 @@ def pixel_footprint(tree, uv, xy):
     return [j for j in candidates if np.all(uv[j]-xy >= -.5) and np.all(uv[j]-xy < .5)]
 
 
+def check_trace_binding(native_row, trace_sha, key):
+    if native_row['trace_sha256'] != trace_sha:
+        raise ValueError(f'Native/trace SHA mismatch: {key}')
+
+
 def summarize(rows, scan, role):
     group = [row for row in rows if row['scan'] == scan and (role == 'all' or row['h3_fixed'])]
     nn = [row for row in group if np.isfinite(row['native_nn_mm']) and np.isfinite(row['depth50_nn_mm'])]
@@ -105,6 +110,7 @@ def run(args):
     if git_status:
         raise ValueError('Commit the experiment source before running')
     rows, inputs = [], []
+    recomputed_ids = set()
     start = time.monotonic()
     for scan in source.SCANS:
         items = source.scan_records(records, scan)
@@ -152,8 +158,11 @@ def run(args):
                 if key not in native_map:
                     raise ValueError(f'Trace/native ID missing: {key}')
                 n = native_map[key]
+                check_trace_binding(n, trace['sha256'], key)
                 native_z = float(n['native_median'])*scale
                 depth50_z = float(n['depth50'])*scale
+                if np.isfinite(depth50_z) and abs(depth50_z-native_z) > 1.0:
+                    recomputed_ids.add(key)
                 direction = np.r_[(xy-center)/focal, 1.]
                 footprint = pixel_footprint(tree2, uv, xy)
                 if footprint:
@@ -188,6 +197,8 @@ def run(args):
             print(json.dumps(dict(scan=scan, view=view['image_name'], rays=len(pixel),
                                   h3_fixed=sum(row['scan']==scan and row['view']==view['image_name'] and row['h3_fixed'] for row in rows))), flush=True)
         del scene
+    if recomputed_ids != fixed_ids:
+        raise ValueError(f'Frozen H3 ID mismatch: {len(recomputed_ids ^ fixed_ids)} IDs differ')
     if len(rows) != 19968 or sum(row['h3_fixed'] for row in rows) != 2522:
         raise ValueError('Incomplete fixed cohort or auxiliary sample')
     args.output.mkdir(parents=True, exist_ok=True)
