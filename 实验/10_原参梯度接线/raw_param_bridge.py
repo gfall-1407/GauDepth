@@ -16,6 +16,7 @@ import torch
 
 ROOTS = ((17, 2), (24, 6))
 EXPECTED_CAPTURE_SHA = '74fbd05c3a2c10549adca00f885cdb39c525d003ce120d1a3d593c7feb78d6ef'
+EXPECTED_ROOTS_SHA = '0b3a600725142558e69fde7aa45d3f2eaa0b715d487d59d784207a086e4a73bf'
 EXPECTED_PLY_SHA = '733bd5ad69246915e7777b740b1891a253624b1d2232df5f19e79a557de78aa7'
 DTYPE = torch.float64
 
@@ -88,6 +89,8 @@ def world_camera_ray(world_view_transform, intrinsics, xy):
 def load_fixed_capture(capture_path, roots_path, metadata_path):
     if sha256(capture_path) != EXPECTED_CAPTURE_SHA:
         raise ValueError('wrong_capture_sha256')
+    if sha256(roots_path) != EXPECTED_ROOTS_SHA:
+        raise ValueError('wrong_roots_sha256')
     roots = json.loads(Path(roots_path).read_text(encoding='utf-8'))
     metadata = json.loads(Path(metadata_path).read_text(encoding='utf-8'))
     if (roots['capture_sha256'] != EXPECTED_CAPTURE_SHA or
@@ -222,7 +225,7 @@ def fixed_root_vjp(arrays, rows, selected_root):
             if float(gradient_slice[local_row, component]) <= 0:
                 raise ValueError('no_nonzero_raw_gradient_' + name)
             key = (index, component)
-            step = 1e-5
+            step = 1e-6
             values = []
             for sign in (1, -1):
                 changed = dict(raw)
@@ -250,5 +253,38 @@ def fixed_root_vjp(arrays, rows, selected_root):
                                relative_error=relative))
             if not np.isfinite(relative) or relative > 1e-4:
                 raise ValueError('raw_parameter_vjp_mismatch_' + name)
+    seed = 20261101
+    rng = np.random.default_rng(seed)
+    union = sorted(set(rows[17]['indices']) | set(rows[24]['indices']))
+    directions = {}
+    for name in names:
+        direction = torch.zeros_like(raw[name])
+        values = torch.tensor(rng.standard_normal((len(union), direction.shape[1])), dtype=DTYPE)
+        if name == 'logit':
+            values[~torch.isfinite(raw[name][union])] = 0
+        values = values / torch.linalg.vector_norm(values)
+        direction[union] = values
+        directions[name] = direction
+    direction_bytes = b''.join(directions[name].numpy().astype('<f8').tobytes() for name in names)
+    directional_analytic = sum(float((grad_map[name]*directions[name]).sum()) for name in names)
+    directional_values = []
+    for sign in (1, -1):
+        changed = dict(raw)
+        for name in names:
+            changed[name] = raw[name].detach()+sign*1e-6*directions[name]
+        total = 0.
+        for center, _ in ROOTS:
+            z, n, _, _ = root_from_shared(arrays, rows[center], changed, selected_root)
+            total += float((1.3*z+n@n.new_tensor([.2, -.3, .4])).detach())
+        directional_values.append(total)
+    directional_fd = (directional_values[0]-directional_values[1])/(2e-6)
+    directional_error = abs(directional_fd-directional_analytic)/max(
+        1., abs(directional_fd), abs(directional_analytic))
+    if (abs(directional_analytic) <= 1e-8 or not np.isfinite(directional_error)
+            or directional_error > 1e-4):
+        raise ValueError('directional_raw_parameter_vjp_mismatch')
     return dict(roots=outputs, activation_parity=parity, checks=checks,
-                shared_ids=sorted(overlap), objective=float(objective.detach()))
+                shared_ids=sorted(overlap), objective=float(objective.detach()),
+                directional=dict(seed=seed, direction_sha256=hashlib.sha256(direction_bytes).hexdigest(),
+                                 analytic=directional_analytic, finite_difference=directional_fd,
+                                 relative_error=directional_error))

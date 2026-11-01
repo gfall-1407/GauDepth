@@ -2,6 +2,7 @@
 import importlib.util
 from pathlib import Path
 import unittest
+from unittest.mock import patch
 
 import numpy as np
 import torch
@@ -14,6 +15,11 @@ spec.loader.exec_module(bridge)
 
 
 class RawParamBridgeTest(unittest.TestCase):
+    def test_root_file_bytes_are_bound_before_parsing(self):
+        with patch.object(bridge, 'sha256', side_effect=[bridge.EXPECTED_CAPTURE_SHA, 'wrong']):
+            with self.assertRaisesRegex(ValueError, 'wrong_roots_sha256'):
+                bridge.load_fixed_capture('capture.npz', 'roots.json', 'metadata.json')
+
     def test_host_activation_and_infinite_logit(self):
         xyz = torch.tensor([[0., 0., 1.], [0., 0., 2.]], dtype=torch.float64)
         log_scale = torch.tensor([[0., 0., 0.], [0., 0., 0.]],
