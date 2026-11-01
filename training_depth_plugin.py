@@ -71,8 +71,35 @@ def route_depth(render_pkg, mode='baseline', target='expected'):
                 raise ValueError(f'{key} must have floating [1,H,W] shape')
         return dict(render_pkg)
     if mode == 'candidate':
-        raise NotImplementedError('Candidate depth formula has not been reviewed or implemented')
+        if 'candidate_depth' not in render_pkg or 'candidate_audit' not in render_pkg:
+            raise RuntimeError('candidate requires renderer accepted support')
+        candidate = render_pkg['candidate_depth']
+        valid = render_pkg['candidate_audit']['candidate'].reshape_as(candidate)
+        if candidate.shape != render_pkg['expected_depth'].shape or valid.shape != candidate.shape:
+            raise ValueError('candidate depth and mask must match native [1,H,W]')
+        output = dict(render_pkg)
+        for key in DEPTH_KEYS:
+            if target == 'both' or (target == 'expected' and key == 'expected_depth') or (
+                    target == 'median' and key == 'median_depth'):
+                output[key] = torch.where(valid, candidate, render_pkg[key])
+        return output
     raise ValueError(f'unknown depth route: {mode}')
+
+
+def summarize_candidate_audit(audit, elapsed_ms):
+    """Small scalar diagnostics; only call in an opt-in A/B log path."""
+    if audit is None:
+        return None
+    return dict(queries=int(audit['candidate'].numel()),
+                selected=int(audit['candidate'].sum().item()),
+                overflow=int(audit['overflow'].sum().item()),
+                invalid_members=int(audit['invalid_count'].sum().item()),
+                no_valid=int(audit['no_valid'].sum().item()),
+                group_switch=int(audit['group_switch'].sum().item()),
+                low_alpha=int(audit['low_alpha'].sum().item()),
+                footprint_fail=int(audit['footprint_fail'].sum().item()),
+                insufficient_distinct=int(audit['insufficient_distinct'].sum().item()),
+                elapsed_ms=float(elapsed_ms))
 
 
 def file_digest(path):

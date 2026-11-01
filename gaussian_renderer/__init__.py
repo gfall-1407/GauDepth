@@ -11,12 +11,13 @@
 
 import torch
 import math
+import time
 from diff_gaussian_rasterization import GaussianRasterizationSettings, GaussianRasterizer
 from scene.gaussian_model import GaussianModel
 from utils.sh_utils import eval_sh
 
 
-def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, kernel_size, scaling_modifier = 1.0, require_depth : bool = True):
+def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, kernel_size, scaling_modifier = 1.0, require_depth : bool = True, depth_support=False):
     """
     Render the scene. 
     
@@ -67,7 +68,14 @@ def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, 
     shs = pc.get_features
     colors_precomp = None
 
-    rendered_image, radii, rendered_expected_depth, rendered_median_depth, rendered_alpha, rendered_normal = rasterizer(
+    support_xy = None
+    if depth_support:
+        from diff_gaussian_rasterization import pixel_grid_xy
+        support_xy = pixel_grid_xy(viewpoint_camera.image_height, viewpoint_camera.image_width, means3D.device)
+    if depth_support:
+        torch.cuda.synchronize(means3D.device)
+        candidate_start = time.perf_counter()
+    raster_outputs = rasterizer(
         means3D = means3D,
         means2D = means2D,
         shs = shs,
@@ -75,13 +83,25 @@ def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, 
         opacities = opacity,
         scales = scales,
         rotations = rotations,
-        cov3D_precomp = cov3D_precomp)
+        cov3D_precomp = cov3D_precomp, **({'support_xy': support_xy, 'support_k': 128} if depth_support else {}))
+    rendered_image, radii, rendered_expected_depth, rendered_median_depth, rendered_alpha, rendered_normal = raster_outputs[:6]
+    candidate_depth = None
+    candidate_audit = None
+    if depth_support:
+        from surface_group_batch import grouped_depth_from_support
+        ids, native_alpha, count, overflow = raster_outputs[6:]
+        candidate_flat, candidate_audit = grouped_depth_from_support(
+            pc, viewpoint_camera, support_xy, ids, native_alpha, count, overflow,
+            rendered_expected_depth.reshape(-1))
+        candidate_depth = candidate_flat.reshape_as(rendered_expected_depth)
+        torch.cuda.synchronize(means3D.device)
+        candidate_elapsed_ms = (time.perf_counter() - candidate_start) * 1000
 
 
 
     # Those Gaussians that were frustum culled or had a radius of 0 were not visible.
     # They will be excluded from value updates used in the splitting criteria.
-    return {"render": rendered_image,
+    result = {"render": rendered_image,
             "mask": rendered_alpha,
             "expected_depth": rendered_expected_depth,
             "median_depth": rendered_median_depth,
@@ -90,6 +110,11 @@ def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, 
             "radii": radii,
             "normal":rendered_normal,
             }
+    if depth_support:
+        result['candidate_depth'] = candidate_depth
+        result['candidate_audit'] = candidate_audit
+        result['candidate_elapsed_ms'] = candidate_elapsed_ms
+    return result
 
 # adopted from GOF for marching tetrahedra https://github.com/autonomousvision/gaussian-opacity-fields/blob/main/gaussian_renderer/__init__.py
 def integrate(points3D, viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, kernel_size : float, scaling_modifier = 1.0, override_color = None):
@@ -183,7 +208,7 @@ def integrate(points3D, viewpoint_camera, pc : GaussianModel, pipe, bg_color : t
             "inside": inside}
 
 
-def sample_depth(points3D, viewpoint_camera, pc : GaussianModel, pipe : torch.Tensor, kernel_size : float, scaling_modifier = 1.0):
+def sample_depth(points3D, viewpoint_camera, pc : GaussianModel, pipe : torch.Tensor, kernel_size : float, scaling_modifier = 1.0, depth_support=False):
 
     # Set up rasterization configuration
     tanfovx = math.tan(viewpoint_camera.FoVx * 0.5)
@@ -224,15 +249,45 @@ def sample_depth(points3D, viewpoint_camera, pc : GaussianModel, pipe : torch.Te
         rotations = pc.get_rotation
 
     # Rasterize visible Gaussians to image, obtain their radii (on screen). 
-    depth, inside = rasterizer.sample_depth(
+    support_xy = None
+    projected_camera = None
+    if depth_support:
+        projected_camera = points3D @ viewpoint_camera.world_view_transform[:3, :3] + viewpoint_camera.world_view_transform[3, :3]
+        pixel_xy = projected_camera[..., :2] / projected_camera[..., 2:].clamp_min(1e-7)
+        pixel_xy = pixel_xy * pixel_xy.new_tensor([viewpoint_camera.Fx, viewpoint_camera.Fy]) + pixel_xy.new_tensor([viewpoint_camera.Cx, viewpoint_camera.Cy])
+        support_xy = pixel_xy.reshape(-1, 2)
+    if depth_support:
+        torch.cuda.synchronize(means3D.device)
+        candidate_start = time.perf_counter()
+    sampled_outputs = rasterizer.sample_depth(
         points3D = points3D,
         means3D = means3D,
         opacities = opacity,
         scales = scales,
         rotations = rotations,
-        cov3D_precomp = cov3D_precomp,)
+        cov3D_precomp = cov3D_precomp,
+        **({'support_xy': support_xy.detach().float().contiguous(), 'support_k': 128} if depth_support else {}))
+    depth, inside = sampled_outputs[:2]
+    candidate_audit = None
+    if depth_support:
+        from surface_group_batch import grouped_depth_from_support
+        ids, native_alpha, count, overflow = sampled_outputs[2:]
+        candidate_z, candidate_audit = grouped_depth_from_support(
+            pc, viewpoint_camera, support_xy, ids, native_alpha, count, overflow,
+            depth[..., 2].reshape(-1))
+        ray = torch.cat(((support_xy - support_xy.new_tensor([viewpoint_camera.Cx, viewpoint_camera.Cy])) /
+                         support_xy.new_tensor([viewpoint_camera.Fx, viewpoint_camera.Fy]),
+                         torch.ones_like(support_xy[:, :1])), dim=1)
+        candidate_point = (candidate_z[:, None] * ray).reshape_as(depth)
+        use_candidate = candidate_audit['candidate'].reshape_as(inside)
+        depth = torch.where(use_candidate[..., None], candidate_point, depth)
+        torch.cuda.synchronize(means3D.device)
+        candidate_elapsed_ms = (time.perf_counter() - candidate_start) * 1000
 
     # Those Gaussians that were frustum culled or had a radius of 0 were not visible.
     # They will be excluded from value updates used in the splitting criteria.
-    return {"sampled_depth": depth,
-            "inside": inside}
+    result = {"sampled_depth": depth, "inside": inside}
+    if depth_support:
+        result['candidate_audit'] = candidate_audit
+        result['candidate_elapsed_ms'] = candidate_elapsed_ms
+    return result

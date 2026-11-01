@@ -47,7 +47,7 @@ from utils.loss_utils import (
 from training_depth_plugin import (ABLog, add_step_metrics, file_digest,
                                    parameter_digest, parameter_metrics, route_depth,
                                    reset_warm_start_radii, should_log_parameters,
-                                   validate_ab_output_dir)
+                                   validate_ab_output_dir, summarize_candidate_audit)
 
 
 def training(
@@ -191,8 +191,9 @@ def training(
             background,
             kernel_size,
             require_depth=reg_kick_on,
+            depth_support=reg_kick_on and depth_route == 'candidate',
         )
-        render_pkg = route_depth(render_pkg, depth_route, depth_target)
+        render_pkg = route_depth(render_pkg, depth_route, depth_target) if reg_kick_on else render_pkg
         rendered_image: torch.Tensor
         rendered_image, viewspace_point_tensor, visibility_filter, radii = (
             render_pkg["render"],
@@ -225,7 +226,8 @@ def training(
         if reg_kick_on and opt.lambda_multi_view_ncc > 0:
             nearest_cam = None if len(viewpoint_cam.nearest_id) == 0 else scene.getTrainCameras()[
                 sample(viewpoint_cam.nearest_id, 1)[0] if ab_rng is None else ab_rng.choice(viewpoint_cam.nearest_id)]
-            ncc_loss, geo_loss = patchmatch(gaussians, render_pkg, viewpoint_cam, nearest_cam, iteration, depth_normal)
+            ncc_loss, geo_loss = patchmatch(gaussians, render_pkg, viewpoint_cam, nearest_cam, iteration,
+                                           depth_normal, depth_support=depth_route == 'candidate' and depth_target in ('expected', 'both'))
         else:
             ncc_loss = torch.tensor([0], dtype=torch.float32, device="cuda")
             geo_loss = torch.tensor([0], dtype=torch.float32, device="cuda")
@@ -318,6 +320,13 @@ def training(
                                   depth_normal_loss=float(depth_normal_loss.item()),
                                   ncc_loss=float(ncc_loss.item()), geo_loss=float(geo_loss.item()),
                                   step_applied=step_applied,
+                                  candidate_render=summarize_candidate_audit(
+                                      render_pkg.get('candidate_audit'), render_pkg.get('candidate_elapsed_ms'))
+                                      if depth_route == 'candidate' and reg_kick_on else None,
+                                  candidate_sample=summarize_candidate_audit(
+                                      patchmatch.last_candidate_audit, patchmatch.last_candidate_elapsed_ms)
+                                      if depth_route == 'candidate' and reg_kick_on and
+                                      opt.lambda_multi_view_ncc > 0 and depth_target in ('expected', 'both') else None,
                                   parameters=add_step_metrics(metrics, before, gaussians.optimizer, step_applied)
                                   if log_metrics else None))
 

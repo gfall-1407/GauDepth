@@ -43,7 +43,7 @@ class DepthPluginWiringTest(unittest.TestCase):
         self.assertIs(identity['median_depth'], pkg['median_depth'])
         (identity['expected_depth'].sum() + identity['median_depth'].sum()).backward()
         self.assertTrue(torch.equal(x.grad, torch.full_like(x, 3.)))
-        with self.assertRaises(NotImplementedError):
+        with self.assertRaisesRegex(RuntimeError, 'renderer accepted support'):
             route_depth(pkg, 'candidate')
 
     def test_step_log_uses_actual_parameter_update(self):
