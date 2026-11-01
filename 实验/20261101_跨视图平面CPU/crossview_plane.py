@@ -9,6 +9,7 @@ import time
 from pathlib import Path
 
 import numpy as np
+import torch
 from PIL import Image
 
 ROOT = Path(__file__).resolve().parents[4]
@@ -57,7 +58,7 @@ def load_scan(scan):
         t = pose.tvec
         photo = np.asarray(Image.open(obs / 'images' / name).convert('RGB'), float) / 255
         gray = photo @ np.array([.299, .587, .114])
-        bundle.append(dict(K=K, R=R, t=t, gray=gray))
+        bundle.append(dict(K=K, R=R, t=t, gray=gray, torch_gray=torch.from_numpy(gray)))
     vR = np.asarray(view['world_view_transform'])[:3, :3].T
     vt = np.asarray(view['world_view_transform'])[3, :3]
     assert np.max(np.abs(bundle[0]['R'] - vR)) < 1e-4
@@ -175,23 +176,49 @@ def heldout(pi, case, cams):
     return float(value) if np.isfinite(value) else None
 
 
-def derivatives(f, p, h=1e-4):
-    # Central finite differences of the complete nonsmooth bilinear-image objective.
-    e = np.eye(3)*h
-    f0 = f(p)
-    if not np.isfinite(f0):
-        return None, None
-    grad = np.empty(3); H = np.empty((3, 3))
-    for j in range(3):
-        fp, fm = f(p+e[j]), f(p-e[j])
-        if not np.isfinite(fp+fm): return None, None
-        grad[j] = (fp-fm)/(2*h)
-        H[j,j] = (fp-2*f0+fm)/h**2
-        for k in range(j):
-            vals = [f(p+e[j]+e[k]), f(p+e[j]-e[k]), f(p-e[j]+e[k]), f(p-e[j]-e[k])]
-            if not np.isfinite(vals).all(): return None, None
-            H[j,k] = H[k,j] = (vals[0]-vals[1]-vals[2]+vals[3])/(4*h*h)
-    return grad, H
+def local_objective(p, case, cams, joint):
+    """Exact derivatives inside the current bilinear cells; floor indices are constant there."""
+    device = p.device
+    def tensor(x): return torch.as_tensor(x, dtype=torch.float64, device=device)
+    c0,c1 = cams[:2]
+    rays = tensor(np.column_stack((case['patch'], np.ones(81))) @ np.linalg.inv(c0['K']).T)
+    den = rays @ p
+    X0 = rays/den[:,None]
+    Xw = (X0-tensor(c0['t'])) @ tensor(c0['R'])
+    X1 = Xw @ tensor(c1['R']).T + tensor(c1['t'])
+    projected = X1 @ tensor(c1['K']).T
+    uv = projected[:,:2]/projected[:,2,None]
+    image = c1['torch_gray']
+    x0 = torch.floor(uv[:,0]).long().detach()
+    y0 = torch.floor(uv[:,1]).long().detach()
+    dx,dy = uv[:,0]-x0, uv[:,1]-y0
+    sample = ((1-dx)*(1-dy)*image[y0,x0] + dx*(1-dy)*image[y0,x0+1]
+        + (1-dx)*dy*image[y0+1,x0] + dx*dy*image[y0+1,x0+1])
+    ref = tensor(case['ref'])
+    a,b = ref-ref.mean(),sample-sample.mean()
+    photo = 1-torch.mean(a*b)/torch.sqrt(torch.mean(a*a)*torch.mean(b*b))
+    if not joint: return photo/TAU
+    xi = uv[40] @ tensor(case['axis'])
+    q = tensor(case['q']); xi_i = tensor(case['xi'])
+    return photo/TAU-torch.log(torch.sum(q*torch.exp(-.5*((xi-xi_i)/SIGMA)**2)))
+
+
+def local_derivatives(p, case, cams, joint):
+    if case['ref'] is None or not np.isfinite(cost(p,case,cams,joint)):
+        return None,None,'invalid_patch'
+    uv = warp(p,case['patch'],cams[0],cams[1])
+    if uv is None: return None,None,'invalid_projection'
+    if np.min(np.abs(uv-np.rint(uv))) < 1e-6:
+        return None,None,'bilinear_cell_boundary'
+    pt = torch.tensor(p,dtype=torch.float64,requires_grad=True)
+    f = lambda x: local_objective(x,case,cams,joint)
+    actual = float(f(pt).detach())
+    reference = cost(p,case,cams,joint)
+    if abs(actual-reference)>1e-9:
+        return None,None,'objective_mismatch'
+    gradient = torch.autograd.grad(f(pt),pt)[0].detach().numpy()
+    H = torch.autograd.functional.hessian(f,pt).detach().numpy()
+    return gradient,(H+H.T)/2,None
 
 
 def support_gradient_check():
@@ -231,22 +258,30 @@ def refine(start, case, cams, joint):
     p = start.copy()
     fun = lambda v: cost(v, case, cams, joint)
     for step in range(8):
-        g, H = derivatives(fun, p)
-        if g is None: return None
+        g,H,reason = local_derivatives(p,case,cams,joint)
+        if reason: return None,reason
         eig = np.linalg.eigvalsh(H)
         if np.linalg.norm(g) < 1e-4 and eig[0] > 1e-6:
-            return dict(pi=p, steps=step, hessian_eigen=eig.tolist(), cost=fun(p))
-        damping = max(1e-4, 1e-4-eig[0])
+            return dict(pi=p, steps=step, hessian_eigen=eig.tolist(), cost=fun(p)),None
+        damping = max(1e-3, 1e-3-eig[0])
         direction = np.linalg.solve(H+damping*np.eye(3), g)
+        magnitude = np.linalg.norm(direction)
+        if not np.isfinite(magnitude) or magnitude == 0: return None,'singular_step'
+        direction *= min(1, .1*np.linalg.norm(p)/magnitude)
         accepted = False
-        for damp in (1, .5, .25, .125, .0625):
+        old_uv = warp(p,case['patch'],cams[0],cams[1])
+        for damp in (.5**j for j in range(17)):
             trial = p-damp*direction
-            if fun(trial) < fun(p): p = trial; accepted = True; break
-        if not accepted: return None
-    g, H = derivatives(fun, p)
-    if g is None or np.linalg.norm(g) >= 1e-4 or np.linalg.eigvalsh(H)[0] <= 1e-6:
-        return None
-    return dict(pi=p, steps=8, hessian_eigen=np.linalg.eigvalsh(H).tolist(), cost=fun(p))
+            trial_uv = warp(trial,case['patch'],cams[0],cams[1])
+            if trial_uv is None or np.max(np.linalg.norm(trial_uv-old_uv,axis=1)) > .25: continue
+            if fun(trial) < fun(p)-1e-10: p = trial; accepted = True; break
+        if not accepted: return None,'line_search_or_trust_region'
+    g,H,reason = local_derivatives(p,case,cams,joint)
+    if reason: return None,reason
+    if np.linalg.norm(g) >= 1e-4: return None,'not_converged_8_steps'
+    eig = np.linalg.eigvalsh(H)
+    if eig[0] <= 1e-6: return None,'not_strict_minimum'
+    return dict(pi=p, steps=8, hessian_eigen=eig.tolist(), cost=fun(p)),None
 
 
 def solve(case, cams, joint):
@@ -265,23 +300,46 @@ def solve(case, cams, joint):
     locations = np.linspace(position(lo), position(hi), 129)-C
     depths = (B-locations*b[2])/(locations*a[2]-A)
     if not np.isfinite(depths).all() or np.any(depths <= 0):
-        return None, 0, 0
+        return None, 0, 0, ['invalid_epipolar_grid']
     starts = [plane(v, case['native_normal'], case['ray']) for v in depths]
     vals = np.array([cost(p, case, cams, joint) for p in starts])
     minima = [j for j in range(1,128) if np.isfinite(vals[j-1:j+2]).all() and vals[j] < vals[j-1] and vals[j] < vals[j+1]]
     minima.sort(key=lambda j: vals[j])
-    branches = []
+    branches = []; failures = []
     for j in minima[:4]:
-        branch = refine(starts[j], case, cams, joint)
+        branch,reason = refine(starts[j], case, cams, joint)
+        if reason: failures.append(reason)
         if branch is not None and all(np.linalg.norm(branch['pi']-old['pi']) > 1e-3 for old in branches):
             branches.append(branch)
     if len(branches) != 1:
-        return None, len(branches), len(minima)
-    return branches[0], len(branches), len(minima)
+        return None, len(branches), len(minima), failures
+    return branches[0], len(branches), len(minima), failures
+
+
+def derivative_check(f, cams):
+    case = ray_case(f,2,cams)
+    p = plane(case['native_depth'],case['native_normal'],case['ray'])
+    g,H,reason = local_derivatives(p,case,cams,True)
+    assert reason is None
+    step = 1e-7
+    vectors = np.eye(3)*step
+    # Compare only if every perturbed warp stays inside the same bilinear cells.
+    cells = np.floor(warp(p,case['patch'],cams[0],cams[1]))
+    assert all(np.array_equal(np.floor(warp(p+v,case['patch'],cams[0],cams[1])),cells)
+        and np.array_equal(np.floor(warp(p-v,case['patch'],cams[0],cams[1])),cells) for v in vectors)
+    gfd = np.array([(cost(p+v,case,cams,True)-cost(p-v,case,cams,True))/(2*step) for v in vectors])
+    Hfd = np.column_stack([(local_derivatives(p+v,case,cams,True)[0]
+        -local_derivatives(p-v,case,cams,True)[0])/(2*step) for v in vectors])
+    gerror = float(np.max(np.abs(g-gfd))/max(np.max(np.abs(g)),1))
+    herror = float(np.max(np.abs(H-Hfd))/max(np.max(np.abs(H)),1))
+    assert gerror < 1e-6 and herror < 1e-5
+    return dict(scan=37,index=2,step=step,same_bilinear_cells=True,
+        gradient_max_relative_error=gerror,hessian_max_relative_error=herror)
 
 
 def evaluate_scan(scan):
     f, meta, cams, hashes = load_scan(scan)
+    numerical_check = derivative_check(f,cams) if scan == 37 else None
     rng = np.random.default_rng(SEED+scan)
     indices = sorted(rng.choice(len(f['pixel_xy']), size=32, replace=False).tolist())
     rows = []
@@ -294,14 +352,17 @@ def evaluate_scan(scan):
             row['native_heldout'] = heldout(baseline, case, cams)
             row['branches'] = {}
             for name, joint in [('photo',False),('joint',True)]:
-                branch, count, minima = solve(case, cams, joint)
+                branch, count, minima, failures = solve(case, cams, joint)
                 row['branches'][name] = dict(reliable=count==1, count=count, grid_minima=minima,
+                    solver_failures=failures,
                     heldout=heldout(branch['pi'], case, cams) if branch else row['native_heldout'],
                     fallback=branch is None, cost=float(branch['cost']) if branch else None,
+                    newton_steps=branch['steps'] if branch else None,
+                    hessian_eigen=branch['hessian_eigen'] if branch else None,
                     pi=branch['pi'].tolist() if branch else None)
         row['seconds'] = time.perf_counter()-start
         rows.append(row)
-    return dict(scan=scan, rows=rows, hashes=hashes, source_commit=meta['git_commit'],
+    return dict(scan=scan, rows=rows, hashes=hashes, numerical_check=numerical_check, source_commit=meta['git_commit'],
         normal_semantics=meta['normal_semantics'], trace_model_sha256=meta['model_sha256'])
 
 
@@ -333,6 +394,7 @@ def main():
             seconds_per_ray_mean=float(np.mean([r['seconds'] for r in rows])),
             heldout={name:stats(name) for name in ('native','photo','joint')})
         summary = item['summary']
+        summary['common_evaluable'] = summary['native_heldout_valid']
         summary['joint_reliable_improved'] = sum(r['branches']['joint']['reliable']
             and r['native_heldout'] is not None
             and r['branches']['joint']['heldout'] is not None
@@ -341,7 +403,7 @@ def main():
             for r in rows if r['valid_input'])
         held = summary['heldout']
         summary['gate_passed'] = bool(summary['joint_reliable_improved'] >= 8
-            and all(held[name]['valid_count'] == 32 for name in held)
+            and all(held[name]['valid_count'] == summary['common_evaluable'] for name in held)
             and all(held['joint'][metric] < min(held['native'][metric],held['photo'][metric])
                     for metric in ('mean','median')))
     result['gate_passed'] = all(s['summary']['gate_passed'] for s in result['scans'])
@@ -349,9 +411,11 @@ def main():
         'from the local solver only. No GT reconstruction metric or Gaussian parameter backpropagation. '
         'Host warp_patch_ncc uses squared signed correlation and a 5e-6 variance gate, whereas this '
         'probe uses signed 1-ZNCC on grayscale with variance >1e-8; native, photo and joint are '
-        'compared under this same probe metric. No reliable isolated converged joint branch was '
-        'found, so implicit-solution derivatives were not evaluated. The 32-ray denominator is '
-        'retained; unavailable photometric costs are null and invalidate the pass gate.')
+        'compared under this same probe metric. Local image derivatives are valid only inside '
+        'the active bilinear cells; points within 1e-6 pixel of a cell edge are rejected. '
+        'Implicit-solution derivatives with respect to recorded depths/weights remain unverified. '
+        'The 32-ray denominator is retained; native view2-valid rays define a fixed common '
+        'comparison set before either optimization, while unavailable costs remain null.')
     result['status']='complete'
     args.output.write_text(json.dumps(result, indent=2),encoding='utf8')
 

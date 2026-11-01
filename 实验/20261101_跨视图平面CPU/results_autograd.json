@@ -1,0 +1,2839 @@
+{
+  "status": "complete",
+  "synthetic": {
+    "max_warp_error_px": 0.0,
+    "zncc_affine_invariant": true,
+    "textureless_invalid": true
+  },
+  "support_gradient": {
+    "max_absolute_error": 1.463401066992276e-10,
+    "xi_gradient": [
+      -0.16357490434747957,
+      0.11602008466417267,
+      0.4047223320947501
+    ],
+    "logit_gradient": [
+      0.036425095652520445,
+      -0.08673361554724252,
+      0.05030851989472207
+    ]
+  },
+  "parameters": {
+    "seed": 20261101,
+    "rays_per_scan": 32,
+    "sigma_px": 1.0,
+    "tau": 0.05,
+    "patch": "9x9 original pixels",
+    "profile_positions": 129,
+    "max_branches": 4,
+    "max_newton_steps": 8
+  },
+  "scans": [
+    {
+      "scan": 37,
+      "rows": [
+        {
+          "index": 2,
+          "valid_input": true,
+          "native_heldout": 0.8448528808309439,
+          "branches": {
+            "photo": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 15,
+              "solver_failures": [
+                "not_converged_8_steps",
+                "not_converged_8_steps",
+                "not_converged_8_steps",
+                "not_converged_8_steps"
+              ],
+              "heldout": 0.8448528808309439,
+              "fallback": true,
+              "cost": null,
+              "newton_steps": null,
+              "hessian_eigen": null,
+              "pi": null
+            },
+            "joint": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 5,
+              "solver_failures": [
+                "not_converged_8_steps",
+                "not_converged_8_steps",
+                "not_converged_8_steps",
+                "not_converged_8_steps"
+              ],
+              "heldout": 0.8448528808309439,
+              "fallback": true,
+              "cost": null,
+              "newton_steps": null,
+              "hessian_eigen": null,
+              "pi": null
+            }
+          },
+          "seconds": 0.7263200000000003
+        },
+        {
+          "index": 9,
+          "valid_input": true,
+          "native_heldout": 0.5187675764357235,
+          "branches": {
+            "photo": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 13,
+              "solver_failures": [
+                "not_converged_8_steps",
+                "not_converged_8_steps",
+                "not_converged_8_steps",
+                "not_converged_8_steps"
+              ],
+              "heldout": 0.5187675764357235,
+              "fallback": true,
+              "cost": null,
+              "newton_steps": null,
+              "hessian_eigen": null,
+              "pi": null
+            },
+            "joint": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 1,
+              "solver_failures": [
+                "not_converged_8_steps"
+              ],
+              "heldout": 0.5187675764357235,
+              "fallback": true,
+              "cost": null,
+              "newton_steps": null,
+              "hessian_eigen": null,
+              "pi": null
+            }
+          },
+          "seconds": 0.4529482999999992
+        },
+        {
+          "index": 16,
+          "valid_input": true,
+          "native_heldout": 1.0203944115140182,
+          "branches": {
+            "photo": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 14,
+              "solver_failures": [
+                "not_converged_8_steps",
+                "not_converged_8_steps",
+                "not_converged_8_steps",
+                "not_converged_8_steps"
+              ],
+              "heldout": 1.0203944115140182,
+              "fallback": true,
+              "cost": null,
+              "newton_steps": null,
+              "hessian_eigen": null,
+              "pi": null
+            },
+            "joint": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 2,
+              "solver_failures": [
+                "not_converged_8_steps",
+                "not_converged_8_steps"
+              ],
+              "heldout": 1.0203944115140182,
+              "fallback": true,
+              "cost": null,
+              "newton_steps": null,
+              "hessian_eigen": null,
+              "pi": null
+            }
+          },
+          "seconds": 0.521198
+        },
+        {
+          "index": 38,
+          "valid_input": true,
+          "native_heldout": 0.8539378290244252,
+          "branches": {
+            "photo": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 10,
+              "solver_failures": [
+                "not_converged_8_steps",
+                "not_converged_8_steps",
+                "not_converged_8_steps",
+                "not_converged_8_steps"
+              ],
+              "heldout": 0.8539378290244252,
+              "fallback": true,
+              "cost": null,
+              "newton_steps": null,
+              "hessian_eigen": null,
+              "pi": null
+            },
+            "joint": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 1,
+              "solver_failures": [
+                "not_converged_8_steps"
+              ],
+              "heldout": 0.8539378290244252,
+              "fallback": true,
+              "cost": null,
+              "newton_steps": null,
+              "hessian_eigen": null,
+              "pi": null
+            }
+          },
+          "seconds": 0.4407247999999999
+        },
+        {
+          "index": 45,
+          "valid_input": true,
+          "native_heldout": 1.0692768519243627,
+          "branches": {
+            "photo": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 16,
+              "solver_failures": [
+                "not_converged_8_steps",
+                "not_converged_8_steps",
+                "not_converged_8_steps",
+                "not_converged_8_steps"
+              ],
+              "heldout": 1.0692768519243627,
+              "fallback": true,
+              "cost": null,
+              "newton_steps": null,
+              "hessian_eigen": null,
+              "pi": null
+            },
+            "joint": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 5,
+              "solver_failures": [
+                "not_converged_8_steps",
+                "not_converged_8_steps",
+                "not_converged_8_steps",
+                "not_converged_8_steps"
+              ],
+              "heldout": 1.0692768519243627,
+              "fallback": true,
+              "cost": null,
+              "newton_steps": null,
+              "hessian_eigen": null,
+              "pi": null
+            }
+          },
+          "seconds": 0.7318824999999993
+        },
+        {
+          "index": 91,
+          "valid_input": true,
+          "native_heldout": 0.4316156297842524,
+          "branches": {
+            "photo": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 17,
+              "solver_failures": [
+                "not_converged_8_steps",
+                "not_converged_8_steps",
+                "not_converged_8_steps",
+                "not_converged_8_steps"
+              ],
+              "heldout": 0.4316156297842524,
+              "fallback": true,
+              "cost": null,
+              "newton_steps": null,
+              "hessian_eigen": null,
+              "pi": null
+            },
+            "joint": {
+              "reliable": true,
+              "count": 1,
+              "grid_minima": 1,
+              "solver_failures": [],
+              "heldout": 0.5509693981823466,
+              "fallback": false,
+              "cost": 5.09929902658466,
+              "newton_steps": 6,
+              "hessian_eigen": [
+                9.21508491991671,
+                15.915211864274756,
+                22911065.194349557
+              ],
+              "pi": [
+                0.1922915324904477,
+                0.1984794327987626,
+                0.3978315283180564
+              ]
+            }
+          },
+          "seconds": 0.4835539000000004
+        },
+        {
+          "index": 124,
+          "valid_input": true,
+          "native_heldout": 0.08620281066053903,
+          "branches": {
+            "photo": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 18,
+              "solver_failures": [
+                "not_converged_8_steps",
+                "not_converged_8_steps",
+                "not_converged_8_steps",
+                "not_converged_8_steps"
+              ],
+              "heldout": 0.08620281066053903,
+              "fallback": true,
+              "cost": null,
+              "newton_steps": null,
+              "hessian_eigen": null,
+              "pi": null
+            },
+            "joint": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 5,
+              "solver_failures": [
+                "line_search_or_trust_region",
+                "not_converged_8_steps",
+                "not_converged_8_steps",
+                "not_converged_8_steps"
+              ],
+              "heldout": 0.08620281066053903,
+              "fallback": true,
+              "cost": null,
+              "newton_steps": null,
+              "hessian_eigen": null,
+              "pi": null
+            }
+          },
+          "seconds": 0.6879184999999994
+        },
+        {
+          "index": 126,
+          "valid_input": true,
+          "native_heldout": 0.8158431728689663,
+          "branches": {
+            "photo": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 13,
+              "solver_failures": [
+                "not_converged_8_steps",
+                "not_converged_8_steps",
+                "line_search_or_trust_region",
+                "not_converged_8_steps"
+              ],
+              "heldout": 0.8158431728689663,
+              "fallback": true,
+              "cost": null,
+              "newton_steps": null,
+              "hessian_eigen": null,
+              "pi": null
+            },
+            "joint": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 2,
+              "solver_failures": [
+                "not_converged_8_steps",
+                "not_converged_8_steps"
+              ],
+              "heldout": 0.8158431728689663,
+              "fallback": true,
+              "cost": null,
+              "newton_steps": null,
+              "hessian_eigen": null,
+              "pi": null
+            }
+          },
+          "seconds": 0.5161499999999997
+        },
+        {
+          "index": 153,
+          "valid_input": true,
+          "native_heldout": 1.048117504967233,
+          "branches": {
+            "photo": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 14,
+              "solver_failures": [
+                "not_converged_8_steps",
+                "not_converged_8_steps",
+                "not_converged_8_steps",
+                "not_converged_8_steps"
+              ],
+              "heldout": 1.048117504967233,
+              "fallback": true,
+              "cost": null,
+              "newton_steps": null,
+              "hessian_eigen": null,
+              "pi": null
+            },
+            "joint": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 2,
+              "solver_failures": [
+                "not_converged_8_steps",
+                "line_search_or_trust_region"
+              ],
+              "heldout": 1.048117504967233,
+              "fallback": true,
+              "cost": null,
+              "newton_steps": null,
+              "hessian_eigen": null,
+              "pi": null
+            }
+          },
+          "seconds": 0.5185787000000008
+        },
+        {
+          "index": 157,
+          "valid_input": true,
+          "native_heldout": null,
+          "branches": {
+            "photo": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 0,
+              "solver_failures": [],
+              "heldout": null,
+              "fallback": true,
+              "cost": null,
+              "newton_steps": null,
+              "hessian_eigen": null,
+              "pi": null
+            },
+            "joint": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 0,
+              "solver_failures": [],
+              "heldout": null,
+              "fallback": true,
+              "cost": null,
+              "newton_steps": null,
+              "hessian_eigen": null,
+              "pi": null
+            }
+          },
+          "seconds": 0.07056919999999955
+        },
+        {
+          "index": 160,
+          "valid_input": true,
+          "native_heldout": 0.9522360855209853,
+          "branches": {
+            "photo": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 13,
+              "solver_failures": [
+                "not_converged_8_steps",
+                "not_converged_8_steps",
+                "not_converged_8_steps",
+                "not_converged_8_steps"
+              ],
+              "heldout": 0.9522360855209853,
+              "fallback": true,
+              "cost": null,
+              "newton_steps": null,
+              "hessian_eigen": null,
+              "pi": null
+            },
+            "joint": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 2,
+              "solver_failures": [
+                "not_converged_8_steps",
+                "not_converged_8_steps"
+              ],
+              "heldout": 0.9522360855209853,
+              "fallback": true,
+              "cost": null,
+              "newton_steps": null,
+              "hessian_eigen": null,
+              "pi": null
+            }
+          },
+          "seconds": 0.531972399999999
+        },
+        {
+          "index": 194,
+          "valid_input": true,
+          "native_heldout": 0.8241236521815307,
+          "branches": {
+            "photo": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 18,
+              "solver_failures": [
+                "not_converged_8_steps",
+                "not_converged_8_steps",
+                "not_converged_8_steps",
+                "not_converged_8_steps"
+              ],
+              "heldout": 0.8241236521815307,
+              "fallback": true,
+              "cost": null,
+              "newton_steps": null,
+              "hessian_eigen": null,
+              "pi": null
+            },
+            "joint": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 3,
+              "solver_failures": [
+                "not_converged_8_steps",
+                "not_converged_8_steps",
+                "not_converged_8_steps"
+              ],
+              "heldout": 0.8241236521815307,
+              "fallback": true,
+              "cost": null,
+              "newton_steps": null,
+              "hessian_eigen": null,
+              "pi": null
+            }
+          },
+          "seconds": 0.6223216000000011
+        },
+        {
+          "index": 257,
+          "valid_input": true,
+          "native_heldout": 0.8647634864032377,
+          "branches": {
+            "photo": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 22,
+              "solver_failures": [
+                "not_converged_8_steps",
+                "not_converged_8_steps",
+                "not_converged_8_steps",
+                "not_converged_8_steps"
+              ],
+              "heldout": 0.8647634864032377,
+              "fallback": true,
+              "cost": null,
+              "newton_steps": null,
+              "hessian_eigen": null,
+              "pi": null
+            },
+            "joint": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 5,
+              "solver_failures": [
+                "not_converged_8_steps",
+                "not_converged_8_steps",
+                "not_converged_8_steps",
+                "not_converged_8_steps"
+              ],
+              "heldout": 0.8647634864032377,
+              "fallback": true,
+              "cost": null,
+              "newton_steps": null,
+              "hessian_eigen": null,
+              "pi": null
+            }
+          },
+          "seconds": 0.7193024000000001
+        },
+        {
+          "index": 268,
+          "valid_input": true,
+          "native_heldout": 0.7842694944396356,
+          "branches": {
+            "photo": {
+              "reliable": true,
+              "count": 1,
+              "grid_minima": 19,
+              "solver_failures": [
+                "not_converged_8_steps",
+                "not_converged_8_steps",
+                "not_converged_8_steps"
+              ],
+              "heldout": 0.6460606282811252,
+              "fallback": false,
+              "cost": 6.721465703149265,
+              "newton_steps": 7,
+              "hessian_eigen": [
+                19.164982208185837,
+                21.90335264078532,
+                31788380.371370878
+              ],
+              "pi": [
+                0.05937323717885697,
+                0.4245078723359419,
+                0.3706161996670299
+              ]
+            },
+            "joint": {
+              "reliable": true,
+              "count": 1,
+              "grid_minima": 5,
+              "solver_failures": [
+                "not_converged_8_steps",
+                "not_converged_8_steps",
+                "not_converged_8_steps"
+              ],
+              "heldout": 0.6419913978545511,
+              "fallback": false,
+              "cost": 7.082555304734684,
+              "newton_steps": 7,
+              "hessian_eigen": [
+                19.727688608768464,
+                23.90602396418162,
+                34160559.806198224
+              ],
+              "pi": [
+                0.07274824630485575,
+                0.4387606205679036,
+                0.3699992958018981
+              ]
+            }
+          },
+          "seconds": 0.733433100000001
+        },
+        {
+          "index": 294,
+          "valid_input": true,
+          "native_heldout": 0.23677597427862396,
+          "branches": {
+            "photo": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 8,
+              "solver_failures": [
+                "not_converged_8_steps",
+                "not_converged_8_steps",
+                "not_converged_8_steps",
+                "not_converged_8_steps"
+              ],
+              "heldout": 0.23677597427862396,
+              "fallback": true,
+              "cost": null,
+              "newton_steps": null,
+              "hessian_eigen": null,
+              "pi": null
+            },
+            "joint": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 3,
+              "solver_failures": [
+                "not_converged_8_steps",
+                "not_converged_8_steps",
+                "not_converged_8_steps"
+              ],
+              "heldout": 0.23677597427862396,
+              "fallback": true,
+              "cost": null,
+              "newton_steps": null,
+              "hessian_eigen": null,
+              "pi": null
+            }
+          },
+          "seconds": 0.6257447000000003
+        },
+        {
+          "index": 297,
+          "valid_input": true,
+          "native_heldout": 0.7156834477412201,
+          "branches": {
+            "photo": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 8,
+              "solver_failures": [
+                "not_converged_8_steps",
+                "not_converged_8_steps",
+                "not_converged_8_steps",
+                "not_converged_8_steps"
+              ],
+              "heldout": 0.7156834477412201,
+              "fallback": true,
+              "cost": null,
+              "newton_steps": null,
+              "hessian_eigen": null,
+              "pi": null
+            },
+            "joint": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 3,
+              "solver_failures": [
+                "not_converged_8_steps",
+                "line_search_or_trust_region",
+                "not_converged_8_steps"
+              ],
+              "heldout": 0.7156834477412201,
+              "fallback": true,
+              "cost": null,
+              "newton_steps": null,
+              "hessian_eigen": null,
+              "pi": null
+            }
+          },
+          "seconds": 0.5970618999999999
+        },
+        {
+          "index": 314,
+          "valid_input": true,
+          "native_heldout": 0.1020640647094807,
+          "branches": {
+            "photo": {
+              "reliable": true,
+              "count": 1,
+              "grid_minima": 17,
+              "solver_failures": [
+                "not_converged_8_steps",
+                "not_converged_8_steps",
+                "not_converged_8_steps"
+              ],
+              "heldout": 0.7898743160019875,
+              "fallback": false,
+              "cost": 4.079080909214485,
+              "newton_steps": 7,
+              "hessian_eigen": [
+                7.503434041516908,
+                11.23860099663367,
+                11583320.027116144
+              ],
+              "pi": [
+                -0.0550086879460473,
+                -0.019492014779296112,
+                0.3578763962285283
+              ]
+            },
+            "joint": {
+              "reliable": true,
+              "count": 1,
+              "grid_minima": 6,
+              "solver_failures": [
+                "line_search_or_trust_region",
+                "not_converged_8_steps",
+                "not_converged_8_steps"
+              ],
+              "heldout": 0.08834621514958374,
+              "fallback": false,
+              "cost": 1.0277846576093317,
+              "newton_steps": 6,
+              "hessian_eigen": [
+                3.0844349779037956,
+                4.821463072116238,
+                8986939.09349894
+              ],
+              "pi": [
+                -0.14511653626581988,
+                -0.00012925201239759627,
+                0.41060564468276745
+              ]
+            }
+          },
+          "seconds": 0.6652681999999999
+        },
+        {
+          "index": 319,
+          "valid_input": true,
+          "native_heldout": null,
+          "branches": {
+            "photo": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 0,
+              "solver_failures": [],
+              "heldout": null,
+              "fallback": true,
+              "cost": null,
+              "newton_steps": null,
+              "hessian_eigen": null,
+              "pi": null
+            },
+            "joint": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 0,
+              "solver_failures": [],
+              "heldout": null,
+              "fallback": true,
+              "cost": null,
+              "newton_steps": null,
+              "hessian_eigen": null,
+              "pi": null
+            }
+          },
+          "seconds": 0.04390919999999987
+        },
+        {
+          "index": 329,
+          "valid_input": true,
+          "native_heldout": 0.13395258699136348,
+          "branches": {
+            "photo": {
+              "reliable": true,
+              "count": 1,
+              "grid_minima": 9,
+              "solver_failures": [
+                "not_converged_8_steps",
+                "not_converged_8_steps",
+                "not_converged_8_steps"
+              ],
+              "heldout": 0.1764189487851866,
+              "fallback": false,
+              "cost": 1.11357197148799,
+              "newton_steps": 7,
+              "hessian_eigen": [
+                0.7726276243042236,
+                1.94215802307772,
+                2683424.1814649855
+              ],
+              "pi": [
+                0.037545868971881495,
+                0.1549566294685604,
+                0.391306664048025
+              ]
+            },
+            "joint": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 1,
+              "solver_failures": [
+                "not_converged_8_steps"
+              ],
+              "heldout": 0.13395258699136348,
+              "fallback": true,
+              "cost": null,
+              "newton_steps": null,
+              "hessian_eigen": null,
+              "pi": null
+            }
+          },
+          "seconds": 0.46146019999999943
+        },
+        {
+          "index": 378,
+          "valid_input": true,
+          "native_heldout": 1.0304161053634882,
+          "branches": {
+            "photo": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 15,
+              "solver_failures": [
+                "not_converged_8_steps",
+                "not_converged_8_steps",
+                "not_converged_8_steps",
+                "not_converged_8_steps"
+              ],
+              "heldout": 1.0304161053634882,
+              "fallback": true,
+              "cost": null,
+              "newton_steps": null,
+              "hessian_eigen": null,
+              "pi": null
+            },
+            "joint": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 2,
+              "solver_failures": [
+                "not_converged_8_steps",
+                "not_converged_8_steps"
+              ],
+              "heldout": 1.0304161053634882,
+              "fallback": true,
+              "cost": null,
+              "newton_steps": null,
+              "hessian_eigen": null,
+              "pi": null
+            }
+          },
+          "seconds": 0.5547338999999987
+        },
+        {
+          "index": 381,
+          "valid_input": true,
+          "native_heldout": 0.10715935205784177,
+          "branches": {
+            "photo": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 11,
+              "solver_failures": [
+                "not_converged_8_steps",
+                "not_converged_8_steps",
+                "not_converged_8_steps",
+                "not_converged_8_steps"
+              ],
+              "heldout": 0.10715935205784177,
+              "fallback": true,
+              "cost": null,
+              "newton_steps": null,
+              "hessian_eigen": null,
+              "pi": null
+            },
+            "joint": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 1,
+              "solver_failures": [
+                "not_converged_8_steps"
+              ],
+              "heldout": 0.10715935205784177,
+              "fallback": true,
+              "cost": null,
+              "newton_steps": null,
+              "hessian_eigen": null,
+              "pi": null
+            }
+          },
+          "seconds": 0.552108200000001
+        },
+        {
+          "index": 403,
+          "valid_input": true,
+          "native_heldout": 1.0438675894079392,
+          "branches": {
+            "photo": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 13,
+              "solver_failures": [
+                "not_converged_8_steps",
+                "not_converged_8_steps",
+                "not_converged_8_steps",
+                "not_converged_8_steps"
+              ],
+              "heldout": 1.0438675894079392,
+              "fallback": true,
+              "cost": null,
+              "newton_steps": null,
+              "hessian_eigen": null,
+              "pi": null
+            },
+            "joint": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 2,
+              "solver_failures": [
+                "not_converged_8_steps",
+                "not_converged_8_steps"
+              ],
+              "heldout": 1.0438675894079392,
+              "fallback": true,
+              "cost": null,
+              "newton_steps": null,
+              "hessian_eigen": null,
+              "pi": null
+            }
+          },
+          "seconds": 0.5135381000000017
+        },
+        {
+          "index": 418,
+          "valid_input": true,
+          "native_heldout": null,
+          "branches": {
+            "photo": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 12,
+              "solver_failures": [
+                "not_converged_8_steps",
+                "not_converged_8_steps",
+                "not_converged_8_steps",
+                "not_converged_8_steps"
+              ],
+              "heldout": null,
+              "fallback": true,
+              "cost": null,
+              "newton_steps": null,
+              "hessian_eigen": null,
+              "pi": null
+            },
+            "joint": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 4,
+              "solver_failures": [
+                "not_converged_8_steps",
+                "not_converged_8_steps",
+                "line_search_or_trust_region",
+                "line_search_or_trust_region"
+              ],
+              "heldout": null,
+              "fallback": true,
+              "cost": null,
+              "newton_steps": null,
+              "hessian_eigen": null,
+              "pi": null
+            }
+          },
+          "seconds": 0.6723629999999972
+        },
+        {
+          "index": 429,
+          "valid_input": true,
+          "native_heldout": 0.4810309691488571,
+          "branches": {
+            "photo": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 11,
+              "solver_failures": [
+                "line_search_or_trust_region",
+                "not_converged_8_steps",
+                "not_converged_8_steps",
+                "not_converged_8_steps"
+              ],
+              "heldout": 0.4810309691488571,
+              "fallback": true,
+              "cost": null,
+              "newton_steps": null,
+              "hessian_eigen": null,
+              "pi": null
+            },
+            "joint": {
+              "reliable": true,
+              "count": 1,
+              "grid_minima": 3,
+              "solver_failures": [
+                "not_converged_8_steps",
+                "not_converged_8_steps"
+              ],
+              "heldout": 0.47459055618504065,
+              "fallback": false,
+              "cost": 2.4114361065165166,
+              "newton_steps": 6,
+              "hessian_eigen": [
+                8.712011542269543,
+                11.465774438766589,
+                14323637.732412675
+              ],
+              "pi": [
+                -0.12917015958283176,
+                0.16541553197319556,
+                0.41500169375648344
+              ]
+            }
+          },
+          "seconds": 0.5695246999999988
+        },
+        {
+          "index": 431,
+          "valid_input": true,
+          "native_heldout": 0.12231342107647891,
+          "branches": {
+            "photo": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 9,
+              "solver_failures": [
+                "not_converged_8_steps",
+                "not_converged_8_steps",
+                "not_converged_8_steps",
+                "not_converged_8_steps"
+              ],
+              "heldout": 0.12231342107647891,
+              "fallback": true,
+              "cost": null,
+              "newton_steps": null,
+              "hessian_eigen": null,
+              "pi": null
+            },
+            "joint": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 1,
+              "solver_failures": [
+                "not_converged_8_steps"
+              ],
+              "heldout": 0.12231342107647891,
+              "fallback": true,
+              "cost": null,
+              "newton_steps": null,
+              "hessian_eigen": null,
+              "pi": null
+            }
+          },
+          "seconds": 0.4508993999999973
+        },
+        {
+          "index": 437,
+          "valid_input": true,
+          "native_heldout": 0.868139507417158,
+          "branches": {
+            "photo": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 12,
+              "solver_failures": [
+                "not_converged_8_steps",
+                "not_converged_8_steps",
+                "not_converged_8_steps",
+                "not_converged_8_steps"
+              ],
+              "heldout": 0.868139507417158,
+              "fallback": true,
+              "cost": null,
+              "newton_steps": null,
+              "hessian_eigen": null,
+              "pi": null
+            },
+            "joint": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 3,
+              "solver_failures": [
+                "not_converged_8_steps",
+                "not_converged_8_steps",
+                "not_converged_8_steps"
+              ],
+              "heldout": 0.868139507417158,
+              "fallback": true,
+              "cost": null,
+              "newton_steps": null,
+              "hessian_eigen": null,
+              "pi": null
+            }
+          },
+          "seconds": 0.6062319000000009
+        },
+        {
+          "index": 440,
+          "valid_input": true,
+          "native_heldout": 1.4413544416373658,
+          "branches": {
+            "photo": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 13,
+              "solver_failures": [
+                "not_converged_8_steps",
+                "not_converged_8_steps",
+                "not_converged_8_steps",
+                "not_converged_8_steps"
+              ],
+              "heldout": 1.4413544416373658,
+              "fallback": true,
+              "cost": null,
+              "newton_steps": null,
+              "hessian_eigen": null,
+              "pi": null
+            },
+            "joint": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 2,
+              "solver_failures": [
+                "not_converged_8_steps",
+                "line_search_or_trust_region"
+              ],
+              "heldout": 1.4413544416373658,
+              "fallback": true,
+              "cost": null,
+              "newton_steps": null,
+              "hessian_eigen": null,
+              "pi": null
+            }
+          },
+          "seconds": 0.5230555999999993
+        },
+        {
+          "index": 469,
+          "valid_input": true,
+          "native_heldout": 1.1210444289432653,
+          "branches": {
+            "photo": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 8,
+              "solver_failures": [
+                "not_converged_8_steps",
+                "not_converged_8_steps",
+                "not_converged_8_steps",
+                "not_converged_8_steps"
+              ],
+              "heldout": 1.1210444289432653,
+              "fallback": true,
+              "cost": null,
+              "newton_steps": null,
+              "hessian_eigen": null,
+              "pi": null
+            },
+            "joint": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 1,
+              "solver_failures": [
+                "not_converged_8_steps"
+              ],
+              "heldout": 1.1210444289432653,
+              "fallback": true,
+              "cost": null,
+              "newton_steps": null,
+              "hessian_eigen": null,
+              "pi": null
+            }
+          },
+          "seconds": 0.4507393000000022
+        },
+        {
+          "index": 472,
+          "valid_input": true,
+          "native_heldout": 0.019649377003836177,
+          "branches": {
+            "photo": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 11,
+              "solver_failures": [
+                "not_converged_8_steps",
+                "not_converged_8_steps",
+                "not_converged_8_steps",
+                "not_converged_8_steps"
+              ],
+              "heldout": 0.019649377003836177,
+              "fallback": true,
+              "cost": null,
+              "newton_steps": null,
+              "hessian_eigen": null,
+              "pi": null
+            },
+            "joint": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 3,
+              "solver_failures": [
+                "not_converged_8_steps",
+                "not_converged_8_steps",
+                "not_converged_8_steps"
+              ],
+              "heldout": 0.019649377003836177,
+              "fallback": true,
+              "cost": null,
+              "newton_steps": null,
+              "hessian_eigen": null,
+              "pi": null
+            }
+          },
+          "seconds": 0.6140810000000023
+        },
+        {
+          "index": 488,
+          "valid_input": true,
+          "native_heldout": 0.9404444308742667,
+          "branches": {
+            "photo": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 17,
+              "solver_failures": [
+                "not_converged_8_steps",
+                "not_converged_8_steps",
+                "not_converged_8_steps",
+                "not_converged_8_steps"
+              ],
+              "heldout": 0.9404444308742667,
+              "fallback": true,
+              "cost": null,
+              "newton_steps": null,
+              "hessian_eigen": null,
+              "pi": null
+            },
+            "joint": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 4,
+              "solver_failures": [
+                "not_converged_8_steps",
+                "not_converged_8_steps",
+                "not_converged_8_steps",
+                "not_converged_8_steps"
+              ],
+              "heldout": 0.9404444308742667,
+              "fallback": true,
+              "cost": null,
+              "newton_steps": null,
+              "hessian_eigen": null,
+              "pi": null
+            }
+          },
+          "seconds": 0.683246699999998
+        },
+        {
+          "index": 493,
+          "valid_input": true,
+          "native_heldout": 0.3397608611412728,
+          "branches": {
+            "photo": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 9,
+              "solver_failures": [
+                "not_converged_8_steps",
+                "not_converged_8_steps",
+                "not_converged_8_steps",
+                "not_converged_8_steps"
+              ],
+              "heldout": 0.3397608611412728,
+              "fallback": true,
+              "cost": null,
+              "newton_steps": null,
+              "hessian_eigen": null,
+              "pi": null
+            },
+            "joint": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 1,
+              "solver_failures": [
+                "not_converged_8_steps"
+              ],
+              "heldout": 0.3397608611412728,
+              "fallback": true,
+              "cost": null,
+              "newton_steps": null,
+              "hessian_eigen": null,
+              "pi": null
+            }
+          },
+          "seconds": 0.4491275999999971
+        },
+        {
+          "index": 494,
+          "valid_input": true,
+          "native_heldout": 0.49770627348960095,
+          "branches": {
+            "photo": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 12,
+              "solver_failures": [
+                "not_converged_8_steps",
+                "not_converged_8_steps",
+                "not_converged_8_steps",
+                "not_converged_8_steps"
+              ],
+              "heldout": 0.49770627348960095,
+              "fallback": true,
+              "cost": null,
+              "newton_steps": null,
+              "hessian_eigen": null,
+              "pi": null
+            },
+            "joint": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 2,
+              "solver_failures": [
+                "not_converged_8_steps",
+                "bilinear_cell_boundary"
+              ],
+              "heldout": 0.49770627348960095,
+              "fallback": true,
+              "cost": null,
+              "newton_steps": null,
+              "hessian_eigen": null,
+              "pi": null
+            }
+          },
+          "seconds": 0.4469573000000011
+        }
+      ],
+      "hashes": {
+        "trace": "9152656e1154eaaa3febd2f6f844a272a78a220e07fce4f61587342318562ceb",
+        "metadata": "1a50c9f0ae9105a70c9b1a360eb75fba4fb05297d89e95fc3434dbbb822f03e9",
+        "images": [
+          "b3c01bacdd66c09af63b417cd8ef184adb171eb91cd4c51a9d1791f30ce05404",
+          "3e767110c1ff4659e2e8cc1e586c9a68e465c60bd0f49efd4abc4ecc724b77f3",
+          "3cc777de6c94d29af15dac9f54826bb988bab235bed0df606aad0980cbeb7ee5"
+        ],
+        "cameras": "fe0aa32b87c96c1366500ccdf02493fb6f78ddd505ac484aa5f1315c4716f5b2",
+        "extrinsics": "f2f04e4f7c54d4f53af5acf6f66346158671e78644cd883923609105ea73d705"
+      },
+      "numerical_check": {
+        "scan": 37,
+        "index": 2,
+        "step": 1e-07,
+        "same_bilinear_cells": true,
+        "gradient_max_relative_error": 1.1583699874147226e-08,
+        "hessian_max_relative_error": 3.487766963397126e-08
+      },
+      "source_commit": "b63b967c4d95e923ef4961ae16b16bdc2a035ec4",
+      "normal_semantics": "camera-space oriented geometric direction, host buffer xyz; not RGB/rendered normal",
+      "trace_model_sha256": "34fe9d7243208432410bcaf41e44f390e41009ef3730a5f5dfd63137bbe325c1",
+      "summary": {
+        "total_rays": 32,
+        "native_heldout_valid": 29,
+        "photo_reliable": 3,
+        "joint_reliable": 4,
+        "photo_fallback": 29,
+        "joint_fallback": 28,
+        "seconds_per_ray_mean": 0.5386538843749998,
+        "heldout": {
+          "native": {
+            "valid_count": 29,
+            "denominator": 32,
+            "mean": 0.6660608350978591,
+            "median": 0.8158431728689663
+          },
+          "photo": {
+            "valid_count": 29,
+            "denominator": 32,
+            "mean": 0.6864769643022666,
+            "median": 0.8158431728689663
+          },
+          "joint": {
+            "valid_count": 29,
+            "denominator": 32,
+            "mean": 0.6645752285216279,
+            "median": 0.8158431728689663
+          }
+        },
+        "common_evaluable": 29,
+        "joint_reliable_improved": 3,
+        "gate_passed": false
+      }
+    },
+    {
+      "scan": 40,
+      "rows": [
+        {
+          "index": 3,
+          "valid_input": true,
+          "native_heldout": 0.5690395507726846,
+          "branches": {
+            "photo": {
+              "reliable": true,
+              "count": 1,
+              "grid_minima": 24,
+              "solver_failures": [
+                "not_converged_8_steps",
+                "not_converged_8_steps",
+                "not_converged_8_steps"
+              ],
+              "heldout": 0.5030862003230075,
+              "fallback": false,
+              "cost": 3.851457637043809,
+              "newton_steps": 4,
+              "hessian_eigen": [
+                10.013025311147365,
+                13.75168110728336,
+                15168366.524696754
+              ],
+              "pi": [
+                0.05171104224166252,
+                0.18316361703675382,
+                0.6987116216760187
+              ]
+            },
+            "joint": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 8,
+              "solver_failures": [
+                "line_search_or_trust_region",
+                "not_converged_8_steps",
+                "not_converged_8_steps",
+                "not_converged_8_steps"
+              ],
+              "heldout": 0.5690395507726846,
+              "fallback": true,
+              "cost": null,
+              "newton_steps": null,
+              "hessian_eigen": null,
+              "pi": null
+            }
+          },
+          "seconds": 0.663415699999998
+        },
+        {
+          "index": 6,
+          "valid_input": true,
+          "native_heldout": null,
+          "branches": {
+            "photo": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 14,
+              "solver_failures": [
+                "not_converged_8_steps",
+                "not_converged_8_steps",
+                "not_converged_8_steps",
+                "not_converged_8_steps"
+              ],
+              "heldout": null,
+              "fallback": true,
+              "cost": null,
+              "newton_steps": null,
+              "hessian_eigen": null,
+              "pi": null
+            },
+            "joint": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 4,
+              "solver_failures": [
+                "not_converged_8_steps",
+                "not_converged_8_steps",
+                "not_converged_8_steps",
+                "not_converged_8_steps"
+              ],
+              "heldout": null,
+              "fallback": true,
+              "cost": null,
+              "newton_steps": null,
+              "hessian_eigen": null,
+              "pi": null
+            }
+          },
+          "seconds": 0.6842110000000012
+        },
+        {
+          "index": 10,
+          "valid_input": true,
+          "native_heldout": null,
+          "branches": {
+            "photo": {
+              "reliable": true,
+              "count": 1,
+              "grid_minima": 21,
+              "solver_failures": [
+                "not_converged_8_steps",
+                "not_converged_8_steps",
+                "not_converged_8_steps"
+              ],
+              "heldout": null,
+              "fallback": false,
+              "cost": 9.860653383909076,
+              "newton_steps": 6,
+              "hessian_eigen": [
+                2.8086991212672383,
+                4.234881540621021,
+                4635967.830953637
+              ],
+              "pi": [
+                0.31881829057967837,
+                0.6381651852106518,
+                0.8618086932039318
+              ]
+            },
+            "joint": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 6,
+              "solver_failures": [
+                "line_search_or_trust_region",
+                "not_converged_8_steps",
+                "not_converged_8_steps",
+                "not_converged_8_steps"
+              ],
+              "heldout": null,
+              "fallback": true,
+              "cost": null,
+              "newton_steps": null,
+              "hessian_eigen": null,
+              "pi": null
+            }
+          },
+          "seconds": 0.6799005999999999
+        },
+        {
+          "index": 26,
+          "valid_input": true,
+          "native_heldout": 0.27765672861970425,
+          "branches": {
+            "photo": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 21,
+              "solver_failures": [
+                "not_converged_8_steps",
+                "not_converged_8_steps",
+                "not_converged_8_steps",
+                "not_converged_8_steps"
+              ],
+              "heldout": 0.27765672861970425,
+              "fallback": true,
+              "cost": null,
+              "newton_steps": null,
+              "hessian_eigen": null,
+              "pi": null
+            },
+            "joint": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 6,
+              "solver_failures": [
+                "not_converged_8_steps",
+                "not_converged_8_steps",
+                "not_converged_8_steps",
+                "not_converged_8_steps"
+              ],
+              "heldout": 0.27765672861970425,
+              "fallback": true,
+              "cost": null,
+              "newton_steps": null,
+              "hessian_eigen": null,
+              "pi": null
+            }
+          },
+          "seconds": 0.6853496999999997
+        },
+        {
+          "index": 54,
+          "valid_input": true,
+          "native_heldout": 0.6190653686307943,
+          "branches": {
+            "photo": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 20,
+              "solver_failures": [
+                "not_converged_8_steps",
+                "not_converged_8_steps",
+                "not_converged_8_steps",
+                "not_converged_8_steps"
+              ],
+              "heldout": 0.6190653686307943,
+              "fallback": true,
+              "cost": null,
+              "newton_steps": null,
+              "hessian_eigen": null,
+              "pi": null
+            },
+            "joint": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 4,
+              "solver_failures": [
+                "not_converged_8_steps",
+                "not_converged_8_steps",
+                "not_converged_8_steps",
+                "not_converged_8_steps"
+              ],
+              "heldout": 0.6190653686307943,
+              "fallback": true,
+              "cost": null,
+              "newton_steps": null,
+              "hessian_eigen": null,
+              "pi": null
+            }
+          },
+          "seconds": 0.6823848000000012
+        },
+        {
+          "index": 61,
+          "valid_input": true,
+          "native_heldout": 0.8128734223773715,
+          "branches": {
+            "photo": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 17,
+              "solver_failures": [
+                "not_converged_8_steps",
+                "not_converged_8_steps",
+                "not_converged_8_steps",
+                "not_converged_8_steps"
+              ],
+              "heldout": 0.8128734223773715,
+              "fallback": true,
+              "cost": null,
+              "newton_steps": null,
+              "hessian_eigen": null,
+              "pi": null
+            },
+            "joint": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 2,
+              "solver_failures": [
+                "not_converged_8_steps",
+                "line_search_or_trust_region"
+              ],
+              "heldout": 0.8128734223773715,
+              "fallback": true,
+              "cost": null,
+              "newton_steps": null,
+              "hessian_eigen": null,
+              "pi": null
+            }
+          },
+          "seconds": 0.521859199999998
+        },
+        {
+          "index": 65,
+          "valid_input": true,
+          "native_heldout": 0.2926966508681218,
+          "branches": {
+            "photo": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 10,
+              "solver_failures": [
+                "not_converged_8_steps",
+                "not_converged_8_steps",
+                "not_converged_8_steps",
+                "not_converged_8_steps"
+              ],
+              "heldout": 0.2926966508681218,
+              "fallback": true,
+              "cost": null,
+              "newton_steps": null,
+              "hessian_eigen": null,
+              "pi": null
+            },
+            "joint": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 3,
+              "solver_failures": [
+                "not_converged_8_steps",
+                "not_converged_8_steps",
+                "not_converged_8_steps"
+              ],
+              "heldout": 0.2926966508681218,
+              "fallback": true,
+              "cost": null,
+              "newton_steps": null,
+              "hessian_eigen": null,
+              "pi": null
+            }
+          },
+          "seconds": 0.6137806999999995
+        },
+        {
+          "index": 97,
+          "valid_input": true,
+          "native_heldout": null,
+          "branches": {
+            "photo": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 31,
+              "solver_failures": [
+                "not_converged_8_steps",
+                "not_converged_8_steps",
+                "not_converged_8_steps",
+                "not_converged_8_steps"
+              ],
+              "heldout": null,
+              "fallback": true,
+              "cost": null,
+              "newton_steps": null,
+              "hessian_eigen": null,
+              "pi": null
+            },
+            "joint": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 15,
+              "solver_failures": [
+                "not_converged_8_steps",
+                "not_converged_8_steps",
+                "not_converged_8_steps",
+                "not_converged_8_steps"
+              ],
+              "heldout": null,
+              "fallback": true,
+              "cost": null,
+              "newton_steps": null,
+              "hessian_eigen": null,
+              "pi": null
+            }
+          },
+          "seconds": 0.6851365999999999
+        },
+        {
+          "index": 117,
+          "valid_input": true,
+          "native_heldout": 0.6889944205105678,
+          "branches": {
+            "photo": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 17,
+              "solver_failures": [
+                "not_converged_8_steps",
+                "not_converged_8_steps",
+                "not_converged_8_steps",
+                "not_converged_8_steps"
+              ],
+              "heldout": 0.6889944205105678,
+              "fallback": true,
+              "cost": null,
+              "newton_steps": null,
+              "hessian_eigen": null,
+              "pi": null
+            },
+            "joint": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 4,
+              "solver_failures": [
+                "not_converged_8_steps",
+                "not_converged_8_steps",
+                "not_converged_8_steps",
+                "not_converged_8_steps"
+              ],
+              "heldout": 0.6889944205105678,
+              "fallback": true,
+              "cost": null,
+              "newton_steps": null,
+              "hessian_eigen": null,
+              "pi": null
+            }
+          },
+          "seconds": 0.6775147999999973
+        },
+        {
+          "index": 137,
+          "valid_input": true,
+          "native_heldout": 0.5172002406376095,
+          "branches": {
+            "photo": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 20,
+              "solver_failures": [
+                "not_converged_8_steps",
+                "not_converged_8_steps",
+                "not_converged_8_steps",
+                "not_converged_8_steps"
+              ],
+              "heldout": 0.5172002406376095,
+              "fallback": true,
+              "cost": null,
+              "newton_steps": null,
+              "hessian_eigen": null,
+              "pi": null
+            },
+            "joint": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 5,
+              "solver_failures": [
+                "not_converged_8_steps",
+                "not_converged_8_steps",
+                "not_converged_8_steps",
+                "not_converged_8_steps"
+              ],
+              "heldout": 0.5172002406376095,
+              "fallback": true,
+              "cost": null,
+              "newton_steps": null,
+              "hessian_eigen": null,
+              "pi": null
+            }
+          },
+          "seconds": 0.685387900000002
+        },
+        {
+          "index": 164,
+          "valid_input": true,
+          "native_heldout": null,
+          "branches": {
+            "photo": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 17,
+              "solver_failures": [
+                "not_converged_8_steps",
+                "not_converged_8_steps",
+                "not_converged_8_steps",
+                "not_converged_8_steps"
+              ],
+              "heldout": null,
+              "fallback": true,
+              "cost": null,
+              "newton_steps": null,
+              "hessian_eigen": null,
+              "pi": null
+            },
+            "joint": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 4,
+              "solver_failures": [
+                "line_search_or_trust_region",
+                "not_converged_8_steps",
+                "not_converged_8_steps",
+                "line_search_or_trust_region"
+              ],
+              "heldout": null,
+              "fallback": true,
+              "cost": null,
+              "newton_steps": null,
+              "hessian_eigen": null,
+              "pi": null
+            }
+          },
+          "seconds": 0.6594873000000021
+        },
+        {
+          "index": 166,
+          "valid_input": true,
+          "native_heldout": 1.3510381549932575,
+          "branches": {
+            "photo": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 20,
+              "solver_failures": [
+                "not_converged_8_steps",
+                "not_converged_8_steps",
+                "not_converged_8_steps",
+                "not_converged_8_steps"
+              ],
+              "heldout": 1.3510381549932575,
+              "fallback": true,
+              "cost": null,
+              "newton_steps": null,
+              "hessian_eigen": null,
+              "pi": null
+            },
+            "joint": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 9,
+              "solver_failures": [
+                "not_converged_8_steps",
+                "not_converged_8_steps",
+                "not_converged_8_steps",
+                "not_converged_8_steps"
+              ],
+              "heldout": 1.3510381549932575,
+              "fallback": true,
+              "cost": null,
+              "newton_steps": null,
+              "hessian_eigen": null,
+              "pi": null
+            }
+          },
+          "seconds": 0.7090794000000002
+        },
+        {
+          "index": 176,
+          "valid_input": true,
+          "native_heldout": 0.6504166839956198,
+          "branches": {
+            "photo": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 22,
+              "solver_failures": [
+                "not_converged_8_steps",
+                "not_converged_8_steps",
+                "not_converged_8_steps",
+                "not_converged_8_steps"
+              ],
+              "heldout": 0.6504166839956198,
+              "fallback": true,
+              "cost": null,
+              "newton_steps": null,
+              "hessian_eigen": null,
+              "pi": null
+            },
+            "joint": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 4,
+              "solver_failures": [
+                "not_converged_8_steps",
+                "not_converged_8_steps",
+                "not_converged_8_steps",
+                "line_search_or_trust_region"
+              ],
+              "heldout": 0.6504166839956198,
+              "fallback": true,
+              "cost": null,
+              "newton_steps": null,
+              "hessian_eigen": null,
+              "pi": null
+            }
+          },
+          "seconds": 0.710874399999998
+        },
+        {
+          "index": 233,
+          "valid_input": true,
+          "native_heldout": 0.5539634810898217,
+          "branches": {
+            "photo": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 16,
+              "solver_failures": [
+                "not_converged_8_steps",
+                "not_converged_8_steps",
+                "not_converged_8_steps",
+                "not_converged_8_steps"
+              ],
+              "heldout": 0.5539634810898217,
+              "fallback": true,
+              "cost": null,
+              "newton_steps": null,
+              "hessian_eigen": null,
+              "pi": null
+            },
+            "joint": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 3,
+              "solver_failures": [
+                "not_converged_8_steps",
+                "not_converged_8_steps",
+                "not_converged_8_steps"
+              ],
+              "heldout": 0.5539634810898217,
+              "fallback": true,
+              "cost": null,
+              "newton_steps": null,
+              "hessian_eigen": null,
+              "pi": null
+            }
+          },
+          "seconds": 0.6016401000000009
+        },
+        {
+          "index": 240,
+          "valid_input": true,
+          "native_heldout": null,
+          "branches": {
+            "photo": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 0,
+              "solver_failures": [],
+              "heldout": null,
+              "fallback": true,
+              "cost": null,
+              "newton_steps": null,
+              "hessian_eigen": null,
+              "pi": null
+            },
+            "joint": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 0,
+              "solver_failures": [],
+              "heldout": null,
+              "fallback": true,
+              "cost": null,
+              "newton_steps": null,
+              "hessian_eigen": null,
+              "pi": null
+            }
+          },
+          "seconds": 0.04227810000000076
+        },
+        {
+          "index": 252,
+          "valid_input": true,
+          "native_heldout": 0.415725502811104,
+          "branches": {
+            "photo": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 17,
+              "solver_failures": [
+                "line_search_or_trust_region",
+                "not_converged_8_steps",
+                "not_converged_8_steps",
+                "not_converged_8_steps"
+              ],
+              "heldout": 0.415725502811104,
+              "fallback": true,
+              "cost": null,
+              "newton_steps": null,
+              "hessian_eigen": null,
+              "pi": null
+            },
+            "joint": {
+              "reliable": true,
+              "count": 1,
+              "grid_minima": 3,
+              "solver_failures": [
+                "not_converged_8_steps",
+                "not_converged_8_steps"
+              ],
+              "heldout": 0.3422577252004807,
+              "fallback": false,
+              "cost": 3.515989196312868,
+              "newton_steps": 5,
+              "hessian_eigen": [
+                6.158713146155667,
+                8.38289917109051,
+                10296663.529971939
+              ],
+              "pi": [
+                -1.2022774257300448,
+                -0.7019546221489686,
+                0.5195735593425869
+              ]
+            }
+          },
+          "seconds": 0.5779861000000004
+        },
+        {
+          "index": 253,
+          "valid_input": true,
+          "native_heldout": null,
+          "branches": {
+            "photo": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 29,
+              "solver_failures": [
+                "not_converged_8_steps",
+                "not_converged_8_steps",
+                "not_converged_8_steps",
+                "not_converged_8_steps"
+              ],
+              "heldout": null,
+              "fallback": true,
+              "cost": null,
+              "newton_steps": null,
+              "hessian_eigen": null,
+              "pi": null
+            },
+            "joint": {
+              "reliable": true,
+              "count": 1,
+              "grid_minima": 6,
+              "solver_failures": [
+                "not_converged_8_steps",
+                "not_converged_8_steps",
+                "not_converged_8_steps"
+              ],
+              "heldout": null,
+              "fallback": false,
+              "cost": 3.7823611484720914,
+              "newton_steps": 7,
+              "hessian_eigen": [
+                5.18429081177116,
+                10.2205318143771,
+                10683049.729298102
+              ],
+              "pi": [
+                0.12382012264216578,
+                0.6052689493681191,
+                0.7475836905920883
+              ]
+            }
+          },
+          "seconds": 0.6807899000000006
+        },
+        {
+          "index": 281,
+          "valid_input": true,
+          "native_heldout": 0.4992038914909931,
+          "branches": {
+            "photo": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 20,
+              "solver_failures": [
+                "not_converged_8_steps",
+                "not_converged_8_steps",
+                "bilinear_cell_boundary",
+                "not_converged_8_steps"
+              ],
+              "heldout": 0.4992038914909931,
+              "fallback": true,
+              "cost": null,
+              "newton_steps": null,
+              "hessian_eigen": null,
+              "pi": null
+            },
+            "joint": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 3,
+              "solver_failures": [
+                "not_converged_8_steps",
+                "not_converged_8_steps",
+                "not_converged_8_steps"
+              ],
+              "heldout": 0.4992038914909931,
+              "fallback": true,
+              "cost": null,
+              "newton_steps": null,
+              "hessian_eigen": null,
+              "pi": null
+            }
+          },
+          "seconds": 0.6728965000000002
+        },
+        {
+          "index": 319,
+          "valid_input": true,
+          "native_heldout": 0.3722195847577706,
+          "branches": {
+            "photo": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 14,
+              "solver_failures": [
+                "not_converged_8_steps",
+                "not_converged_8_steps",
+                "not_converged_8_steps",
+                "not_converged_8_steps"
+              ],
+              "heldout": 0.3722195847577706,
+              "fallback": true,
+              "cost": null,
+              "newton_steps": null,
+              "hessian_eigen": null,
+              "pi": null
+            },
+            "joint": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 5,
+              "solver_failures": [
+                "not_converged_8_steps",
+                "not_converged_8_steps",
+                "not_converged_8_steps",
+                "not_converged_8_steps"
+              ],
+              "heldout": 0.3722195847577706,
+              "fallback": true,
+              "cost": null,
+              "newton_steps": null,
+              "hessian_eigen": null,
+              "pi": null
+            }
+          },
+          "seconds": 0.7039456000000044
+        },
+        {
+          "index": 338,
+          "valid_input": true,
+          "native_heldout": 0.4749518475987674,
+          "branches": {
+            "photo": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 20,
+              "solver_failures": [
+                "not_converged_8_steps",
+                "not_converged_8_steps",
+                "not_converged_8_steps",
+                "not_converged_8_steps"
+              ],
+              "heldout": 0.4749518475987674,
+              "fallback": true,
+              "cost": null,
+              "newton_steps": null,
+              "hessian_eigen": null,
+              "pi": null
+            },
+            "joint": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 5,
+              "solver_failures": [
+                "not_converged_8_steps",
+                "not_converged_8_steps",
+                "not_converged_8_steps",
+                "not_converged_8_steps"
+              ],
+              "heldout": 0.4749518475987674,
+              "fallback": true,
+              "cost": null,
+              "newton_steps": null,
+              "hessian_eigen": null,
+              "pi": null
+            }
+          },
+          "seconds": 0.7110169000000042
+        },
+        {
+          "index": 343,
+          "valid_input": true,
+          "native_heldout": null,
+          "branches": {
+            "photo": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 0,
+              "solver_failures": [],
+              "heldout": null,
+              "fallback": true,
+              "cost": null,
+              "newton_steps": null,
+              "hessian_eigen": null,
+              "pi": null
+            },
+            "joint": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 0,
+              "solver_failures": [],
+              "heldout": null,
+              "fallback": true,
+              "cost": null,
+              "newton_steps": null,
+              "hessian_eigen": null,
+              "pi": null
+            }
+          },
+          "seconds": 0.05150600000000338
+        },
+        {
+          "index": 345,
+          "valid_input": true,
+          "native_heldout": 0.8693449815091705,
+          "branches": {
+            "photo": {
+              "reliable": true,
+              "count": 1,
+              "grid_minima": 12,
+              "solver_failures": [
+                "not_converged_8_steps",
+                "not_converged_8_steps",
+                "not_converged_8_steps"
+              ],
+              "heldout": 0.3288469054145381,
+              "fallback": false,
+              "cost": 5.541025996669775,
+              "newton_steps": 5,
+              "hessian_eigen": [
+                5.458524111907762,
+                8.811625188125575,
+                10381702.464762324
+              ],
+              "pi": [
+                -0.07052351560466798,
+                -1.0143626682087123,
+                0.7256661700450292
+              ]
+            },
+            "joint": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 3,
+              "solver_failures": [
+                "not_converged_8_steps",
+                "not_converged_8_steps",
+                "not_converged_8_steps"
+              ],
+              "heldout": 0.8693449815091705,
+              "fallback": true,
+              "cost": null,
+              "newton_steps": null,
+              "hessian_eigen": null,
+              "pi": null
+            }
+          },
+          "seconds": 0.6005581999999947
+        },
+        {
+          "index": 349,
+          "valid_input": true,
+          "native_heldout": 0.9848369817275227,
+          "branches": {
+            "photo": {
+              "reliable": true,
+              "count": 1,
+              "grid_minima": 26,
+              "solver_failures": [
+                "line_search_or_trust_region",
+                "not_converged_8_steps",
+                "not_converged_8_steps"
+              ],
+              "heldout": 1.1268477418354212,
+              "fallback": false,
+              "cost": 8.299009959695333,
+              "newton_steps": 7,
+              "hessian_eigen": [
+                15.762187572618453,
+                25.725350049183426,
+                27341967.399697177
+              ],
+              "pi": [
+                0.615334093467322,
+                -0.7973666920896956,
+                0.49022554022276815
+              ]
+            },
+            "joint": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 9,
+              "solver_failures": [
+                "not_converged_8_steps",
+                "not_converged_8_steps",
+                "not_converged_8_steps",
+                "not_converged_8_steps"
+              ],
+              "heldout": 0.9848369817275227,
+              "fallback": true,
+              "cost": null,
+              "newton_steps": null,
+              "hessian_eigen": null,
+              "pi": null
+            }
+          },
+          "seconds": 0.6992860000000007
+        },
+        {
+          "index": 373,
+          "valid_input": true,
+          "native_heldout": 0.2905261673556261,
+          "branches": {
+            "photo": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 15,
+              "solver_failures": [
+                "not_converged_8_steps",
+                "not_converged_8_steps",
+                "not_converged_8_steps",
+                "not_converged_8_steps"
+              ],
+              "heldout": 0.2905261673556261,
+              "fallback": true,
+              "cost": null,
+              "newton_steps": null,
+              "hessian_eigen": null,
+              "pi": null
+            },
+            "joint": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 4,
+              "solver_failures": [
+                "not_converged_8_steps",
+                "not_converged_8_steps",
+                "not_converged_8_steps",
+                "not_converged_8_steps"
+              ],
+              "heldout": 0.2905261673556261,
+              "fallback": true,
+              "cost": null,
+              "newton_steps": null,
+              "hessian_eigen": null,
+              "pi": null
+            }
+          },
+          "seconds": 0.6956590000000062
+        },
+        {
+          "index": 379,
+          "valid_input": true,
+          "native_heldout": 1.1009882840776228,
+          "branches": {
+            "photo": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 29,
+              "solver_failures": [
+                "not_converged_8_steps",
+                "not_converged_8_steps",
+                "not_converged_8_steps",
+                "not_converged_8_steps"
+              ],
+              "heldout": 1.1009882840776228,
+              "fallback": true,
+              "cost": null,
+              "newton_steps": null,
+              "hessian_eigen": null,
+              "pi": null
+            },
+            "joint": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 14,
+              "solver_failures": [
+                "not_converged_8_steps",
+                "not_converged_8_steps",
+                "not_converged_8_steps",
+                "not_converged_8_steps"
+              ],
+              "heldout": 1.1009882840776228,
+              "fallback": true,
+              "cost": null,
+              "newton_steps": null,
+              "hessian_eigen": null,
+              "pi": null
+            }
+          },
+          "seconds": 0.7082258999999951
+        },
+        {
+          "index": 405,
+          "valid_input": true,
+          "native_heldout": null,
+          "branches": {
+            "photo": {
+              "reliable": true,
+              "count": 1,
+              "grid_minima": 20,
+              "solver_failures": [
+                "not_converged_8_steps",
+                "not_converged_8_steps",
+                "not_converged_8_steps"
+              ],
+              "heldout": null,
+              "fallback": false,
+              "cost": 1.1282888657745938,
+              "newton_steps": 4,
+              "hessian_eigen": [
+                6.274132921804062,
+                9.83536251526486,
+                12588155.914023442
+              ],
+              "pi": [
+                0.11980430856059061,
+                0.40291340731958325,
+                0.7350083861206513
+              ]
+            },
+            "joint": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 4,
+              "solver_failures": [
+                "not_converged_8_steps",
+                "not_converged_8_steps",
+                "not_converged_8_steps",
+                "not_converged_8_steps"
+              ],
+              "heldout": null,
+              "fallback": true,
+              "cost": null,
+              "newton_steps": null,
+              "hessian_eigen": null,
+              "pi": null
+            }
+          },
+          "seconds": 0.6648541000000066
+        },
+        {
+          "index": 429,
+          "valid_input": true,
+          "native_heldout": 0.4879908350340847,
+          "branches": {
+            "photo": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 18,
+              "solver_failures": [
+                "not_converged_8_steps",
+                "not_converged_8_steps",
+                "not_converged_8_steps",
+                "not_converged_8_steps"
+              ],
+              "heldout": 0.4879908350340847,
+              "fallback": true,
+              "cost": null,
+              "newton_steps": null,
+              "hessian_eigen": null,
+              "pi": null
+            },
+            "joint": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 3,
+              "solver_failures": [
+                "not_converged_8_steps",
+                "not_converged_8_steps",
+                "not_converged_8_steps"
+              ],
+              "heldout": 0.4879908350340847,
+              "fallback": true,
+              "cost": null,
+              "newton_steps": null,
+              "hessian_eigen": null,
+              "pi": null
+            }
+          },
+          "seconds": 0.6068822999999952
+        },
+        {
+          "index": 433,
+          "valid_input": true,
+          "native_heldout": 0.5621544067237524,
+          "branches": {
+            "photo": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 11,
+              "solver_failures": [
+                "not_converged_8_steps",
+                "not_converged_8_steps",
+                "not_converged_8_steps",
+                "not_converged_8_steps"
+              ],
+              "heldout": 0.5621544067237524,
+              "fallback": true,
+              "cost": null,
+              "newton_steps": null,
+              "hessian_eigen": null,
+              "pi": null
+            },
+            "joint": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 2,
+              "solver_failures": [
+                "not_converged_8_steps",
+                "not_converged_8_steps"
+              ],
+              "heldout": 0.5621544067237524,
+              "fallback": true,
+              "cost": null,
+              "newton_steps": null,
+              "hessian_eigen": null,
+              "pi": null
+            }
+          },
+          "seconds": 0.5412174000000007
+        },
+        {
+          "index": 455,
+          "valid_input": true,
+          "native_heldout": 0.7281994772139009,
+          "branches": {
+            "photo": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 20,
+              "solver_failures": [
+                "not_converged_8_steps",
+                "not_converged_8_steps",
+                "not_converged_8_steps",
+                "not_converged_8_steps"
+              ],
+              "heldout": 0.7281994772139009,
+              "fallback": true,
+              "cost": null,
+              "newton_steps": null,
+              "hessian_eigen": null,
+              "pi": null
+            },
+            "joint": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 3,
+              "solver_failures": [
+                "not_converged_8_steps",
+                "not_converged_8_steps",
+                "line_search_or_trust_region"
+              ],
+              "heldout": 0.7281994772139009,
+              "fallback": true,
+              "cost": null,
+              "newton_steps": null,
+              "hessian_eigen": null,
+              "pi": null
+            }
+          },
+          "seconds": 0.598771499999998
+        },
+        {
+          "index": 469,
+          "valid_input": true,
+          "native_heldout": 0.15258900333701864,
+          "branches": {
+            "photo": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 15,
+              "solver_failures": [
+                "not_converged_8_steps",
+                "not_converged_8_steps",
+                "not_converged_8_steps",
+                "not_converged_8_steps"
+              ],
+              "heldout": 0.15258900333701864,
+              "fallback": true,
+              "cost": null,
+              "newton_steps": null,
+              "hessian_eigen": null,
+              "pi": null
+            },
+            "joint": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 4,
+              "solver_failures": [
+                "not_converged_8_steps",
+                "not_converged_8_steps",
+                "not_converged_8_steps",
+                "not_converged_8_steps"
+              ],
+              "heldout": 0.15258900333701864,
+              "fallback": true,
+              "cost": null,
+              "newton_steps": null,
+              "hessian_eigen": null,
+              "pi": null
+            }
+          },
+          "seconds": 0.6978892999999999
+        },
+        {
+          "index": 478,
+          "valid_input": true,
+          "native_heldout": 0.0824163124241497,
+          "branches": {
+            "photo": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 12,
+              "solver_failures": [
+                "not_converged_8_steps",
+                "not_converged_8_steps",
+                "not_converged_8_steps",
+                "not_converged_8_steps"
+              ],
+              "heldout": 0.0824163124241497,
+              "fallback": true,
+              "cost": null,
+              "newton_steps": null,
+              "hessian_eigen": null,
+              "pi": null
+            },
+            "joint": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 2,
+              "solver_failures": [
+                "not_converged_8_steps",
+                "not_converged_8_steps"
+              ],
+              "heldout": 0.0824163124241497,
+              "fallback": true,
+              "cost": null,
+              "newton_steps": null,
+              "hessian_eigen": null,
+              "pi": null
+            }
+          },
+          "seconds": 0.5344385000000003
+        },
+        {
+          "index": 485,
+          "valid_input": true,
+          "native_heldout": 1.0553484036128307,
+          "branches": {
+            "photo": {
+              "reliable": true,
+              "count": 1,
+              "grid_minima": 25,
+              "solver_failures": [
+                "not_converged_8_steps",
+                "not_converged_8_steps",
+                "not_converged_8_steps"
+              ],
+              "heldout": 0.8926664624852328,
+              "fallback": false,
+              "cost": 8.57400004569484,
+              "newton_steps": 8,
+              "hessian_eigen": [
+                5.395699862007216,
+                15.115125926821603,
+                15331181.619619776
+              ],
+              "pi": [
+                0.06388191496908882,
+                -1.7710331881224957,
+                0.848946000206351
+              ]
+            },
+            "joint": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 5,
+              "solver_failures": [
+                "not_converged_8_steps",
+                "not_converged_8_steps",
+                "not_converged_8_steps",
+                "not_converged_8_steps"
+              ],
+              "heldout": 1.0553484036128307,
+              "fallback": true,
+              "cost": null,
+              "newton_steps": null,
+              "hessian_eigen": null,
+              "pi": null
+            }
+          },
+          "seconds": 0.6993677000000034
+        }
+      ],
+      "hashes": {
+        "trace": "503c96ac7633b5689b4f0b3b010720942a75372fb20b1e8dc2a0ef6eff1aef8b",
+        "metadata": "14756654c12ba281ae1a0f018386c1334ddf2c0840828ab5cc6b34e194f4b74e",
+        "images": [
+          "3e07c2d1d740d2aee03d06eaa312699ddd26a6523db68f8e81bf028c8317b8ea",
+          "cecd92c9dc51c21df7d9b7e845e9d4055e03ddb632ca3bc1b9b5aa44de35a9f9",
+          "d6b02ba41aad89620f5c97adc30768c9752dc65e60503b69a4a540f57ce59955"
+        ],
+        "cameras": "9dd012bebe2dea0514af3f784dbb8fff23354fd7e9476ae6f9c668c40162d06b",
+        "extrinsics": "93a27c4b9fb598996665436de9850511b28533c7d94835d4d754c2887aad40a0"
+      },
+      "numerical_check": null,
+      "source_commit": "b63b967c4d95e923ef4961ae16b16bdc2a035ec4",
+      "normal_semantics": "camera-space oriented geometric direction, host buffer xyz; not RGB/rendered normal",
+      "trace_model_sha256": "d1df2e5ac7048dc2ba3b76197bb252d59134faf4220242bfb3e39238f6e5e0d8",
+      "summary": {
+        "total_rays": 32,
+        "native_heldout_valid": 24,
+        "photo_reliable": 6,
+        "joint_reliable": 2,
+        "photo_fallback": 26,
+        "joint_fallback": 30,
+        "seconds_per_ray_mean": 0.6171122250000004,
+        "heldout": {
+          "native": {
+            "valid_count": 24,
+            "denominator": 32,
+            "mean": 0.6003933492570779,
+            "median": 0.5580589439067871
+          },
+          "photo": {
+            "valid_count": 24,
+            "denominator": 32,
+            "mean": 0.5742632406085774,
+            "median": 0.5101432204803085
+          },
+          "joint": {
+            "valid_count": 24,
+            "denominator": 32,
+            "mean": 0.5973321918566352,
+            "median": 0.5580589439067871
+          }
+        },
+        "common_evaluable": 24,
+        "joint_reliable_improved": 1,
+        "gate_passed": false
+      }
+    }
+  ],
+  "gate_passed": false,
+  "limitations": "The observed images are training views of the frozen original model; view2 is held out from the local solver only. No GT reconstruction metric or Gaussian parameter backpropagation. Host warp_patch_ncc uses squared signed correlation and a 5e-6 variance gate, whereas this probe uses signed 1-ZNCC on grayscale with variance >1e-8; native, photo and joint are compared under this same probe metric. Local image derivatives are valid only inside the active bilinear cells; points within 1e-6 pixel of a cell edge are rejected. Implicit-solution derivatives with respect to recorded depths/weights remain unverified. The 32-ray denominator is retained; native view2-valid rays define a fixed common comparison set before either optimization, while unavailable costs remain null."
+}
