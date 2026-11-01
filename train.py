@@ -47,7 +47,8 @@ from utils.loss_utils import (
 from training_depth_plugin import (ABLog, add_step_metrics, file_digest,
                                    parameter_digest, parameter_metrics, route_depth,
                                    reset_warm_start_radii, should_log_parameters,
-                                   validate_ab_output_dir, summarize_candidate_audit)
+                                   validate_ab_output_dir, summarize_candidate_audit,
+                                   record_depth_route_on_dataset)
 
 
 def training(
@@ -71,6 +72,7 @@ def training(
     if ab_run_id:
         validate_ab_output_dir(dataset.model_path)
     first_iter = 0
+    record_depth_route_on_dataset(dataset, depth_route, depth_target, candidate_selection)
     tb_writer = prepare_output_and_logger(dataset)
     gaussians = GaussianModel(dataset.sh_degree)
     scene = Scene(dataset, gaussians)
