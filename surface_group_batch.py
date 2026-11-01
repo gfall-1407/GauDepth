@@ -18,10 +18,33 @@ def native_sample_xy(points_world, camera):
     divides by homogeneous w+1e-7 before ndc2Pix(v,S)=((v+1)S-1)/2.
     """
     matrix = camera.full_proj_transform
-    hom = points_world @ matrix[:3, :] + matrix[3, :]
-    ndc_xy = hom[..., :2] / (hom[..., 3:4] + 1e-7)
+    finite_points = torch.isfinite(points_world).all(-1)
+    safe_points = torch.where(torch.isfinite(points_world), points_world, 0.)
+    hom = safe_points @ matrix[:3, :] + matrix[3, :]
+    denominator = hom[..., 3:4] + 1e-7
+    valid = (finite_points & torch.isfinite(hom).all(-1) &
+             torch.isfinite(denominator[..., 0]) & (denominator[..., 0] != 0))
+    safe_denominator = torch.where(valid[..., None], denominator, 1.)
+    ndc_xy = hom[..., :2] / safe_denominator
     size = ndc_xy.new_tensor([camera.image_width, camera.image_height])
-    return ((ndc_xy + 1.) * size - 1.) * .5
+    pixels = ((ndc_xy + 1.) * size - 1.) * .5
+    return torch.where(valid[..., None], pixels, torch.full_like(pixels, float('nan')))
+
+
+def compose_sample_points(candidate_z, query_xy, candidate_mask, native_points, camera):
+    """Construct continuous candidate camera points without contaminating fallback."""
+    if (candidate_z.ndim != 1 or query_xy.shape != (candidate_z.numel(), 2) or
+            candidate_mask.shape != candidate_z.shape or
+            native_points.numel() != candidate_z.numel() * 3):
+        raise ValueError('sample candidate shape mismatch')
+    choose = candidate_mask.bool() & torch.isfinite(query_xy).all(-1) & torch.isfinite(candidate_z)
+    safe_xy = torch.where(choose[:, None], query_xy, 0.)
+    safe_z = torch.where(choose, candidate_z, 1.)
+    ray = torch.cat(((safe_xy - safe_xy.new_tensor([camera.Cx, camera.Cy])) /
+                     safe_xy.new_tensor([camera.Fx, camera.Fy]),
+                     torch.ones_like(safe_xy[:, :1])), dim=1)
+    point = (safe_z[:, None] * ray).reshape_as(native_points)
+    return torch.where(choose.reshape(native_points.shape[:-1])[..., None], point, native_points)
 
 
 def grouped_depth_from_support(pc, camera, xy, ids, alpha, count, overflow,

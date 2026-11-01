@@ -268,17 +268,13 @@ def sample_depth(points3D, viewpoint_camera, pc : GaussianModel, pipe : torch.Te
     depth, inside = sampled_outputs[:2]
     candidate_audit = None
     if depth_support:
-        from surface_group_batch import grouped_depth_from_support
+        from surface_group_batch import compose_sample_points, grouped_depth_from_support
         ids, native_alpha, count, overflow = sampled_outputs[2:]
         candidate_z, candidate_audit = grouped_depth_from_support(
             pc, viewpoint_camera, support_xy, ids, native_alpha, count, overflow,
             depth[..., 2].reshape(-1))
-        ray = torch.cat(((support_xy - support_xy.new_tensor([viewpoint_camera.Cx, viewpoint_camera.Cy])) /
-                         support_xy.new_tensor([viewpoint_camera.Fx, viewpoint_camera.Fy]),
-                         torch.ones_like(support_xy[:, :1])), dim=1)
-        candidate_point = (candidate_z[:, None] * ray).reshape_as(depth)
-        use_candidate = candidate_audit['candidate'].reshape_as(inside)
-        depth = torch.where(use_candidate[..., None], candidate_point, depth)
+        depth = compose_sample_points(candidate_z, support_xy, candidate_audit['candidate'],
+                                      depth, viewpoint_camera)
         torch.cuda.synchronize(means3D.device)
         candidate_elapsed_ms = (time.perf_counter() - candidate_start) * 1000
 

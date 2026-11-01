@@ -1,17 +1,92 @@
 import sys
 import unittest
+import importlib.util
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import patch
 
 import torch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from surface_group_batch import grouped_depth_from_support, native_sample_xy
+from surface_group_batch import compose_sample_points, grouped_depth_from_support, native_sample_xy
 from surface_group_reference import one_ray_reference
 from training_depth_plugin import route_depth, summarize_candidate_audit
 
 
 class BatchDepthTest(unittest.TestCase):
+    def test_full_sample_depth_wrapper_fallback_backprop(self):
+        from utils.graphics_utils import getProjectionMatrix
+        import types
+        scene_module = types.ModuleType('scene')
+        model_module = types.ModuleType('scene.gaussian_model')
+        model_module.GaussianModel = object
+        diff_module = types.ModuleType('diff_gaussian_rasterization')
+        diff_module.GaussianRasterizationSettings = lambda **kwargs: SimpleNamespace(**kwargs)
+        native_points = torch.tensor([[[.1, .2, 1.3], [.3, .4, 1.4]]], requires_grad=True)
+
+        class FakeRasterizer:
+            def __init__(self, raster_settings):
+                self.settings = raster_settings
+
+            def sample_depth(self, **kwargs):
+                self.xy = kwargs['support_xy']
+                return (native_points, torch.tensor([[False, False]]),
+                        torch.full((2, 2), -1, dtype=torch.int32),
+                        torch.zeros((2, 2)), torch.zeros(2, dtype=torch.int32),
+                        torch.zeros(2, dtype=torch.bool))
+
+        diff_module.GaussianRasterizer = FakeRasterizer
+        renderer_path = Path(__file__).resolve().parents[1] / 'gaussian_renderer' / '__init__.py'
+        spec = importlib.util.spec_from_file_location('renderer_wrapper_test', renderer_path)
+        module = importlib.util.module_from_spec(spec)
+        with patch.dict(sys.modules, {'scene': scene_module,
+                                      'scene.gaussian_model': model_module,
+                                      'diff_gaussian_rasterization': diff_module}):
+            spec.loader.exec_module(module)
+        pc = SimpleNamespace(get_xyz=torch.tensor([[-.01, 0., 1.], [.01, 0., 1.]]),
+                             get_rotation=torch.tensor([[1., 0., 0., 0.]] * 2),
+                             get_scaling=torch.tensor([[.04, .04, .01]] * 2),
+                             get_scaling_with_3D_filter=torch.tensor([[.04, .04, .01]] * 2),
+                             get_opacity_with_3D_filter=torch.full((2, 1), .4),
+                             active_sh_degree=0)
+        camera = SimpleNamespace(FoVx=1., FoVy=1., image_height=1, image_width=2,
+                                 world_view_transform=torch.eye(4),
+                                 full_proj_transform=getProjectionMatrix(.01, 100., 1., 1.).T,
+                                 camera_center=torch.zeros(3), Fx=1., Fy=1., Cx=.5, Cy=0.)
+        world = torch.tensor([[[0., 0., -1e-7], [float('nan'), 0., 1.]]],
+                             requires_grad=True)
+        pipe = SimpleNamespace(debug=False, compute_cov3D_python=False)
+        with patch.object(torch.cuda, 'synchronize', lambda *args: None), \
+             patch.object(torch.cuda, 'max_memory_allocated', lambda *args: 0):
+            result = module.sample_depth(world, camera, pc, pipe, 1., depth_support=True)
+        torch.testing.assert_close(result['sampled_depth'], native_points)
+        self.assertFalse(result['candidate_audit']['candidate'].any())
+        result['sampled_depth'].sum().backward()
+        self.assertTrue(torch.isfinite(world.grad).all())
+        self.assertEqual(world.grad.tolist(), [[[0.] * 3] * 2])
+        self.assertEqual(native_points.grad.tolist(), [[[1.] * 3] * 2])
+
+    def test_sample_wrapper_invalid_projection_and_fallback_backprop(self):
+        from utils.graphics_utils import getProjectionMatrix
+        projection = getProjectionMatrix(.01, 100., 1., 1.).T
+        camera = SimpleNamespace(full_proj_transform=projection,
+                                 image_width=32, image_height=32,
+                                 Fx=16., Fy=16., Cx=15.5, Cy=15.5)
+        world = torch.tensor([[0., 0., -1e-7], [float('nan'), 0., 1.]],
+                             requires_grad=True)
+        xy = native_sample_xy(world, camera)
+        self.assertFalse(torch.isfinite(xy).all())
+        native_points = torch.tensor([[[.1, .2, 1.3], [.3, .4, 1.4]]], requires_grad=True)
+        candidate_z = native_points[..., 2].reshape(-1)
+        output = compose_sample_points(candidate_z, xy, torch.tensor([False, False]),
+                                       native_points, camera)
+        torch.testing.assert_close(output, native_points)
+        output.sum().backward()
+        self.assertTrue(torch.isfinite(world.grad).all())
+        self.assertEqual(world.grad.tolist(), [[0.] * 3] * 2)
+        self.assertTrue(torch.isfinite(native_points.grad).all())
+        self.assertEqual(native_points.grad.tolist(), [[[1.] * 3] * 2])
+
     def test_empty_schema_and_fallback_gradient(self):
         pc = SimpleNamespace(get_xyz=torch.empty((0, 3)),
                              get_rotation=torch.empty((0, 4)), get_scaling=torch.empty((0, 3)))
