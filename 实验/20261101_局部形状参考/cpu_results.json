@@ -1,0 +1,3075 @@
+{
+  "definition": "normal-guided Gaussian log-density stationary branches",
+  "source_sha256": "6a6e3af3f07b1a94ae31d9c5a689ede7ac7e2e9ed52ae0057204a0f8624299e6",
+  "python_version": "3.13.5 | packaged by Anaconda, Inc. | (main, Jun 12 2025, 16:37:03) [MSC v.1929 64 bit (AMD64)]",
+  "host_baseline_commit": "8474727dd1c1f4fee77a3dc02a6cbc0b38075f21",
+  "visibility_selection": "not implemented; separate research interface",
+  "root_search": "finite sign-change grid plus 55 bisection steps; not exhaustive",
+  "controlled": {
+    "single_plane": {
+      "true_camera_z": 1.6326530612244898,
+      "roots": [
+        {
+          "z": 1.6326530612244898,
+          "curvature": -169.7794522298772,
+          "Fz": -166.38386318527967,
+          "stable": true,
+          "log_density": 0.17852058698108442,
+          "guide_normal": [
+            0.6,
+            0.0,
+            0.8
+          ],
+          "surface_normal": [
+            -0.6,
+            2.790553409501679e-17,
+            -0.8000000000000002
+          ],
+          "eigen_gap": 0.9686610245449457,
+          "effective_support": 3.2709424900472914
+        }
+      ]
+    },
+    "resolved_double_layer": {
+      "sigma": 0.1,
+      "separation": 0.3,
+      "roots": [
+        {
+          "z": 1.8536756261390313,
+          "curvature": -89.1082238580463,
+          "Fz": -89.1082238580463,
+          "stable": true,
+          "log_density": -0.6814949292282411,
+          "guide_normal": [
+            0.0,
+            0.0,
+            1.0
+          ],
+          "surface_normal": [
+            0.0,
+            0.0,
+            -1.0
+          ],
+          "eigen_gap": 0.9375000000000001,
+          "effective_support": 1.0248043091661039
+        },
+        {
+          "z": 2.0,
+          "curvature": 124.9999999999997,
+          "Fz": 124.9999999999997,
+          "stable": false,
+          "log_density": -1.1249999999999982,
+          "guide_normal": [
+            0.0,
+            0.0,
+            1.0
+          ],
+          "surface_normal": [
+            -0.0,
+            -0.0,
+            -1.0
+          ],
+          "eigen_gap": 0.9375,
+          "effective_support": 2.0
+        },
+        {
+          "z": 2.1463243738609687,
+          "curvature": -89.1082238580463,
+          "Fz": -89.1082238580463,
+          "stable": true,
+          "log_density": -0.6814949292282411,
+          "guide_normal": [
+            0.0,
+            0.0,
+            1.0
+          ],
+          "surface_normal": [
+            0.0,
+            0.0,
+            -1.0
+          ],
+          "eigen_gap": 0.9375000000000001,
+          "effective_support": 1.0248043091661039
+        }
+      ]
+    },
+    "unresolved_double_layer": {
+      "sigma": 0.1,
+      "separation": 0.1,
+      "roots": [
+        {
+          "z": 2.0,
+          "curvature": -75.00000000000006,
+          "Fz": -75.00000000000006,
+          "stable": true,
+          "log_density": -0.12499999999999967,
+          "guide_normal": [
+            0.0,
+            0.0,
+            1.0
+          ],
+          "surface_normal": [
+            0.0,
+            0.0,
+            -1.0
+          ],
+          "eigen_gap": 0.9375,
+          "effective_support": 2.0
+        }
+      ],
+      "verdict": "stable root lies on neither input plane"
+    },
+    "unequal_double_layer": {
+      "amplitude_ratio": 0.01,
+      "sigma": 0.1,
+      "separation_3sigma_roots": [
+        {
+          "z": 2.149966643352692,
+          "curvature": -99.8999411847369,
+          "Fz": -99.8999411847369,
+          "stable": true,
+          "log_density": -0.6930360411869476,
+          "guide_normal": [
+            0.0,
+            0.0,
+            1.0
+          ],
+          "surface_normal": [
+            0.0,
+            0.0,
+            -0.9999999999999999
+          ],
+          "eigen_gap": 0.9375,
+          "effective_support": 1.0002224023746247
+        }
+      ],
+      "separation_5sigma_roots": [
+        {
+          "z": 1.7501880219186816,
+          "curvature": -99.0602439290101,
+          "Fz": -99.0602439290101,
+          "stable": true,
+          "log_density": -5.297943019600553,
+          "guide_normal": [
+            0.0,
+            0.0,
+            1.0
+          ],
+          "surface_normal": [
+            0.0,
+            0.0,
+            -1.0
+          ],
+          "eigen_gap": 0.9374999999999999,
+          "effective_support": 1.0007523704925825
+        },
+        {
+          "z": 1.8887608264499267,
+          "curvature": 401.25846267896526,
+          "Fz": 401.25846267896526,
+          "stable": false,
+          "log_density": -5.935977885545168,
+          "guide_normal": [
+            0.0,
+            0.0,
+            1.0
+          ],
+          "surface_normal": [
+            -0.0,
+            -0.0,
+            -1.0
+          ],
+          "eigen_gap": 0.9375,
+          "effective_support": 1.669467950813103
+        },
+        {
+          "z": 2.2499999813667175,
+          "curvature": -99.99990683359084,
+          "Fz": -99.99990683359084,
+          "stable": true,
+          "log_density": -0.6931471432933968,
+          "guide_normal": [
+            0.0,
+            0.0,
+            1.0
+          ],
+          "surface_normal": [
+            0.0,
+            0.0,
+            -1.0
+          ],
+          "eigen_gap": 0.9375,
+          "effective_support": 1.0000000745331328
+        }
+      ],
+      "verdict": "weak branch lost at 3sigma, present at 5sigma; 2sigma threshold only applies to symmetric case"
+    },
+    "low_amplitude": {
+      "multiplier": 1e-09,
+      "roots": [
+        {
+          "z": 1.6326530612244898,
+          "curvature": -169.77945222987722,
+          "Fz": -166.38386318527967,
+          "stable": true,
+          "log_density": -20.544745249965327,
+          "guide_normal": [
+            0.6,
+            0.0,
+            0.8
+          ],
+          "surface_normal": [
+            -0.6,
+            2.7333353460795108e-17,
+            -0.8000000000000002
+          ],
+          "eigen_gap": 0.9686610245449458,
+          "effective_support": 3.2709424900472928
+        }
+      ],
+      "verdict": "root has no absolute opacity confidence"
+    },
+    "weak_front_floater": {
+      "amplitude": 0.005,
+      "roots": [
+        {
+          "z": 1.0,
+          "curvature": -2500.0,
+          "Fz": -2500.0,
+          "stable": true,
+          "log_density": -5.298317366548036,
+          "guide_normal": [
+            0.0,
+            0.0,
+            1.0
+          ],
+          "surface_normal": [
+            0.0,
+            0.0,
+            -1.0
+          ],
+          "eigen_gap": 0.9822222222222222,
+          "effective_support": 1.0
+        },
+        {
+          "z": 1.1592593206689723,
+          "curvature": 32955.5143409854,
+          "Fz": 32955.5143409854,
+          "stable": false,
+          "log_density": -35.25602420751321,
+          "guide_normal": [
+            0.0,
+            0.0,
+            1.0
+          ],
+          "surface_normal": [
+            -0.0,
+            -0.0,
+            -1.0
+          ],
+          "eigen_gap": 0.9452971894010358,
+          "effective_support": 1.4042978735698766
+        },
+        {
+          "z": 2.0,
+          "curvature": -99.99999999999999,
+          "Fz": -99.99999999999999,
+          "stable": true,
+          "log_density": -0.10536051565782628,
+          "guide_normal": [
+            0.0,
+            0.0,
+            1.0
+          ],
+          "surface_normal": [
+            0.0,
+            0.0,
+            -1.0
+          ],
+          "eigen_gap": 0.9375,
+          "effective_support": 1.0
+        }
+      ],
+      "verdict": "local geometry alone cannot select visible branch"
+    },
+    "isotropic_rejected": true,
+    "varying_normal": {
+      "root": 1.983064328959116,
+      "guide_surface_normal_angle_degrees": 24.558227103609237,
+      "rigid_transform_root_error": 0.0,
+      "spatial_derivative_relative_error": 2.055766208743156e-09,
+      "parameter_derivatives": [
+        {
+          "index": 0,
+          "parameter": "center",
+          "axis": 0,
+          "implicit": -0.2642289802831242,
+          "root_finite_difference": -0.26422897951849933,
+          "relative_error": 2.8937963678545328e-09
+        },
+        {
+          "index": 0,
+          "parameter": "center",
+          "axis": 2,
+          "implicit": -0.35620240035904616,
+          "root_finite_difference": -0.3562024033731958,
+          "relative_error": 8.461901501922085e-09
+        },
+        {
+          "index": 1,
+          "parameter": "log_amplitude",
+          "axis": 0,
+          "implicit": 0.09802639029167179,
+          "root_finite_difference": 0.09802639029388159,
+          "relative_error": 2.2542927260473104e-11
+        },
+        {
+          "index": 0,
+          "parameter": "log_scale",
+          "axis": 0,
+          "implicit": -0.07132107031060723,
+          "root_finite_difference": -0.07132107031626589,
+          "relative_error": 7.934056619952312e-11
+        },
+        {
+          "index": 0,
+          "parameter": "log_scale",
+          "axis": 2,
+          "implicit": 0.04894552022901407,
+          "root_finite_difference": 0.04894552021461606,
+          "relative_error": 2.941640112151325e-10
+        },
+        {
+          "index": 1,
+          "parameter": "rotation",
+          "axis": 1,
+          "implicit": 0.19717931321172036,
+          "root_finite_difference": 0.19717931321050483,
+          "relative_error": 6.164580141354309e-12
+        }
+      ],
+      "query_ray_x_derivative": {
+        "implicit": 1.4791857319754456,
+        "finite_difference": 1.479185706876329
+      }
+    }
+  },
+  "real_shape_diagnostic": {
+    "capture_path": "C:\\Users\\guofa\\Desktop\\GauDepth\\G1_20261101_scan37_7000_view0024_support.npz",
+    "capture_sha256": "d73c5b38a6be9f07ffababe33f9c6c0fe4286162dd301ef259bffd8f116530e0",
+    "interpretation": "shape/accepted-contribution diagnostic only; unfiltered scales; no real density evaluation",
+    "projection_bound": "maximum overlapping projected ellipsoid intervals; necessary, not sufficient, for common 3D support",
+    "high_opacity": {
+      "count": 883,
+      "fields": {
+        "coherence": {
+          "mean": 0.7965873828953715,
+          "q10": 0.55952581260818,
+          "median": 0.8490251071212717,
+          "q90": 0.9580469699225822
+        },
+        "cover1": {
+          "mean": 0.43313476461303146,
+          "q10": 0.26382448866206176,
+          "median": 0.41219651832343396,
+          "q90": 0.6351318179415024
+        },
+        "cover2": {
+          "mean": 0.5926667733235027,
+          "q10": 0.39045937262689484,
+          "median": 0.5794496250704214,
+          "q90": 0.8213985459327778
+        },
+        "mass_flat": {
+          "mean": 0.8545975215690232,
+          "q10": 0.542857361244059,
+          "median": 0.949596689984198,
+          "q90": 0.9999801419862016
+        },
+        "effective_count": {
+          "mean": 15.74426912837496,
+          "q10": 7.46526174021381,
+          "median": 14.154659959819659,
+          "q90": 25.559479265454993
+        }
+      }
+    },
+    "high_opacity_coherent": {
+      "count": 484,
+      "fields": {
+        "coherence": {
+          "mean": 0.9265280693377799,
+          "q10": 0.8672811545658174,
+          "median": 0.9384338593956979,
+          "q90": 0.9638890380559111
+        },
+        "cover1": {
+          "mean": 0.43525153883929923,
+          "q10": 0.2805549512726919,
+          "median": 0.4081285207632743,
+          "q90": 0.6282834908398456
+        },
+        "cover2": {
+          "mean": 0.5998660187823764,
+          "q10": 0.4133528770524114,
+          "median": 0.5794985309685792,
+          "q90": 0.8123052836776069
+        },
+        "mass_flat": {
+          "mean": 0.9232079269567887,
+          "q10": 0.6805235720025408,
+          "median": 0.9985292740770619,
+          "q90": 0.9999999999999998
+        },
+        "effective_count": {
+          "mean": 14.507494589724617,
+          "q10": 7.577855386497666,
+          "median": 13.9474718761841,
+          "q90": 21.361265724299837
+        }
+      }
+    },
+    "finite_ray_candidates": {
+      "selection": "64 evenly spaced capture-order rays among opacity>=0.9; all positive shortest-axis plane intersections",
+      "interpretation": "geometry-only finite candidate coverage, not density-ridge roots or depth accuracy",
+      "summary": {
+        "best_1sigma": {
+          "median_mass": 0.12828378870085858,
+          "median_effective_members": 1.0,
+          "rays_with_at_least_two_members": 10
+        },
+        "best_2sigma": {
+          "median_mass": 0.257977305297744,
+          "median_effective_members": 1.9583994311206325,
+          "rays_with_at_least_two_members": 53
+        }
+      },
+      "rays": [
+        {
+          "flat_pixel": 31456,
+          "accepted": 111,
+          "candidate_count": 111,
+          "best_1sigma": {
+            "z": 4.532115723247059,
+            "mass": 0.11296387938226103,
+            "members": 1,
+            "effective_members": 1.0
+          },
+          "best_2sigma": {
+            "z": 4.539410978790989,
+            "mass": 0.2381464726559914,
+            "members": 6,
+            "effective_members": 4.304253870911093
+          },
+          "native_expected_coverage": [
+            {
+              "mass": 0,
+              "members": 0,
+              "effective_members": 0.0
+            },
+            {
+              "mass": 0,
+              "members": 0,
+              "effective_members": 0.0
+            }
+          ],
+          "native_median_coverage": [
+            {
+              "mass": 0,
+              "members": 0,
+              "effective_members": 0.0
+            },
+            {
+              "mass": 0.07894707067701075,
+              "members": 1,
+              "effective_members": 1.0
+            }
+          ]
+        },
+        {
+          "flat_pixel": 47648,
+          "accepted": 83,
+          "candidate_count": 83,
+          "best_1sigma": {
+            "z": 4.458919828059013,
+            "mass": 0.19066955467509894,
+            "members": 1,
+            "effective_members": 1.0
+          },
+          "best_2sigma": {
+            "z": 4.449523705532728,
+            "mass": 0.27769127248789266,
+            "members": 2,
+            "effective_members": 1.8279506556941598
+          },
+          "native_expected_coverage": [
+            {
+              "mass": 0,
+              "members": 0,
+              "effective_members": 0.0
+            },
+            {
+              "mass": 0,
+              "members": 0,
+              "effective_members": 0.0
+            }
+          ],
+          "native_median_coverage": [
+            {
+              "mass": 0.19066955467509894,
+              "members": 1,
+              "effective_members": 1.0
+            },
+            {
+              "mass": 0.19066955467509894,
+              "members": 1,
+              "effective_members": 1.0
+            }
+          ]
+        },
+        {
+          "flat_pixel": 55655,
+          "accepted": 107,
+          "candidate_count": 107,
+          "best_1sigma": {
+            "z": 4.23526186913734,
+            "mass": 0.20052880084115574,
+            "members": 1,
+            "effective_members": 1.0
+          },
+          "best_2sigma": {
+            "z": 4.242811189302518,
+            "mass": 0.3023929872744916,
+            "members": 3,
+            "effective_members": 1.9146655792313745
+          },
+          "native_expected_coverage": [
+            {
+              "mass": 0,
+              "members": 0,
+              "effective_members": 0.0
+            },
+            {
+              "mass": 0,
+              "members": 0,
+              "effective_members": 0.0
+            }
+          ],
+          "native_median_coverage": [
+            {
+              "mass": 0.20052880084115574,
+              "members": 1,
+              "effective_members": 1.0
+            },
+            {
+              "mass": 0.20052880084115574,
+              "members": 1,
+              "effective_members": 1.0
+            }
+          ]
+        },
+        {
+          "flat_pixel": 60463,
+          "accepted": 130,
+          "candidate_count": 130,
+          "best_1sigma": {
+            "z": 4.096463806308472,
+            "mass": 0.06067429106109123,
+            "members": 1,
+            "effective_members": 1.0
+          },
+          "best_2sigma": {
+            "z": 4.090910923515004,
+            "mass": 0.15394504657149985,
+            "members": 4,
+            "effective_members": 3.0393423936721575
+          },
+          "native_expected_coverage": [
+            {
+              "mass": 0.06067429106109123,
+              "members": 1,
+              "effective_members": 1.0
+            },
+            {
+              "mass": 0.06067429106109123,
+              "members": 1,
+              "effective_members": 1.0
+            }
+          ],
+          "native_median_coverage": [
+            {
+              "mass": 0,
+              "members": 0,
+              "effective_members": 0.0
+            },
+            {
+              "mass": 0.11793761675274872,
+              "members": 2,
+              "effective_members": 1.9658547926386698
+            }
+          ]
+        },
+        {
+          "flat_pixel": 65902,
+          "accepted": 122,
+          "candidate_count": 122,
+          "best_1sigma": {
+            "z": 4.033538937482566,
+            "mass": 0.17632249008355716,
+            "members": 2,
+            "effective_members": 1.6465980109907676
+          },
+          "best_2sigma": {
+            "z": 4.032819241643928,
+            "mass": 0.25809100480101776,
+            "members": 6,
+            "effective_members": 3.1253323475934853
+          },
+          "native_expected_coverage": [
+            {
+              "mass": 0.17632249008355716,
+              "members": 2,
+              "effective_members": 1.6465980109907676
+            },
+            {
+              "mass": 0.24163737573841432,
+              "members": 4,
+              "effective_members": 2.7740324407505663
+            }
+          ],
+          "native_median_coverage": [
+            {
+              "mass": 0,
+              "members": 0,
+              "effective_members": 0.0
+            },
+            {
+              "mass": 0.042830363616521955,
+              "members": 1,
+              "effective_members": 1.0
+            }
+          ]
+        },
+        {
+          "flat_pixel": 73686,
+          "accepted": 101,
+          "candidate_count": 101,
+          "best_1sigma": {
+            "z": 3.962308014997964,
+            "mass": 0.08923555014460935,
+            "members": 1,
+            "effective_members": 1.0
+          },
+          "best_2sigma": {
+            "z": 3.9590572044147194,
+            "mass": 0.1386313742672112,
+            "members": 5,
+            "effective_members": 2.0251288338867712
+          },
+          "native_expected_coverage": [
+            {
+              "mass": 0,
+              "members": 0,
+              "effective_members": 0.0
+            },
+            {
+              "mass": 0.0002672924036376046,
+              "members": 1,
+              "effective_members": 1.0
+            }
+          ],
+          "native_median_coverage": [
+            {
+              "mass": 0,
+              "members": 0,
+              "effective_members": 0.0
+            },
+            {
+              "mass": 0,
+              "members": 0,
+              "effective_members": 0.0
+            }
+          ]
+        },
+        {
+          "flat_pixel": 79679,
+          "accepted": 100,
+          "candidate_count": 100,
+          "best_1sigma": {
+            "z": 4.013372207655124,
+            "mass": 0.2604808615120959,
+            "members": 2,
+            "effective_members": 1.950692540682956
+          },
+          "best_2sigma": {
+            "z": 4.02320173135917,
+            "mass": 0.3031836682204566,
+            "members": 4,
+            "effective_members": 2.558297872420994
+          },
+          "native_expected_coverage": [
+            {
+              "mass": 0,
+              "members": 0,
+              "effective_members": 0.0
+            },
+            {
+              "mass": 0,
+              "members": 0,
+              "effective_members": 0.0
+            }
+          ],
+          "native_median_coverage": [
+            {
+              "mass": 0,
+              "members": 0,
+              "effective_members": 0.0
+            },
+            {
+              "mass": 0,
+              "members": 0,
+              "effective_members": 0.0
+            }
+          ]
+        },
+        {
+          "flat_pixel": 85267,
+          "accepted": 92,
+          "candidate_count": 92,
+          "best_1sigma": {
+            "z": 3.8895706577123903,
+            "mass": 0.25649265930676374,
+            "members": 1,
+            "effective_members": 1.0
+          },
+          "best_2sigma": {
+            "z": 3.8965467365124606,
+            "mass": 0.31825005389007194,
+            "members": 2,
+            "effective_members": 1.455165474150496
+          },
+          "native_expected_coverage": [
+            {
+              "mass": 0,
+              "members": 0,
+              "effective_members": 0.0
+            },
+            {
+              "mass": 0.25649265930676374,
+              "members": 1,
+              "effective_members": 1.0
+            }
+          ],
+          "native_median_coverage": [
+            {
+              "mass": 0.25649265930676374,
+              "members": 1,
+              "effective_members": 1.0
+            },
+            {
+              "mass": 0.25649265930676374,
+              "members": 1,
+              "effective_members": 1.0
+            }
+          ]
+        },
+        {
+          "flat_pixel": 96542,
+          "accepted": 116,
+          "candidate_count": 116,
+          "best_1sigma": {
+            "z": 4.088994541456455,
+            "mass": 0.03509210097229848,
+            "members": 1,
+            "effective_members": 1.0
+          },
+          "best_2sigma": {
+            "z": 4.092739530472126,
+            "mass": 0.2603471039661663,
+            "members": 7,
+            "effective_members": 3.8829793478736363
+          },
+          "native_expected_coverage": [
+            {
+              "mass": 0,
+              "members": 0,
+              "effective_members": 0.0
+            },
+            {
+              "mass": 0.041005330385400204,
+              "members": 1,
+              "effective_members": 1.0
+            }
+          ],
+          "native_median_coverage": [
+            {
+              "mass": 0,
+              "members": 0,
+              "effective_members": 0.0
+            },
+            {
+              "mass": 0.08748284289637183,
+              "members": 1,
+              "effective_members": 1.0
+            }
+          ]
+        },
+        {
+          "flat_pixel": 103996,
+          "accepted": 98,
+          "candidate_count": 98,
+          "best_1sigma": {
+            "z": 3.6847571834770005,
+            "mass": 0.060210312045499974,
+            "members": 1,
+            "effective_members": 1.0
+          },
+          "best_2sigma": {
+            "z": 3.67028821478201,
+            "mass": 0.14447787403936738,
+            "members": 3,
+            "effective_members": 2.49061637479662
+          },
+          "native_expected_coverage": [
+            {
+              "mass": 0,
+              "members": 0,
+              "effective_members": 0.0
+            },
+            {
+              "mass": 0,
+              "members": 0,
+              "effective_members": 0.0
+            }
+          ],
+          "native_median_coverage": [
+            {
+              "mass": 0.025219270217422395,
+              "members": 1,
+              "effective_members": 1.0
+            },
+            {
+              "mass": 0.1321764978906696,
+              "members": 4,
+              "effective_members": 2.9097378541795136
+            }
+          ]
+        },
+        {
+          "flat_pixel": 114210,
+          "accepted": 101,
+          "candidate_count": 101,
+          "best_1sigma": {
+            "z": 3.511607408235639,
+            "mass": 0.055689507648904575,
+            "members": 1,
+            "effective_members": 1.0
+          },
+          "best_2sigma": {
+            "z": 3.4634879739447046,
+            "mass": 0.25786360579447015,
+            "members": 5,
+            "effective_members": 3.2798876513074178
+          },
+          "native_expected_coverage": [
+            {
+              "mass": 0,
+              "members": 0,
+              "effective_members": 0.0
+            },
+            {
+              "mass": 0.2551932590366101,
+              "members": 4,
+              "effective_members": 3.2134388849692703
+            }
+          ],
+          "native_median_coverage": [
+            {
+              "mass": 0,
+              "members": 0,
+              "effective_members": 0.0
+            },
+            {
+              "mass": 0.2551932590366101,
+              "members": 4,
+              "effective_members": 3.2134388849692703
+            }
+          ]
+        },
+        {
+          "flat_pixel": 121855,
+          "accepted": 98,
+          "candidate_count": 98,
+          "best_1sigma": {
+            "z": 3.5246586480268425,
+            "mass": 0.12973683778442383,
+            "members": 1,
+            "effective_members": 1.0
+          },
+          "best_2sigma": {
+            "z": 3.5363565473734364,
+            "mass": 0.24024512045177487,
+            "members": 3,
+            "effective_members": 2.374931554236139
+          },
+          "native_expected_coverage": [
+            {
+              "mass": 0,
+              "members": 0,
+              "effective_members": 0.0
+            },
+            {
+              "mass": 0,
+              "members": 0,
+              "effective_members": 0.0
+            }
+          ],
+          "native_median_coverage": [
+            {
+              "mass": 0.12973683778442383,
+              "members": 1,
+              "effective_members": 1.0
+            },
+            {
+              "mass": 0.2111176901174984,
+              "members": 2,
+              "effective_members": 1.9003047472548948
+            }
+          ]
+        },
+        {
+          "flat_pixel": 128707,
+          "accepted": 63,
+          "candidate_count": 63,
+          "best_1sigma": {
+            "z": 3.2475205193816072,
+            "mass": 0.14552637972326615,
+            "members": 1,
+            "effective_members": 1.0
+          },
+          "best_2sigma": {
+            "z": 3.241861115726151,
+            "mass": 0.4057776674921976,
+            "members": 3,
+            "effective_members": 2.9187367095632744
+          },
+          "native_expected_coverage": [
+            {
+              "mass": 0.14552637972326615,
+              "members": 1,
+              "effective_members": 1.0
+            },
+            {
+              "mass": 0.24947963502388376,
+              "members": 2,
+              "effective_members": 1.9459631841989877
+            }
+          ],
+          "native_median_coverage": [
+            {
+              "mass": 0,
+              "members": 0,
+              "effective_members": 0.0
+            },
+            {
+              "mass": 0.15629803246831386,
+              "members": 1,
+              "effective_members": 1.0
+            }
+          ]
+        },
+        {
+          "flat_pixel": 134380,
+          "accepted": 94,
+          "candidate_count": 94,
+          "best_1sigma": {
+            "z": 3.420445482651218,
+            "mass": 0.08206449720428755,
+            "members": 1,
+            "effective_members": 1.0
+          },
+          "best_2sigma": {
+            "z": 3.2833341044182647,
+            "mass": 0.24707529784753707,
+            "members": 1,
+            "effective_members": 1.0
+          },
+          "native_expected_coverage": [
+            {
+              "mass": 0,
+              "members": 0,
+              "effective_members": 0.0
+            },
+            {
+              "mass": 0,
+              "members": 0,
+              "effective_members": 0.0
+            }
+          ],
+          "native_median_coverage": [
+            {
+              "mass": 0,
+              "members": 0,
+              "effective_members": 0.0
+            },
+            {
+              "mass": 0.06629754686147625,
+              "members": 1,
+              "effective_members": 1.0
+            }
+          ]
+        },
+        {
+          "flat_pixel": 140906,
+          "accepted": 88,
+          "candidate_count": 88,
+          "best_1sigma": {
+            "z": 3.3641236234713316,
+            "mass": 0.1414419433285886,
+            "members": 1,
+            "effective_members": 1.0
+          },
+          "best_2sigma": {
+            "z": 3.3741942593755416,
+            "mass": 0.4090222614860619,
+            "members": 3,
+            "effective_members": 1.9726356825979598
+          },
+          "native_expected_coverage": [
+            {
+              "mass": 0,
+              "members": 0,
+              "effective_members": 0.0
+            },
+            {
+              "mass": 0.07934860814933999,
+              "members": 1,
+              "effective_members": 1.0
+            }
+          ],
+          "native_median_coverage": [
+            {
+              "mass": 0,
+              "members": 0,
+              "effective_members": 0.0
+            },
+            {
+              "mass": 0.183898706282102,
+              "members": 2,
+              "effective_members": 1.550720552170353
+            }
+          ]
+        },
+        {
+          "flat_pixel": 150364,
+          "accepted": 43,
+          "candidate_count": 43,
+          "best_1sigma": {
+            "z": 3.1081529242211707,
+            "mass": 0.34522365888204476,
+            "members": 2,
+            "effective_members": 1.5035988299499248
+          },
+          "best_2sigma": {
+            "z": 3.1058453639145336,
+            "mass": 0.5337394590196396,
+            "members": 12,
+            "effective_members": 3.2832736901645667
+          },
+          "native_expected_coverage": [
+            {
+              "mass": 0,
+              "members": 0,
+              "effective_members": 0.0
+            },
+            {
+              "mass": 0.39611001132221385,
+              "members": 3,
+              "effective_members": 1.9169087866923078
+            }
+          ],
+          "native_median_coverage": [
+            {
+              "mass": 0.34522365888204476,
+              "members": 2,
+              "effective_members": 1.5035988299499248
+            },
+            {
+              "mass": 0.5238480479576327,
+              "members": 11,
+              "effective_members": 3.1662785741512645
+            }
+          ]
+        },
+        {
+          "flat_pixel": 154589,
+          "accepted": 94,
+          "candidate_count": 94,
+          "best_1sigma": {
+            "z": 3.1607624719475322,
+            "mass": 0.15350664232005193,
+            "members": 1,
+            "effective_members": 1.0
+          },
+          "best_2sigma": {
+            "z": 3.0012284587655964,
+            "mass": 0.18636158445898582,
+            "members": 2,
+            "effective_members": 1.8824443247366682
+          },
+          "native_expected_coverage": [
+            {
+              "mass": 0,
+              "members": 0,
+              "effective_members": 0.0
+            },
+            {
+              "mass": 0.15350664232005193,
+              "members": 1,
+              "effective_members": 1.0
+            }
+          ],
+          "native_median_coverage": [
+            {
+              "mass": 0,
+              "members": 0,
+              "effective_members": 0.0
+            },
+            {
+              "mass": 0.07790633357704552,
+              "members": 1,
+              "effective_members": 1.0
+            }
+          ]
+        },
+        {
+          "flat_pixel": 160216,
+          "accepted": 74,
+          "candidate_count": 74,
+          "best_1sigma": {
+            "z": 3.5812022436039115,
+            "mass": 0.23480734990001045,
+            "members": 1,
+            "effective_members": 1.0
+          },
+          "best_2sigma": {
+            "z": 3.5812022436039115,
+            "mass": 0.23480734990001045,
+            "members": 1,
+            "effective_members": 1.0
+          },
+          "native_expected_coverage": [
+            {
+              "mass": 0,
+              "members": 0,
+              "effective_members": 0.0
+            },
+            {
+              "mass": 0.008584455619439274,
+              "members": 1,
+              "effective_members": 1.0
+            }
+          ],
+          "native_median_coverage": [
+            {
+              "mass": 0,
+              "members": 0,
+              "effective_members": 0.0
+            },
+            {
+              "mass": 0,
+              "members": 0,
+              "effective_members": 0.0
+            }
+          ]
+        },
+        {
+          "flat_pixel": 164593,
+          "accepted": 130,
+          "candidate_count": 130,
+          "best_1sigma": {
+            "z": 3.0847286638833125,
+            "mass": 0.017548171372388753,
+            "members": 1,
+            "effective_members": 1.0
+          },
+          "best_2sigma": {
+            "z": 3.0207337040747837,
+            "mass": 0.3632452740036066,
+            "members": 3,
+            "effective_members": 1.3462122164559438
+          },
+          "native_expected_coverage": [
+            {
+              "mass": 0,
+              "members": 0,
+              "effective_members": 0.0
+            },
+            {
+              "mass": 0,
+              "members": 0,
+              "effective_members": 0.0
+            }
+          ],
+          "native_median_coverage": [
+            {
+              "mass": 0,
+              "members": 0,
+              "effective_members": 0.0
+            },
+            {
+              "mass": 0.31087190873725,
+              "members": 1,
+              "effective_members": 1.0
+            }
+          ]
+        },
+        {
+          "flat_pixel": 169549,
+          "accepted": 91,
+          "candidate_count": 91,
+          "best_1sigma": {
+            "z": 3.4849881649023784,
+            "mass": 0.13792600240257882,
+            "members": 1,
+            "effective_members": 1.0
+          },
+          "best_2sigma": {
+            "z": 3.329890468183079,
+            "mass": 0.16980734860465746,
+            "members": 2,
+            "effective_members": 1.1973542976678888
+          },
+          "native_expected_coverage": [
+            {
+              "mass": 0,
+              "members": 0,
+              "effective_members": 0.0
+            },
+            {
+              "mass": 0,
+              "members": 0,
+              "effective_members": 0.0
+            }
+          ],
+          "native_median_coverage": [
+            {
+              "mass": 0,
+              "members": 0,
+              "effective_members": 0.0
+            },
+            {
+              "mass": 0.16980734860465746,
+              "members": 2,
+              "effective_members": 1.1973542976678888
+            }
+          ]
+        },
+        {
+          "flat_pixel": 174452,
+          "accepted": 89,
+          "candidate_count": 89,
+          "best_1sigma": {
+            "z": 3.420891274021549,
+            "mass": 0.11083706727555696,
+            "members": 1,
+            "effective_members": 1.0
+          },
+          "best_2sigma": {
+            "z": 3.0670509218408335,
+            "mass": 0.1311936383153803,
+            "members": 2,
+            "effective_members": 1.4725669092127487
+          },
+          "native_expected_coverage": [
+            {
+              "mass": 0,
+              "members": 0,
+              "effective_members": 0.0
+            },
+            {
+              "mass": 0,
+              "members": 0,
+              "effective_members": 0.0
+            }
+          ],
+          "native_median_coverage": [
+            {
+              "mass": 0,
+              "members": 0,
+              "effective_members": 0.0
+            },
+            {
+              "mass": 0.10485488950664354,
+              "members": 1,
+              "effective_members": 1.0
+            }
+          ]
+        },
+        {
+          "flat_pixel": 183826,
+          "accepted": 77,
+          "candidate_count": 77,
+          "best_1sigma": {
+            "z": 2.9909540634578518,
+            "mass": 0.30664441236609413,
+            "members": 1,
+            "effective_members": 1.0
+          },
+          "best_2sigma": {
+            "z": 2.9909540634578518,
+            "mass": 0.30664441236609413,
+            "members": 1,
+            "effective_members": 1.0
+          },
+          "native_expected_coverage": [
+            {
+              "mass": 0,
+              "members": 0,
+              "effective_members": 0.0
+            },
+            {
+              "mass": 0.006251632858959714,
+              "members": 1,
+              "effective_members": 1.0
+            }
+          ],
+          "native_median_coverage": [
+            {
+              "mass": 0.16320650641237605,
+              "members": 1,
+              "effective_members": 1.0
+            },
+            {
+              "mass": 0.16320650641237605,
+              "members": 1,
+              "effective_members": 1.0
+            }
+          ]
+        },
+        {
+          "flat_pixel": 192005,
+          "accepted": 107,
+          "candidate_count": 107,
+          "best_1sigma": {
+            "z": 3.515958745093814,
+            "mass": 0.06448041073572916,
+            "members": 1,
+            "effective_members": 1.0
+          },
+          "best_2sigma": {
+            "z": 3.304467675617529,
+            "mass": 0.14623609816402264,
+            "members": 1,
+            "effective_members": 1.0
+          },
+          "native_expected_coverage": [
+            {
+              "mass": 0,
+              "members": 0,
+              "effective_members": 0.0
+            },
+            {
+              "mass": 0,
+              "members": 0,
+              "effective_members": 0.0
+            }
+          ],
+          "native_median_coverage": [
+            {
+              "mass": 0,
+              "members": 0,
+              "effective_members": 0.0
+            },
+            {
+              "mass": 0.06315876593309847,
+              "members": 1,
+              "effective_members": 1.0
+            }
+          ]
+        },
+        {
+          "flat_pixel": 198408,
+          "accepted": 104,
+          "candidate_count": 104,
+          "best_1sigma": {
+            "z": 2.9814879865216746,
+            "mass": 0.1674433680947753,
+            "members": 1,
+            "effective_members": 1.0
+          },
+          "best_2sigma": {
+            "z": 2.9819671809413166,
+            "mass": 0.1674433680947753,
+            "members": 1,
+            "effective_members": 1.0
+          },
+          "native_expected_coverage": [
+            {
+              "mass": 0,
+              "members": 0,
+              "effective_members": 0.0
+            },
+            {
+              "mass": 0,
+              "members": 0,
+              "effective_members": 0.0
+            }
+          ],
+          "native_median_coverage": [
+            {
+              "mass": 0,
+              "members": 0,
+              "effective_members": 0.0
+            },
+            {
+              "mass": 0.05365579459611634,
+              "members": 1,
+              "effective_members": 1.0
+            }
+          ]
+        },
+        {
+          "flat_pixel": 204335,
+          "accepted": 87,
+          "candidate_count": 87,
+          "best_1sigma": {
+            "z": 2.739941948915449,
+            "mass": 0.04434147622948969,
+            "members": 1,
+            "effective_members": 1.0
+          },
+          "best_2sigma": {
+            "z": 2.692602985979299,
+            "mass": 0.2581188542206707,
+            "members": 2,
+            "effective_members": 1.974341645890997
+          },
+          "native_expected_coverage": [
+            {
+              "mass": 0,
+              "members": 0,
+              "effective_members": 0.0
+            },
+            {
+              "mass": 0.12677127999538096,
+              "members": 3,
+              "effective_members": 2.5152948831947652
+            }
+          ],
+          "native_median_coverage": [
+            {
+              "mass": 0.009024520079703424,
+              "members": 1,
+              "effective_members": 1.0
+            },
+            {
+              "mass": 0.1819634521218889,
+              "members": 7,
+              "effective_members": 2.921932124775949
+            }
+          ]
+        },
+        {
+          "flat_pixel": 209259,
+          "accepted": 103,
+          "candidate_count": 103,
+          "best_1sigma": {
+            "z": 2.970791046279225,
+            "mass": 0.3215041260101208,
+            "members": 2,
+            "effective_members": 1.6620413763856023
+          },
+          "best_2sigma": {
+            "z": 2.970791046279225,
+            "mass": 0.4961715540919185,
+            "members": 4,
+            "effective_members": 2.885024312701179
+          },
+          "native_expected_coverage": [
+            {
+              "mass": 0.08826384795160078,
+              "members": 1,
+              "effective_members": 1.0
+            },
+            {
+              "mass": 0.34604227125714765,
+              "members": 3,
+              "effective_members": 1.9069642306990475
+            }
+          ],
+          "native_median_coverage": [
+            {
+              "mass": 0.23324027805852,
+              "members": 1,
+              "effective_members": 1.0
+            },
+            {
+              "mass": 0.47163340884489163,
+              "members": 3,
+              "effective_members": 2.6252471493958254
+            }
+          ]
+        },
+        {
+          "flat_pixel": 216522,
+          "accepted": 83,
+          "candidate_count": 83,
+          "best_1sigma": {
+            "z": 2.8288070583673215,
+            "mass": 0.13950930871130937,
+            "members": 1,
+            "effective_members": 1.0
+          },
+          "best_2sigma": {
+            "z": 2.82933887750664,
+            "mass": 0.2739216419382782,
+            "members": 2,
+            "effective_members": 1.9993077673967248
+          },
+          "native_expected_coverage": [
+            {
+              "mass": 0,
+              "members": 0,
+              "effective_members": 0.0
+            },
+            {
+              "mass": 0,
+              "members": 0,
+              "effective_members": 0.0
+            }
+          ],
+          "native_median_coverage": [
+            {
+              "mass": 0,
+              "members": 0,
+              "effective_members": 0.0
+            },
+            {
+              "mass": 0.08905133532656978,
+              "members": 1,
+              "effective_members": 1.0
+            }
+          ]
+        },
+        {
+          "flat_pixel": 222025,
+          "accepted": 113,
+          "candidate_count": 113,
+          "best_1sigma": {
+            "z": 2.7841666145385076,
+            "mass": 0.03742940800522602,
+            "members": 1,
+            "effective_members": 1.0
+          },
+          "best_2sigma": {
+            "z": 2.586029764637988,
+            "mass": 0.2859782754470537,
+            "members": 3,
+            "effective_members": 2.9426160909934747
+          },
+          "native_expected_coverage": [
+            {
+              "mass": 0,
+              "members": 0,
+              "effective_members": 0.0
+            },
+            {
+              "mass": 0,
+              "members": 0,
+              "effective_members": 0.0
+            }
+          ],
+          "native_median_coverage": [
+            {
+              "mass": 0,
+              "members": 0,
+              "effective_members": 0.0
+            },
+            {
+              "mass": 0,
+              "members": 0,
+              "effective_members": 0.0
+            }
+          ]
+        },
+        {
+          "flat_pixel": 230688,
+          "accepted": 120,
+          "candidate_count": 120,
+          "best_1sigma": {
+            "z": 2.5169863631543126,
+            "mass": 0.32150588371826694,
+            "members": 1,
+            "effective_members": 1.0
+          },
+          "best_2sigma": {
+            "z": 2.5163559321837297,
+            "mass": 0.5998979399670508,
+            "members": 4,
+            "effective_members": 2.7543548108867073
+          },
+          "native_expected_coverage": [
+            {
+              "mass": 0,
+              "members": 0,
+              "effective_members": 0.0
+            },
+            {
+              "mass": 0,
+              "members": 0,
+              "effective_members": 0.0
+            }
+          ],
+          "native_median_coverage": [
+            {
+              "mass": 0.32150588371826694,
+              "members": 1,
+              "effective_members": 1.0
+            },
+            {
+              "mass": 0.4773217600940816,
+              "members": 3,
+              "effective_members": 1.9703422566142494
+            }
+          ]
+        },
+        {
+          "flat_pixel": 236887,
+          "accepted": 75,
+          "candidate_count": 75,
+          "best_1sigma": {
+            "z": 2.478784536840207,
+            "mass": 0.30852198444552936,
+            "members": 1,
+            "effective_members": 1.0
+          },
+          "best_2sigma": {
+            "z": 2.478784536840207,
+            "mass": 0.30852198444552936,
+            "members": 1,
+            "effective_members": 1.0
+          },
+          "native_expected_coverage": [
+            {
+              "mass": 0,
+              "members": 0,
+              "effective_members": 0.0
+            },
+            {
+              "mass": 0,
+              "members": 0,
+              "effective_members": 0.0
+            }
+          ],
+          "native_median_coverage": [
+            {
+              "mass": 0,
+              "members": 0,
+              "effective_members": 0.0
+            },
+            {
+              "mass": 0.07488279459084024,
+              "members": 4,
+              "effective_members": 2.7940136670816518
+            }
+          ]
+        },
+        {
+          "flat_pixel": 242551,
+          "accepted": 116,
+          "candidate_count": 116,
+          "best_1sigma": {
+            "z": 2.9501418997428535,
+            "mass": 0.12683073961729333,
+            "members": 1,
+            "effective_members": 1.0
+          },
+          "best_2sigma": {
+            "z": 2.959057180763678,
+            "mass": 0.32044589462339856,
+            "members": 4,
+            "effective_members": 3.2399995116274773
+          },
+          "native_expected_coverage": [
+            {
+              "mass": 0,
+              "members": 0,
+              "effective_members": 0.0
+            },
+            {
+              "mass": 0.28406050966448987,
+              "members": 3,
+              "effective_members": 2.6569817451795896
+            }
+          ],
+          "native_median_coverage": [
+            {
+              "mass": 0,
+              "members": 0,
+              "effective_members": 0.0
+            },
+            {
+              "mass": 0.3012008123153061,
+              "members": 3,
+              "effective_members": 2.424026860974256
+            }
+          ]
+        },
+        {
+          "flat_pixel": 251060,
+          "accepted": 90,
+          "candidate_count": 90,
+          "best_1sigma": {
+            "z": 2.877408864516331,
+            "mass": 0.09929231082207535,
+            "members": 1,
+            "effective_members": 1.0
+          },
+          "best_2sigma": {
+            "z": 2.9330024513889152,
+            "mass": 0.28300745923337567,
+            "members": 4,
+            "effective_members": 2.5830293538661935
+          },
+          "native_expected_coverage": [
+            {
+              "mass": 0,
+              "members": 0,
+              "effective_members": 0.0
+            },
+            {
+              "mass": 0.28300745923337567,
+              "members": 4,
+              "effective_members": 2.5830293538661935
+            }
+          ],
+          "native_median_coverage": [
+            {
+              "mass": 0,
+              "members": 0,
+              "effective_members": 0.0
+            },
+            {
+              "mass": 0.24329053050346308,
+              "members": 2,
+              "effective_members": 1.977015120368324
+            }
+          ]
+        },
+        {
+          "flat_pixel": 258633,
+          "accepted": 81,
+          "candidate_count": 81,
+          "best_1sigma": {
+            "z": 2.63322222222241,
+            "mass": 0.4022062453573797,
+            "members": 1,
+            "effective_members": 1.0
+          },
+          "best_2sigma": {
+            "z": 2.6346709839006537,
+            "mass": 0.4927958186626095,
+            "members": 2,
+            "effective_members": 1.428714882388794
+          },
+          "native_expected_coverage": [
+            {
+              "mass": 0,
+              "members": 0,
+              "effective_members": 0.0
+            },
+            {
+              "mass": 0,
+              "members": 0,
+              "effective_members": 0.0
+            }
+          ],
+          "native_median_coverage": [
+            {
+              "mass": 0,
+              "members": 0,
+              "effective_members": 0.0
+            },
+            {
+              "mass": 0.12950903893033583,
+              "members": 2,
+              "effective_members": 1.7253629966330315
+            }
+          ]
+        },
+        {
+          "flat_pixel": 264152,
+          "accepted": 85,
+          "candidate_count": 85,
+          "best_1sigma": {
+            "z": 2.6124935372835187,
+            "mass": 0.30828672042149613,
+            "members": 1,
+            "effective_members": 1.0
+          },
+          "best_2sigma": {
+            "z": 2.6205283547681963,
+            "mass": 0.8622030937386723,
+            "members": 5,
+            "effective_members": 2.1326709223524802
+          },
+          "native_expected_coverage": [
+            {
+              "mass": 0.30828672042149613,
+              "members": 1,
+              "effective_members": 1.0
+            },
+            {
+              "mass": 0.84324751998982,
+              "members": 3,
+              "effective_members": 2.047853609002575
+            }
+          ],
+          "native_median_coverage": [
+            {
+              "mass": 0,
+              "members": 0,
+              "effective_members": 0.0
+            },
+            {
+              "mass": 0.8093190094815859,
+              "members": 2,
+              "effective_members": 1.8926505656407993
+            }
+          ]
+        },
+        {
+          "flat_pixel": 270591,
+          "accepted": 104,
+          "candidate_count": 104,
+          "best_1sigma": {
+            "z": 3.0061356136155672,
+            "mass": 0.06511989995404575,
+            "members": 1,
+            "effective_members": 1.0
+          },
+          "best_2sigma": {
+            "z": 3.011918130413666,
+            "mass": 0.2850570960165281,
+            "members": 8,
+            "effective_members": 3.090827778365143
+          },
+          "native_expected_coverage": [
+            {
+              "mass": 0,
+              "members": 0,
+              "effective_members": 0.0
+            },
+            {
+              "mass": 0.22714113982160794,
+              "members": 4,
+              "effective_members": 2.2701216136408218
+            }
+          ],
+          "native_median_coverage": [
+            {
+              "mass": 0,
+              "members": 0,
+              "effective_members": 0.0
+            },
+            {
+              "mass": 0.09795597419078586,
+              "members": 1,
+              "effective_members": 1.0
+            }
+          ]
+        },
+        {
+          "flat_pixel": 275611,
+          "accepted": 101,
+          "candidate_count": 101,
+          "best_1sigma": {
+            "z": 2.6212366291364293,
+            "mass": 0.0965706624414389,
+            "members": 1,
+            "effective_members": 1.0
+          },
+          "best_2sigma": {
+            "z": 2.6175937709349526,
+            "mass": 0.20849190608850732,
+            "members": 2,
+            "effective_members": 1.827262709283336
+          },
+          "native_expected_coverage": [
+            {
+              "mass": 0,
+              "members": 0,
+              "effective_members": 0.0
+            },
+            {
+              "mass": 0,
+              "members": 0,
+              "effective_members": 0.0
+            }
+          ],
+          "native_median_coverage": [
+            {
+              "mass": 0,
+              "members": 0,
+              "effective_members": 0.0
+            },
+            {
+              "mass": 0,
+              "members": 0,
+              "effective_members": 0.0
+            }
+          ]
+        },
+        {
+          "flat_pixel": 281847,
+          "accepted": 98,
+          "candidate_count": 98,
+          "best_1sigma": {
+            "z": 2.6135664347294374,
+            "mass": 0.2824588335378564,
+            "members": 1,
+            "effective_members": 1.0
+          },
+          "best_2sigma": {
+            "z": 2.6135664347294374,
+            "mass": 0.4330040221749768,
+            "members": 2,
+            "effective_members": 1.8301440179822173
+          },
+          "native_expected_coverage": [
+            {
+              "mass": 0,
+              "members": 0,
+              "effective_members": 0.0
+            },
+            {
+              "mass": 0,
+              "members": 0,
+              "effective_members": 0.0
+            }
+          ],
+          "native_median_coverage": [
+            {
+              "mass": 0,
+              "members": 0,
+              "effective_members": 0.0
+            },
+            {
+              "mass": 0.020083086119371096,
+              "members": 1,
+              "effective_members": 1.0
+            }
+          ]
+        },
+        {
+          "flat_pixel": 292279,
+          "accepted": 68,
+          "candidate_count": 68,
+          "best_1sigma": {
+            "z": 2.7141381907940696,
+            "mass": 0.21164309594692432,
+            "members": 1,
+            "effective_members": 1.0
+          },
+          "best_2sigma": {
+            "z": 2.7141381907940696,
+            "mass": 0.21164309594692432,
+            "members": 1,
+            "effective_members": 1.0
+          },
+          "native_expected_coverage": [
+            {
+              "mass": 0,
+              "members": 0,
+              "effective_members": 0.0
+            },
+            {
+              "mass": 0.005370258134446951,
+              "members": 1,
+              "effective_members": 1.0
+            }
+          ],
+          "native_median_coverage": [
+            {
+              "mass": 0,
+              "members": 0,
+              "effective_members": 0.0
+            },
+            {
+              "mass": 0.16775519398908703,
+              "members": 2,
+              "effective_members": 1.0660700583228329
+            }
+          ]
+        },
+        {
+          "flat_pixel": 297632,
+          "accepted": 82,
+          "candidate_count": 82,
+          "best_1sigma": {
+            "z": 2.8169169096035227,
+            "mass": 0.023230933632795957,
+            "members": 1,
+            "effective_members": 1.0
+          },
+          "best_2sigma": {
+            "z": 2.7338680562475055,
+            "mass": 0.1604406384236377,
+            "members": 1,
+            "effective_members": 1.0
+          },
+          "native_expected_coverage": [
+            {
+              "mass": 0,
+              "members": 0,
+              "effective_members": 0.0
+            },
+            {
+              "mass": 0.008592682302985705,
+              "members": 1,
+              "effective_members": 1.0
+            }
+          ],
+          "native_median_coverage": [
+            {
+              "mass": 0,
+              "members": 0,
+              "effective_members": 0.0
+            },
+            {
+              "mass": 0,
+              "members": 0,
+              "effective_members": 0.0
+            }
+          ]
+        },
+        {
+          "flat_pixel": 301729,
+          "accepted": 114,
+          "candidate_count": 114,
+          "best_1sigma": {
+            "z": 2.6379986628696854,
+            "mass": 0.031442467051426295,
+            "members": 1,
+            "effective_members": 1.0
+          },
+          "best_2sigma": {
+            "z": 2.5821497769073085,
+            "mass": 0.18396688902076527,
+            "members": 2,
+            "effective_members": 1.6849827802255715
+          },
+          "native_expected_coverage": [
+            {
+              "mass": 0,
+              "members": 0,
+              "effective_members": 0.0
+            },
+            {
+              "mass": 0,
+              "members": 0,
+              "effective_members": 0.0
+            }
+          ],
+          "native_median_coverage": [
+            {
+              "mass": 0,
+              "members": 0,
+              "effective_members": 0.0
+            },
+            {
+              "mass": 0.1317555957541704,
+              "members": 1,
+              "effective_members": 1.0
+            }
+          ]
+        },
+        {
+          "flat_pixel": 306557,
+          "accepted": 156,
+          "candidate_count": 156,
+          "best_1sigma": {
+            "z": 2.3690034054382587,
+            "mass": 0.0882021904933243,
+            "members": 1,
+            "effective_members": 1.0
+          },
+          "best_2sigma": {
+            "z": 2.368150609380922,
+            "mass": 0.2004573935625668,
+            "members": 3,
+            "effective_members": 2.8042214269892063
+          },
+          "native_expected_coverage": [
+            {
+              "mass": 0,
+              "members": 0,
+              "effective_members": 0.0
+            },
+            {
+              "mass": 0.01743108852077274,
+              "members": 1,
+              "effective_members": 1.0
+            }
+          ],
+          "native_median_coverage": [
+            {
+              "mass": 0.0882021904933243,
+              "members": 1,
+              "effective_members": 1.0
+            },
+            {
+              "mass": 0.15560909182607388,
+              "members": 3,
+              "effective_members": 2.177020190447042
+            }
+          ]
+        },
+        {
+          "flat_pixel": 311926,
+          "accepted": 72,
+          "candidate_count": 72,
+          "best_1sigma": {
+            "z": 2.5150640981838963,
+            "mass": 0.1116264803126085,
+            "members": 2,
+            "effective_members": 1.8295453056177648
+          },
+          "best_2sigma": {
+            "z": 2.516787704722142,
+            "mass": 0.18309533674405087,
+            "members": 3,
+            "effective_members": 2.8127641639861016
+          },
+          "native_expected_coverage": [
+            {
+              "mass": 0,
+              "members": 0,
+              "effective_members": 0.0
+            },
+            {
+              "mass": 0,
+              "members": 0,
+              "effective_members": 0.0
+            }
+          ],
+          "native_median_coverage": [
+            {
+              "mass": 0,
+              "members": 0,
+              "effective_members": 0.0
+            },
+            {
+              "mass": 0.04105444635156461,
+              "members": 1,
+              "effective_members": 1.0
+            }
+          ]
+        },
+        {
+          "flat_pixel": 320879,
+          "accepted": 75,
+          "candidate_count": 75,
+          "best_1sigma": {
+            "z": 3.0319752089223853,
+            "mass": 0.05334404802505818,
+            "members": 2,
+            "effective_members": 1.5051727597663749
+          },
+          "best_2sigma": {
+            "z": 2.4092785222755477,
+            "mass": 0.34366142871568534,
+            "members": 2,
+            "effective_members": 1.6984455626546846
+          },
+          "native_expected_coverage": [
+            {
+              "mass": 0,
+              "members": 0,
+              "effective_members": 0.0
+            },
+            {
+              "mass": 0.02985025195693613,
+              "members": 1,
+              "effective_members": 1.0
+            }
+          ],
+          "native_median_coverage": [
+            {
+              "mass": 0,
+              "members": 0,
+              "effective_members": 0.0
+            },
+            {
+              "mass": 0.26533996648093944,
+              "members": 3,
+              "effective_members": 2.976975473775334
+            }
+          ]
+        },
+        {
+          "flat_pixel": 326309,
+          "accepted": 71,
+          "candidate_count": 71,
+          "best_1sigma": {
+            "z": 3.044376482578076,
+            "mass": 0.1127108594833075,
+            "members": 2,
+            "effective_members": 1.9690451254408807
+          },
+          "best_2sigma": {
+            "z": 2.402482709441545,
+            "mass": 0.2828975483479598,
+            "members": 4,
+            "effective_members": 3.7469477897360277
+          },
+          "native_expected_coverage": [
+            {
+              "mass": 0,
+              "members": 0,
+              "effective_members": 0.0
+            },
+            {
+              "mass": 0,
+              "members": 0,
+              "effective_members": 0.0
+            }
+          ],
+          "native_median_coverage": [
+            {
+              "mass": 0,
+              "members": 0,
+              "effective_members": 0.0
+            },
+            {
+              "mass": 0.19519974169797746,
+              "members": 3,
+              "effective_members": 2.787730550284633
+            }
+          ]
+        },
+        {
+          "flat_pixel": 333385,
+          "accepted": 74,
+          "candidate_count": 74,
+          "best_1sigma": {
+            "z": 2.5534075476616858,
+            "mass": 0.17603504599511688,
+            "members": 1,
+            "effective_members": 1.0
+          },
+          "best_2sigma": {
+            "z": 2.516809548236444,
+            "mass": 0.18287864383540475,
+            "members": 1,
+            "effective_members": 1.0
+          },
+          "native_expected_coverage": [
+            {
+              "mass": 0,
+              "members": 0,
+              "effective_members": 0.0
+            },
+            {
+              "mass": 0.0008658985756987493,
+              "members": 1,
+              "effective_members": 1.0
+            }
+          ],
+          "native_median_coverage": [
+            {
+              "mass": 0,
+              "members": 0,
+              "effective_members": 0.0
+            },
+            {
+              "mass": 0,
+              "members": 0,
+              "effective_members": 0.0
+            }
+          ]
+        },
+        {
+          "flat_pixel": 337003,
+          "accepted": 104,
+          "candidate_count": 104,
+          "best_1sigma": {
+            "z": 2.4235763862152564,
+            "mass": 0.020255759505602957,
+            "members": 1,
+            "effective_members": 1.0
+          },
+          "best_2sigma": {
+            "z": 2.4037390348203775,
+            "mass": 0.26563537931864845,
+            "members": 2,
+            "effective_members": 1.9717498147870143
+          },
+          "native_expected_coverage": [
+            {
+              "mass": 0,
+              "members": 0,
+              "effective_members": 0.0
+            },
+            {
+              "mass": 0,
+              "members": 0,
+              "effective_members": 0.0
+            }
+          ],
+          "native_median_coverage": [
+            {
+              "mass": 0,
+              "members": 0,
+              "effective_members": 0.0
+            },
+            {
+              "mass": 0.1222234669562685,
+              "members": 1,
+              "effective_members": 1.0
+            }
+          ]
+        },
+        {
+          "flat_pixel": 343748,
+          "accepted": 94,
+          "candidate_count": 93,
+          "best_1sigma": {
+            "z": 2.4256779884610093,
+            "mass": 0.22424918800747515,
+            "members": 1,
+            "effective_members": 1.0
+          },
+          "best_2sigma": {
+            "z": 2.4256779884610093,
+            "mass": 0.22424918800747515,
+            "members": 1,
+            "effective_members": 1.0
+          },
+          "native_expected_coverage": [
+            {
+              "mass": 0,
+              "members": 0,
+              "effective_members": 0.0
+            },
+            {
+              "mass": 0,
+              "members": 0,
+              "effective_members": 0.0
+            }
+          ],
+          "native_median_coverage": [
+            {
+              "mass": 0,
+              "members": 0,
+              "effective_members": 0.0
+            },
+            {
+              "mass": 0.047695194975364744,
+              "members": 1,
+              "effective_members": 1.0
+            }
+          ]
+        },
+        {
+          "flat_pixel": 349937,
+          "accepted": 97,
+          "candidate_count": 97,
+          "best_1sigma": {
+            "z": 2.453758649567629,
+            "mass": 0.060039515282777595,
+            "members": 1,
+            "effective_members": 1.0
+          },
+          "best_2sigma": {
+            "z": 2.485170818826654,
+            "mass": 0.19070001100433082,
+            "members": 5,
+            "effective_members": 2.7819657293747158
+          },
+          "native_expected_coverage": [
+            {
+              "mass": 0,
+              "members": 0,
+              "effective_members": 0.0
+            },
+            {
+              "mass": 0.060039515282777595,
+              "members": 1,
+              "effective_members": 1.0
+            }
+          ],
+          "native_median_coverage": [
+            {
+              "mass": 0,
+              "members": 0,
+              "effective_members": 0.0
+            },
+            {
+              "mass": 0,
+              "members": 0,
+              "effective_members": 0.0
+            }
+          ]
+        },
+        {
+          "flat_pixel": 353073,
+          "accepted": 95,
+          "candidate_count": 95,
+          "best_1sigma": {
+            "z": 2.397142864821082,
+            "mass": 0.08706583551616716,
+            "members": 1,
+            "effective_members": 1.0
+          },
+          "best_2sigma": {
+            "z": 2.396252757572978,
+            "mass": 0.14907481325597258,
+            "members": 2,
+            "effective_members": 1.945049047454251
+          },
+          "native_expected_coverage": [
+            {
+              "mass": 0,
+              "members": 0,
+              "effective_members": 0.0
+            },
+            {
+              "mass": 0.00264953735271219,
+              "members": 1,
+              "effective_members": 1.0
+            }
+          ],
+          "native_median_coverage": [
+            {
+              "mass": 0.05207434041203571,
+              "members": 1,
+              "effective_members": 1.0
+            },
+            {
+              "mass": 0.05207434041203571,
+              "members": 1,
+              "effective_members": 1.0
+            }
+          ]
+        },
+        {
+          "flat_pixel": 359925,
+          "accepted": 104,
+          "candidate_count": 104,
+          "best_1sigma": {
+            "z": 2.582466982003718,
+            "mass": 0.052296340556410977,
+            "members": 1,
+            "effective_members": 1.0
+          },
+          "best_2sigma": {
+            "z": 2.73820958070548,
+            "mass": 0.13342838226795076,
+            "members": 4,
+            "effective_members": 1.0096200813692793
+          },
+          "native_expected_coverage": [
+            {
+              "mass": 0,
+              "members": 0,
+              "effective_members": 0.0
+            },
+            {
+              "mass": 0.010031655818364713,
+              "members": 3,
+              "effective_members": 1.2891674797175894
+            }
+          ],
+          "native_median_coverage": [
+            {
+              "mass": 0,
+              "members": 0,
+              "effective_members": 0.0
+            },
+            {
+              "mass": 0.09779942198545591,
+              "members": 3,
+              "effective_members": 1.553933928791933
+            }
+          ]
+        },
+        {
+          "flat_pixel": 364706,
+          "accepted": 115,
+          "candidate_count": 115,
+          "best_1sigma": {
+            "z": 2.367384098800675,
+            "mass": 0.14328484044378753,
+            "members": 2,
+            "effective_members": 1.9919300724576159
+          },
+          "best_2sigma": {
+            "z": 2.367384098800675,
+            "mass": 0.1820632663069107,
+            "members": 3,
+            "effective_members": 2.8065430648119105
+          },
+          "native_expected_coverage": [
+            {
+              "mass": 0,
+              "members": 0,
+              "effective_members": 0.0
+            },
+            {
+              "mass": 0,
+              "members": 0,
+              "effective_members": 0.0
+            }
+          ],
+          "native_median_coverage": [
+            {
+              "mass": 0,
+              "members": 0,
+              "effective_members": 0.0
+            },
+            {
+              "mass": 0,
+              "members": 0,
+              "effective_members": 0.0
+            }
+          ]
+        },
+        {
+          "flat_pixel": 372853,
+          "accepted": 79,
+          "candidate_count": 79,
+          "best_1sigma": {
+            "z": 2.2817451319157174,
+            "mass": 0.24923452304911778,
+            "members": 1,
+            "effective_members": 1.0
+          },
+          "best_2sigma": {
+            "z": 2.2817451319157174,
+            "mass": 0.30259215998001354,
+            "members": 2,
+            "effective_members": 1.4094077966059277
+          },
+          "native_expected_coverage": [
+            {
+              "mass": 0,
+              "members": 0,
+              "effective_members": 0.0
+            },
+            {
+              "mass": 0,
+              "members": 0,
+              "effective_members": 0.0
+            }
+          ],
+          "native_median_coverage": [
+            {
+              "mass": 0,
+              "members": 0,
+              "effective_members": 0.0
+            },
+            {
+              "mass": 0.07464670667681057,
+              "members": 2,
+              "effective_members": 1.4302318884137197
+            }
+          ]
+        },
+        {
+          "flat_pixel": 379893,
+          "accepted": 81,
+          "candidate_count": 81,
+          "best_1sigma": {
+            "z": 2.266416420223735,
+            "mass": 0.15617405810310972,
+            "members": 2,
+            "effective_members": 1.9864120944469645
+          },
+          "best_2sigma": {
+            "z": 2.2674153454239265,
+            "mass": 0.17016250636159297,
+            "members": 3,
+            "effective_members": 2.321201166050927
+          },
+          "native_expected_coverage": [
+            {
+              "mass": 0,
+              "members": 0,
+              "effective_members": 0.0
+            },
+            {
+              "mass": 0,
+              "members": 0,
+              "effective_members": 0.0
+            }
+          ],
+          "native_median_coverage": [
+            {
+              "mass": 0,
+              "members": 0,
+              "effective_members": 0.0
+            },
+            {
+              "mass": 0.06968309448902581,
+              "members": 1,
+              "effective_members": 1.0
+            }
+          ]
+        },
+        {
+          "flat_pixel": 389230,
+          "accepted": 74,
+          "candidate_count": 74,
+          "best_1sigma": {
+            "z": 2.243097425040821,
+            "mass": 0.38526445020053346,
+            "members": 2,
+            "effective_members": 1.9366587275483227
+          },
+          "best_2sigma": {
+            "z": 2.243097425040821,
+            "mass": 0.38526445020053346,
+            "members": 2,
+            "effective_members": 1.9366587275483227
+          },
+          "native_expected_coverage": [
+            {
+              "mass": 0,
+              "members": 0,
+              "effective_members": 0.0
+            },
+            {
+              "mass": 0,
+              "members": 0,
+              "effective_members": 0.0
+            }
+          ],
+          "native_median_coverage": [
+            {
+              "mass": 0.22746962905099702,
+              "members": 1,
+              "effective_members": 1.0
+            },
+            {
+              "mass": 0.38526445020053346,
+              "members": 2,
+              "effective_members": 1.9366587275483227
+            }
+          ]
+        },
+        {
+          "flat_pixel": 395868,
+          "accepted": 123,
+          "candidate_count": 123,
+          "best_1sigma": {
+            "z": 2.2641711637352553,
+            "mass": 0.09373780881993735,
+            "members": 1,
+            "effective_members": 1.0
+          },
+          "best_2sigma": {
+            "z": 2.2657655929011264,
+            "mass": 0.09935084432088971,
+            "members": 3,
+            "effective_members": 2.2165509889336366
+          },
+          "native_expected_coverage": [
+            {
+              "mass": 0,
+              "members": 0,
+              "effective_members": 0.0
+            },
+            {
+              "mass": 0,
+              "members": 0,
+              "effective_members": 0.0
+            }
+          ],
+          "native_median_coverage": [
+            {
+              "mass": 0,
+              "members": 0,
+              "effective_members": 0.0
+            },
+            {
+              "mass": 0.014047156872919492,
+              "members": 1,
+              "effective_members": 1.0
+            }
+          ]
+        },
+        {
+          "flat_pixel": 400626,
+          "accepted": 114,
+          "candidate_count": 114,
+          "best_1sigma": {
+            "z": 2.196273431123679,
+            "mass": 0.09134406743141389,
+            "members": 1,
+            "effective_members": 1.0
+          },
+          "best_2sigma": {
+            "z": 2.1959176926193917,
+            "mass": 0.2522446600753968,
+            "members": 4,
+            "effective_members": 3.678493468014557
+          },
+          "native_expected_coverage": [
+            {
+              "mass": 0,
+              "members": 0,
+              "effective_members": 0.0
+            },
+            {
+              "mass": 0,
+              "members": 0,
+              "effective_members": 0.0
+            }
+          ],
+          "native_median_coverage": [
+            {
+              "mass": 0,
+              "members": 0,
+              "effective_members": 0.0
+            },
+            {
+              "mass": 0.015226742897243458,
+              "members": 1,
+              "effective_members": 1.0
+            }
+          ]
+        },
+        {
+          "flat_pixel": 408298,
+          "accepted": 149,
+          "candidate_count": 149,
+          "best_1sigma": {
+            "z": 2.2366024847360335,
+            "mass": 0.053674978344245027,
+            "members": 1,
+            "effective_members": 1.0
+          },
+          "best_2sigma": {
+            "z": 2.2317539954462515,
+            "mass": 0.20985028277396983,
+            "members": 2,
+            "effective_members": 1.6052449682721746
+          },
+          "native_expected_coverage": [
+            {
+              "mass": 0,
+              "members": 0,
+              "effective_members": 0.0
+            },
+            {
+              "mass": 0,
+              "members": 0,
+              "effective_members": 0.0
+            }
+          ],
+          "native_median_coverage": [
+            {
+              "mass": 0.053674978344245027,
+              "members": 1,
+              "effective_members": 1.0
+            },
+            {
+              "mass": 0.053674978344245027,
+              "members": 1,
+              "effective_members": 1.0
+            }
+          ]
+        },
+        {
+          "flat_pixel": 411770,
+          "accepted": 100,
+          "candidate_count": 100,
+          "best_1sigma": {
+            "z": 2.2616660103295687,
+            "mass": 0.24221865716830224,
+            "members": 1,
+            "effective_members": 1.0
+          },
+          "best_2sigma": {
+            "z": 2.262333816968072,
+            "mass": 0.3868934166181985,
+            "members": 3,
+            "effective_members": 2.0095848215767
+          },
+          "native_expected_coverage": [
+            {
+              "mass": 0,
+              "members": 0,
+              "effective_members": 0.0
+            },
+            {
+              "mass": 0,
+              "members": 0,
+              "effective_members": 0.0
+            }
+          ],
+          "native_median_coverage": [
+            {
+              "mass": 0.24221865716830224,
+              "members": 1,
+              "effective_members": 1.0
+            },
+            {
+              "mass": 0.3662813601151884,
+              "members": 2,
+              "effective_members": 1.8114966303779314
+            }
+          ]
+        },
+        {
+          "flat_pixel": 417074,
+          "accepted": 57,
+          "candidate_count": 57,
+          "best_1sigma": {
+            "z": 2.2388563339534553,
+            "mass": 0.499776240589076,
+            "members": 1,
+            "effective_members": 1.0
+          },
+          "best_2sigma": {
+            "z": 2.2388563339534553,
+            "mass": 0.6514792132197771,
+            "members": 3,
+            "effective_members": 1.6091918126630662
+          },
+          "native_expected_coverage": [
+            {
+              "mass": 0,
+              "members": 0,
+              "effective_members": 0.0
+            },
+            {
+              "mass": 0.008440332931292592,
+              "members": 1,
+              "effective_members": 1.0
+            }
+          ],
+          "native_median_coverage": [
+            {
+              "mass": 0.499776240589076,
+              "members": 1,
+              "effective_members": 1.0
+            },
+            {
+              "mass": 0.6514792132197771,
+              "members": 3,
+              "effective_members": 1.6091918126630662
+            }
+          ]
+        },
+        {
+          "flat_pixel": 421052,
+          "accepted": 99,
+          "candidate_count": 99,
+          "best_1sigma": {
+            "z": 2.265017820057779,
+            "mass": 0.1668390676282806,
+            "members": 1,
+            "effective_members": 1.0
+          },
+          "best_2sigma": {
+            "z": 2.270969863623795,
+            "mass": 0.20787983867551285,
+            "members": 2,
+            "effective_members": 1.9404399832405865
+          },
+          "native_expected_coverage": [
+            {
+              "mass": 0,
+              "members": 0,
+              "effective_members": 0.0
+            },
+            {
+              "mass": 0.012030962491425292,
+              "members": 1,
+              "effective_members": 1.0
+            }
+          ],
+          "native_median_coverage": [
+            {
+              "mass": 0,
+              "members": 0,
+              "effective_members": 0.0
+            },
+            {
+              "mass": 0.08572993074665147,
+              "members": 1,
+              "effective_members": 1.0
+            }
+          ]
+        },
+        {
+          "flat_pixel": 427387,
+          "accepted": 67,
+          "candidate_count": 67,
+          "best_1sigma": {
+            "z": 2.2718960173551475,
+            "mass": 0.07278596015766253,
+            "members": 1,
+            "effective_members": 1.0
+          },
+          "best_2sigma": {
+            "z": 2.2460792341911504,
+            "mass": 0.24755193764834413,
+            "members": 1,
+            "effective_members": 1.0
+          },
+          "native_expected_coverage": [
+            {
+              "mass": 0.06469745112278563,
+              "members": 1,
+              "effective_members": 1.0
+            },
+            {
+              "mass": 0.08808589351400589,
+              "members": 2,
+              "effective_members": 1.6394435380961008
+            }
+          ],
+          "native_median_coverage": [
+            {
+              "mass": 0,
+              "members": 0,
+              "effective_members": 0.0
+            },
+            {
+              "mass": 0.24755193764834413,
+              "members": 1,
+              "effective_members": 1.0
+            }
+          ]
+        },
+        {
+          "flat_pixel": 431857,
+          "accepted": 73,
+          "candidate_count": 73,
+          "best_1sigma": {
+            "z": 2.2844965960445984,
+            "mass": 0.050404665880296226,
+            "members": 1,
+            "effective_members": 1.0
+          },
+          "best_2sigma": {
+            "z": 2.2777198768229616,
+            "mass": 0.4137326445198889,
+            "members": 4,
+            "effective_members": 3.908087512758434
+          },
+          "native_expected_coverage": [
+            {
+              "mass": 0,
+              "members": 0,
+              "effective_members": 0.0
+            },
+            {
+              "mass": 0.03900478813472603,
+              "members": 1,
+              "effective_members": 1.0
+            }
+          ],
+          "native_median_coverage": [
+            {
+              "mass": 0,
+              "members": 0,
+              "effective_members": 0.0
+            },
+            {
+              "mass": 0.2852149576458726,
+              "members": 3,
+              "effective_members": 2.981585831097397
+            }
+          ]
+        },
+        {
+          "flat_pixel": 439162,
+          "accepted": 145,
+          "candidate_count": 145,
+          "best_1sigma": {
+            "z": 2.242837203027216,
+            "mass": 0.04404934432612229,
+            "members": 1,
+            "effective_members": 1.0
+          },
+          "best_2sigma": {
+            "z": 2.242837203027216,
+            "mass": 0.22220598896170063,
+            "members": 2,
+            "effective_members": 1.466012588053801
+          },
+          "native_expected_coverage": [
+            {
+              "mass": 0,
+              "members": 0,
+              "effective_members": 0.0
+            },
+            {
+              "mass": 0.003182213130659741,
+              "members": 1,
+              "effective_members": 1.0
+            }
+          ],
+          "native_median_coverage": [
+            {
+              "mass": 0.04404934432612229,
+              "members": 1,
+              "effective_members": 1.0
+            },
+            {
+              "mass": 0.22220598896170063,
+              "members": 2,
+              "effective_members": 1.466012588053801
+            }
+          ]
+        },
+        {
+          "flat_pixel": 444516,
+          "accepted": 57,
+          "candidate_count": 57,
+          "best_1sigma": {
+            "z": 2.1781458292708216,
+            "mass": 0.2651485512828922,
+            "members": 1,
+            "effective_members": 1.0
+          },
+          "best_2sigma": {
+            "z": 2.1667536532719236,
+            "mass": 0.30477648916680855,
+            "members": 2,
+            "effective_members": 1.2923803225239965
+          },
+          "native_expected_coverage": [
+            {
+              "mass": 0,
+              "members": 0,
+              "effective_members": 0.0
+            },
+            {
+              "mass": 0,
+              "members": 0,
+              "effective_members": 0.0
+            }
+          ],
+          "native_median_coverage": [
+            {
+              "mass": 0,
+              "members": 0,
+              "effective_members": 0.0
+            },
+            {
+              "mass": 0.0009192904460158457,
+              "members": 1,
+              "effective_members": 1.0
+            }
+          ]
+        }
+      ]
+    }
+  }
+}
