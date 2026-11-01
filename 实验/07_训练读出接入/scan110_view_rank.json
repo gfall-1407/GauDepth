@@ -1,0 +1,388 @@
+{
+  "source_camera_file": "C:\\Users\\guofa\\Desktop\\GauDepth\\数据\\原始输入与基线模型\\20261023_一致深度支持\\inputs\\scan110\\cameras.npz",
+  "source_sha256": "c8d2886d64072ac2d764acfd8909cd38003a946f8fa7294fd3562ca16be86209",
+  "camera_count": 64,
+  "nearest_list_found": false,
+  "rule": "world_mat_inv_N.npy [:3,3] camera-center Euclidean distance from index 49; tie by optical-axis angle then index; exclude 49 and 12",
+  "view_name_assumption": "zero-padded camera index; verify against G5 COLMAP image names before capture",
+  "source_index": 49,
+  "target_index": 12,
+  "selected_extra_indices": [
+    50,
+    58
+  ],
+  "ranking": [
+    {
+      "index": 50,
+      "view": "0050",
+      "center_distance": 183.28568295646724,
+      "optical_axis_angle_deg": 12.368512932391987
+    },
+    {
+      "index": 58,
+      "view": "0058",
+      "center_distance": 204.79380286357235,
+      "optical_axis_angle_deg": 13.684437654077065
+    },
+    {
+      "index": 26,
+      "view": "0026",
+      "center_distance": 245.3724436945923,
+      "optical_axis_angle_deg": 4.486183419390799
+    },
+    {
+      "index": 25,
+      "view": "0025",
+      "center_distance": 268.9881817130725,
+      "optical_axis_angle_deg": 7.0690344962386105
+    },
+    {
+      "index": 13,
+      "view": "0013",
+      "center_distance": 285.1502516664748,
+      "optical_axis_angle_deg": 11.53865300287993
+    },
+    {
+      "index": 30,
+      "view": "0030",
+      "center_distance": 288.0172658701216,
+      "optical_axis_angle_deg": 12.70778632653837
+    },
+    {
+      "index": 27,
+      "view": "0027",
+      "center_distance": 300.00651011432564,
+      "optical_axis_angle_deg": 16.027119259196525
+    },
+    {
+      "index": 31,
+      "view": "0031",
+      "center_distance": 300.7007671762975,
+      "optical_axis_angle_deg": 12.680160142947594
+    },
+    {
+      "index": 57,
+      "view": "0057",
+      "center_distance": 322.3491356090553,
+      "optical_axis_angle_deg": 21.66637290650674
+    },
+    {
+      "index": 29,
+      "view": "0029",
+      "center_distance": 336.6413302430391,
+      "optical_axis_angle_deg": 20.111610783620858
+    },
+    {
+      "index": 14,
+      "view": "0014",
+      "center_distance": 351.4870952261565,
+      "optical_axis_angle_deg": 18.943618615967004
+    },
+    {
+      "index": 24,
+      "view": "0024",
+      "center_distance": 354.85803568573056,
+      "optical_axis_angle_deg": 18.706863117506657
+    },
+    {
+      "index": 59,
+      "view": "0059",
+      "center_distance": 363.1902456279454,
+      "optical_axis_angle_deg": 24.536829961500647
+    },
+    {
+      "index": 51,
+      "view": "0051",
+      "center_distance": 363.8865096269175,
+      "optical_axis_angle_deg": 24.73816262725765
+    },
+    {
+      "index": 32,
+      "view": "0032",
+      "center_distance": 367.88705625448165,
+      "optical_axis_angle_deg": 20.075042869837823
+    },
+    {
+      "index": 10,
+      "view": "0010",
+      "center_distance": 370.94573401909076,
+      "optical_axis_angle_deg": 23.075256850613968
+    },
+    {
+      "index": 46,
+      "view": "0046",
+      "center_distance": 379.165600593672,
+      "optical_axis_angle_deg": 23.20856018298533
+    },
+    {
+      "index": 11,
+      "view": "0011",
+      "center_distance": 379.2055017997553,
+      "optical_axis_angle_deg": 25.15268262576184
+    },
+    {
+      "index": 9,
+      "view": "0009",
+      "center_distance": 391.19458107659136,
+      "optical_axis_angle_deg": 24.176946313719423
+    },
+    {
+      "index": 45,
+      "view": "0045",
+      "center_distance": 395.532332506314,
+      "optical_axis_angle_deg": 23.961107664633616
+    },
+    {
+      "index": 60,
+      "view": "0060",
+      "center_distance": 395.67327269227707,
+      "optical_axis_angle_deg": 26.668545415384386
+    },
+    {
+      "index": 47,
+      "view": "0047",
+      "center_distance": 408.5499753632335,
+      "optical_axis_angle_deg": 27.134486708615576
+    },
+    {
+      "index": 28,
+      "view": "0028",
+      "center_distance": 424.4945173140688,
+      "optical_axis_angle_deg": 29.761137984974265
+    },
+    {
+      "index": 44,
+      "view": "0044",
+      "center_distance": 451.8542837151872,
+      "optical_axis_angle_deg": 29.0196494386169
+    },
+    {
+      "index": 15,
+      "view": "0015",
+      "center_distance": 461.15752032039273,
+      "optical_axis_angle_deg": 29.963214354099122
+    },
+    {
+      "index": 33,
+      "view": "0033",
+      "center_distance": 464.4620060549616,
+      "optical_axis_angle_deg": 29.754419447072983
+    },
+    {
+      "index": 23,
+      "view": "0023",
+      "center_distance": 466.9281476159386,
+      "optical_axis_angle_deg": 30.213007625357854
+    },
+    {
+      "index": 56,
+      "view": "0056",
+      "center_distance": 471.2575789905794,
+      "optical_axis_angle_deg": 31.98579638175453
+    },
+    {
+      "index": 48,
+      "view": "0048",
+      "center_distance": 473.956741598286,
+      "optical_axis_angle_deg": 34.11855451356055
+    },
+    {
+      "index": 8,
+      "view": "0008",
+      "center_distance": 480.02957034084153,
+      "optical_axis_angle_deg": 32.48466588613186
+    },
+    {
+      "index": 1,
+      "view": "0001",
+      "center_distance": 483.723219039846,
+      "optical_axis_angle_deg": 33.7661654481023
+    },
+    {
+      "index": 61,
+      "view": "0061",
+      "center_distance": 486.9560666575366,
+      "optical_axis_angle_deg": 32.964421166240065
+    },
+    {
+      "index": 0,
+      "view": "0000",
+      "center_distance": 497.08401090567236,
+      "optical_axis_angle_deg": 35.81818438799612
+    },
+    {
+      "index": 43,
+      "view": "0043",
+      "center_distance": 533.7681830783894,
+      "optical_axis_angle_deg": 36.60236369560331
+    },
+    {
+      "index": 52,
+      "view": "0052",
+      "center_distance": 539.0898448655815,
+      "optical_axis_angle_deg": 36.99628035368355
+    },
+    {
+      "index": 2,
+      "view": "0002",
+      "center_distance": 561.1611590821908,
+      "optical_axis_angle_deg": 40.56205529392875
+    },
+    {
+      "index": 34,
+      "view": "0034",
+      "center_distance": 571.9464610293967,
+      "optical_axis_angle_deg": 39.99453407025659
+    },
+    {
+      "index": 16,
+      "view": "0016",
+      "center_distance": 584.6745989103033,
+      "optical_axis_angle_deg": 41.72266046241813
+    },
+    {
+      "index": 22,
+      "view": "0022",
+      "center_distance": 585.7645511211471,
+      "optical_axis_angle_deg": 41.53052752429826
+    },
+    {
+      "index": 7,
+      "view": "0007",
+      "center_distance": 601.6425767985065,
+      "optical_axis_angle_deg": 43.80949509025255
+    },
+    {
+      "index": 62,
+      "view": "0062",
+      "center_distance": 607.3655781052547,
+      "optical_axis_angle_deg": 41.493730113505826
+    },
+    {
+      "index": 55,
+      "view": "0055",
+      "center_distance": 624.9100261870157,
+      "optical_axis_angle_deg": 42.940434424550595
+    },
+    {
+      "index": 42,
+      "view": "0042",
+      "center_distance": 628.3529949381181,
+      "optical_axis_angle_deg": 45.400543771700185
+    },
+    {
+      "index": 35,
+      "view": "0035",
+      "center_distance": 682.0465863274202,
+      "optical_axis_angle_deg": 50.42592013704134
+    },
+    {
+      "index": 3,
+      "view": "0003",
+      "center_distance": 685.9884055599234,
+      "optical_axis_angle_deg": 52.15833531654314
+    },
+    {
+      "index": 21,
+      "view": "0021",
+      "center_distance": 702.7838654941592,
+      "optical_axis_angle_deg": 52.64480953738036
+    },
+    {
+      "index": 53,
+      "view": "0053",
+      "center_distance": 704.196437358109,
+      "optical_axis_angle_deg": 49.00309975278632
+    },
+    {
+      "index": 17,
+      "view": "0017",
+      "center_distance": 706.4998117552132,
+      "optical_axis_angle_deg": 53.305749310239534
+    },
+    {
+      "index": 6,
+      "view": "0006",
+      "center_distance": 726.6323935024527,
+      "optical_axis_angle_deg": 55.67162393692146
+    },
+    {
+      "index": 41,
+      "view": "0041",
+      "center_distance": 728.1393884856936,
+      "optical_axis_angle_deg": 54.90317422177433
+    },
+    {
+      "index": 63,
+      "view": "0063",
+      "center_distance": 739.0207272282566,
+      "optical_axis_angle_deg": 51.17750796105575
+    },
+    {
+      "index": 54,
+      "view": "0054",
+      "center_distance": 775.2791616382428,
+      "optical_axis_angle_deg": 54.02343155480228
+    },
+    {
+      "index": 36,
+      "view": "0036",
+      "center_distance": 789.6320132214524,
+      "optical_axis_angle_deg": 60.85526449166431
+    },
+    {
+      "index": 4,
+      "view": "0004",
+      "center_distance": 810.5326891024068,
+      "optical_axis_angle_deg": 64.39785718593386
+    },
+    {
+      "index": 20,
+      "view": "0020",
+      "center_distance": 813.8803723756378,
+      "optical_axis_angle_deg": 63.511715293633735
+    },
+    {
+      "index": 18,
+      "view": "0018",
+      "center_distance": 820.5322825050027,
+      "optical_axis_angle_deg": 64.51159441493927
+    },
+    {
+      "index": 40,
+      "view": "0040",
+      "center_distance": 828.0784388045183,
+      "optical_axis_angle_deg": 64.64331679863879
+    },
+    {
+      "index": 5,
+      "view": "0005",
+      "center_distance": 841.4722020621244,
+      "optical_axis_angle_deg": 67.01085631786744
+    },
+    {
+      "index": 37,
+      "view": "0037",
+      "center_distance": 891.6306592219424,
+      "optical_axis_angle_deg": 71.15487576566152
+    },
+    {
+      "index": 19,
+      "view": "0019",
+      "center_distance": 916.1426299360683,
+      "optical_axis_angle_deg": 73.97601113720508
+    },
+    {
+      "index": 39,
+      "view": "0039",
+      "center_distance": 924.3451755759612,
+      "optical_axis_angle_deg": 74.48377482062861
+    },
+    {
+      "index": 38,
+      "view": "0038",
+      "center_distance": 1014.9463774105168,
+      "optical_axis_angle_deg": 84.2874551536469
+    }
+  ]
+}

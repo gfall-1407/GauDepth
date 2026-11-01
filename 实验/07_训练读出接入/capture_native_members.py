@@ -5,6 +5,7 @@ native accepted alpha; they are detached observations, not autograd tensors.
 """
 
 import argparse
+import ast
 import hashlib
 import json
 import math
@@ -49,7 +50,19 @@ def native_geometry(blob, count):
     return arrays
 
 
-def replay_members(xy, ids, alpha, counts, ray_planes, fx, fy, width, height):
+def read_training_cfg(path):
+    expr = ast.parse(path.read_text(encoding='utf-8').strip(), mode='eval').body
+    if not isinstance(expr, ast.Call) or not isinstance(expr.func, ast.Name) or expr.func.id != 'Namespace' or expr.args:
+        raise ValueError('cfg_args must be a simple Namespace(...)')
+    result = {}
+    for keyword in expr.keywords:
+        if keyword.arg is None or not isinstance(keyword.value, ast.Constant):
+            raise ValueError(f'unsupported cfg_args field {keyword.arg}')
+        result[keyword.arg] = keyword.value.value
+    return result
+
+
+def replay_members(xy, ids, alpha, counts, ray_planes, mean2d, fx, fy, width, height):
     transmittance = np.zeros_like(alpha, dtype=np.float32)
     weight = np.zeros_like(alpha, dtype=np.float32)
     t = np.zeros_like(alpha, dtype=np.float32)
@@ -66,7 +79,7 @@ def replay_members(xy, ids, alpha, counts, ray_planes, fx, fy, width, height):
             plane = ray_planes[member]
             transmittance[q, j] = final_t[q]
             weight[q, j] = np.float32(final_t[q] * a)
-            dx, dy = np.float32(x - (width - 1) / 2), np.float32(y - (height - 1) / 2)
+            dx, dy = np.float32(mean2d[member, 0] - x), np.float32(mean2d[member, 1] - y)
             t[q, j] = np.float32(np.float32(plane[0] * dx) + np.float32(plane[1] * dy) + plane[2])
             di[q, j] = np.float32(t[q, j] * rln)
             accum = np.float32(accum + np.float32(t[q, j] * weight[q, j]))
@@ -125,6 +138,11 @@ def main():
         raise ValueError('PLY and cfg must exist; output must be new')
     if args.rays != 32 or args.support_k < 128:
         raise ValueError('capture contract: 32 rays, K >= 128')
+    training_cfg = read_training_cfg(cfg)
+    for key in ('source_path', 'images', 'resolution', 'eval', 'kernel_size',
+                'white_background', 'sh_degree', 'disable_filter3D', 'use_decoupled_appearance'):
+        if getattr(dataset, key) != training_cfg[key]:
+            raise ValueError(f'capture {key}={getattr(dataset, key)!r} disagrees with cfg_args {training_cfg[key]!r}')
     camera, camera_files, image_file = selected_camera(dataset.source_path,
                                                        dataset.images, args.view, dataset)
     height, width = camera.image_height, camera.image_width
@@ -136,7 +154,11 @@ def main():
                       dtype=torch.float32, device='cuda')
     empty = torch.empty(0, dtype=torch.float32, device='cuda')
     with torch.no_grad():
-        scale, opacity = gaussians.get_scaling_n_opacity_with_3D_filter
+        if dataset.disable_filter3D:
+            gaussians.reset_3D_filter()
+            scale, opacity = gaussians.get_scaling, gaussians.get_opacity
+        else:
+            scale, opacity = gaussians.get_scaling_n_opacity_with_3D_filter
         rendered, _, native_alpha, native_normal, native_depth, native_median, _, geom, bins, img = (
             _C.rasterize_gaussians(
                 bg, gaussians.get_xyz, empty, opacity, scale, gaussians.get_rotation,
@@ -144,14 +166,10 @@ def main():
                 math.tan(camera.FoVx * .5), math.tan(camera.FoVy * .5),
                 dataset.kernel_size, height, width, gaussians.get_features,
                 gaussians.active_sh_degree, camera.camera_center, False, True, False))
-        mask = native_alpha.reshape(height, width).cpu().numpy() > .5
-        mask[:1] = False
-        mask[-1:] = False
-        mask[:, :1] = False
-        mask[:, -1:] = False
-        valid = np.flatnonzero(mask.reshape(-1))
+        rows, cols = np.mgrid[1:height - 1, 1:width - 1]
+        valid = (rows * width + cols).reshape(-1)
         if len(valid) < args.rays:
-            raise ValueError(f'only {len(valid)} eligible pixels for 32 rays')
+            raise ValueError('image too small for 32 interior rays')
         flat = np.sort(np.random.default_rng(args.seed).choice(valid, args.rays, replace=False))
         centers = np.stack((flat % width, flat // width), axis=1).astype(np.float32)
         offsets = np.array([(dx, dy) for dy in (-1, 0, 1) for dx in (-1, 0, 1)], dtype=np.float32)
@@ -169,7 +187,7 @@ def main():
         if np.any(unique >= points):
             raise ValueError('accepted ID outside PLY row range')
         T, w, t, di, final_T, replay_depth = replay_members(
-            xy_np, ids, alpha, count, geometry['ray_plane'], camera.Fx, camera.Fy,
+            xy_np, ids, alpha, count, geometry['ray_plane'], geometry['mean2d'], camera.Fx, camera.Fy,
             width, height)
         flat_xy = (xy_np[:, 1] * width + xy_np[:, 0]).astype(np.int64)
         native_flat = native_depth.reshape(-1).cpu().numpy()
@@ -193,7 +211,7 @@ def main():
                        scale_unaa=gaussians.get_scaling[indices].cpu().numpy(),
                        opacity_logit=gaussians._opacity[indices].cpu().numpy(),
                        opacity_unaa=gaussians.get_opacity[indices].cpu().numpy(),
-                       filter_3D=gaussians.filter_3D[indices].cpu().numpy(),
+                       filter_3D=saved_filter[indices].cpu().numpy(),
                        scale_render=scale[indices].cpu().numpy(),
                        opacity_render=opacity[indices].cpu().numpy(),
                        ray_plane=geometry['ray_plane'][unique],
@@ -210,6 +228,11 @@ def main():
         filter_delta = (gaussians.filter_3D - saved_filter).abs()
         filter_max = float(filter_delta.max().item())
         filter_mean = float(filter_delta.mean().item())
+        nonfinite = {key: int(np.size(value) - np.isfinite(value).sum())
+                     for key, value in capture.items()
+                     if np.issubdtype(value.dtype, np.floating)}
+        if any(nonfinite.values()) or not np.isfinite([filter_max, filter_mean]).all():
+            raise ValueError(f'non-finite capture fields: {nonfinite}')
     output.mkdir(parents=True, exist_ok=False)
     np.savez_compressed(output / 'native_members.npz', **capture)
     source_root = Path(__file__).resolve().parents[2]
@@ -233,6 +256,7 @@ def main():
                     filter_provenance='PLY field compared with recomputation from sorted same-scene train cameras; saved filter may predate final 100 training iterations',
                     filter_views=filter_views, filter_recompute_max_abs=filter_max,
                     filter_recompute_mean_abs=filter_mean,
+                    nonfinite_counts=nonfinite,
                     normal_definition='native preprocess computeCov2D camera-space normal; stored float4 GeometryState.normals',
                     T_weight_provenance='float32 replay of native accepted alpha in list order',
                     detached=True, seed=args.seed, rays=args.rays, neighborhood='3x3',
