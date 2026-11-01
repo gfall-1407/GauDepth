@@ -64,6 +64,10 @@ def generate_manifest():
     near = [member(-.02, 0, 1, label='near_a'), member(.02, 0, 1, label='near_b')]
     far = [member(-.02, 0, 1.02, label='far_a'), member(.02, 0, 1.02, label='far_b')]
     noisy = [member(-.02, 0, 1, label='true_center'), member(.02, 0, 1.015, label='shifted_center')]
+    thin_correct = [member(-.02, 0, 1, covariance(.04, .04, .006), label='thin_true'),
+                    member(.02, 0, 1.015, covariance(.04, .04, .025), label='thick_shifted')]
+    thin_wrong = [member(-.02, 0, 1, covariance(.04, .04, .025), label='thick_true'),
+                  member(.02, 0, 1.015, covariance(.04, .04, .006), label='thin_shifted')]
     # Deterministic proper rotation and translation; no fitted geometry.
     a = .37
     rotation = np.array([[np.cos(a), 0, np.sin(a)], [0, 1, 0], [-np.sin(a), 0, np.cos(a)]])
@@ -103,6 +107,8 @@ def generate_manifest():
                                          member(.02, 0, 1.015)], truth_t=1.),
         case('noise_two', noisy, truth_t=1.),
         case('noise_duplicate_shifted', noisy + [dict(noisy[1], label=f'copy_{i}') for i in range(8)], truth_t=1.),
+        case('heterogeneous_thin_correct', thin_correct, truth_t=1.),
+        case('heterogeneous_thin_wrong', thin_wrong, truth_t=1.),
         case('rigid_rotation', rotated, origin=translation, ray=rotation @ np.array([0., 0., 1.]), truth_t=1.),
         case('uniform_scale_x2', scaled, interval=(1., 6.), truth_t=2.),
         case('normal_sign_flip', base, truth_t=1., signs=[-1, 1, -1]),
@@ -252,6 +258,12 @@ def check_results(manifest, rows, member_rows):
     repeated=by['noise_duplicate_shifted','precision_gap']['t_hat']
     check('copied_shifted_member_bias',repeated-original>.004,
           dict(original=original, copied=repeated, unique_members=by['noise_duplicate_shifted','precision_gap']['unique_members']))
+    for name, better in [('heterogeneous_thin_correct',True),('heterogeneous_thin_wrong',False)]:
+        gap=abs(by[name,'precision_gap']['t_hat']-1)
+        uniform=abs(by[name,'uniform']['t_hat']-1)
+        check(f'{name}/weight_not_guarantee',gap<uniform if better else gap>uniform,
+              dict(precision_gap_error=gap, uniform_error=uniform,
+                   inverse_short_error=abs(by[name,'inverse_short']['t_hat']-1)))
     for mode in MODES:
         base=by['same_layout',mode]['t_hat']
         check(f'rigid_invariance/{mode}',abs(by['rigid_rotation',mode]['t_hat']-base)<1e-10,
