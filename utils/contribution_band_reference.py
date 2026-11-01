@@ -14,7 +14,7 @@ def _next_up(value):
     return unpack(">d", pack(">Q", bits + 1))[0]
 
 
-def band_depth_and_grad(alpha, depth, lower=0.25, upper=0.75):
+def band_depth_and_grad(alpha, depth):
     """Return depth, dD/d(depth_i), dD/d(alpha_i) for accepted members.
 
     The interval is in normalized front-to-back accumulated contribution,
@@ -22,8 +22,7 @@ def band_depth_and_grad(alpha, depth, lower=0.25, upper=0.75):
     """
     if len(alpha) != len(depth) or not alpha:
         raise ValueError("equal-length nonempty alpha and depth are required")
-    if not 0 <= lower < upper <= 1:
-        raise ValueError("invalid contribution interval")
+    lower, upper = 0.25, 0.75
     if any(not isfinite(a) or not 0 <= a < 1 for a in alpha):
         raise ValueError("alpha must be finite in [0, 1)")
     if any(not isfinite(d) for d in depth):
