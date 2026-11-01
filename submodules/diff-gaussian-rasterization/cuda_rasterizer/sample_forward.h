@@ -56,10 +56,12 @@ void sampleDepth(
     const float4* ray_planes,
     const float4* conic_opacity,
     uint32_t* n_contrib,
+    uint32_t* median_contrib,
     float* accum_depth,
     float* final_T,
     float3* output,
-    bool* inside);
+    bool* inside,
+    bool use_median);
 } // namespace FORWARD
 
 #endif

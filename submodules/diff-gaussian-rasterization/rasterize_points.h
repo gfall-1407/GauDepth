@@ -121,7 +121,8 @@ SampleRasterizedDepthCUDA(
     const int image_width,
     const torch::Tensor& campos,
     const bool prefiltered,
-    const bool debug);
+    const bool debug,
+    const bool use_median);
 
 std::tuple<torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor>
 SampleRasterizedDepthBackwardCUDA(
@@ -148,4 +149,5 @@ SampleRasterizedDepthBackwardCUDA(
     const torch::Tensor& imageBuffer,
     int R, int RN,
     const bool prefiltered,
-    const bool debug);
+    const bool debug,
+    const bool use_median);

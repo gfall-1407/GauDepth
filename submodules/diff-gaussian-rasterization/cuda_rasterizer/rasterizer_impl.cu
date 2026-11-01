@@ -206,6 +206,7 @@ CudaRasterizer::PointState CudaRasterizer::PointState::fromChunk(char*& chunk, s
     obtain(chunk, geom.points2D, P, 128);
     obtain(chunk, geom.tiles_touched, P, 128);
     obtain(chunk, geom.n_contrib, P, 128);
+    obtain(chunk, geom.median_contrib, P, 128);
     obtain(chunk, geom.accum_depth, P, 128);
     obtain(chunk, geom.final_T, P, 128);
     cub::DeviceScan::InclusiveSum(nullptr, geom.scan_size, geom.tiles_touched, geom.tiles_touched, P);
@@ -789,6 +790,7 @@ int2 CudaRasterizer::Rasterizer::sampleDepth(
     const bool prefiltered,
     float* output,
     bool* inside,
+    bool use_median,
     bool debug) {
     const float focal_y = height / (2.0f * tan_fovy);
     const float focal_x = width / (2.0f * tan_fovx);
@@ -965,10 +967,12 @@ int2 CudaRasterizer::Rasterizer::sampleDepth(
                    geomState.ray_planes,
                    geomState.conic_opacity,
                    pointState.n_contrib,
+                   pointState.median_contrib,
                    pointState.accum_depth,
                    pointState.final_T,
                    (float3*)output,
-                   inside),
+                   inside,
+                   use_median),
                debug)
 
     return {num_rendered, num_evaluation};
@@ -1005,6 +1009,7 @@ void CudaRasterizer::Rasterizer::sample_depth_backward(
     float* dL_dscale,
     float* dL_drot,
     float* dL_dpoint,
+    bool use_median,
     bool debug) {
     GeometryState geomState         = GeometryState::fromChunk(geom_buffer, P);
     BinningState binningState       = BinningState::fromChunk(binning_buffer, R);
@@ -1041,13 +1046,15 @@ void CudaRasterizer::Rasterizer::sample_depth_backward(
                    geomState.ray_planes,
                    geomState.conic_opacity,
                    pointState.n_contrib,
+                   pointState.median_contrib,
                    pointState.accum_depth,
                    pointState.final_T,
                    (float3*)dL_doutput,
                    (float3*)dL_dmean2D,
                    geomBwdState.conic_opacity,
                    geomBwdState.ray_planes,
-                   (float2*)dL_dpoint2D),
+                   (float2*)dL_dpoint2D,
+                   use_median),
                debug)
     // Take care of the rest of preprocessing. Was the precomputed covariance
     // given to us or a scales/rot pair? If precomputed, pass that. If not,

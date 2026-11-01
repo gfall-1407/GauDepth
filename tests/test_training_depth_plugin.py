@@ -9,28 +9,11 @@ import torch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from training_depth_plugin import (add_step_metrics, fixed_group_short_axis_ls_z,
                                    parameter_metrics, reset_warm_start_radii,
-                                   route_depth, sample_native_median_map, should_log_parameters,
+                                   route_depth, should_log_parameters,
                                    validate_ab_output_dir)
 
 
 class DepthPluginWiringTest(unittest.TestCase):
-    def test_continuous_median_query_keeps_map_and_point_gradients(self):
-        camera = SimpleNamespace(
-            image_height=3, image_width=3, Fx=1.0, Fy=1.0, Cx=1.0, Cy=1.0,
-            world_view_transform=torch.eye(4),
-        )
-        point = torch.tensor([[[0.2, 0.3, 1.0]]], requires_grad=True)
-        median = torch.arange(1.0, 10.0).reshape(1, 3, 3).requires_grad_()
-        alpha = torch.ones((1, 3, 3))
-        result = sample_native_median_map(point, camera, median, alpha)
-        self.assertTrue(result['inside'].item())
-        self.assertAlmostEqual(result['sampled_depth'][0, 0, 2].item(), 6.1, places=5)
-        result['sampled_depth'].sum().backward()
-        self.assertIsNotNone(point.grad)
-        self.assertGreater(point.grad.abs().sum().item(), 0)
-        self.assertIsNotNone(median.grad)
-        self.assertGreater(median.grad.abs().sum().item(), 0)
-
     def test_ab_destination_preflight_and_warm_start_shape(self):
         with patch('training_depth_plugin.Path') as mock_path:
             target = mock_path.return_value

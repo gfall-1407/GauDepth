@@ -326,7 +326,7 @@ class GaussianRasterizer(nn.Module):
 
         return color_integrated, alpha_integrated, inside
 
-    def sample_depth(self, points3D, means3D, opacities, scales=None, rotations=None, cov3D_precomp=None):
+    def sample_depth(self, points3D, means3D, opacities, scales=None, rotations=None, cov3D_precomp=None, use_median=False):
         if ((scales is None or rotations is None) and cov3D_precomp is None) or (
             (scales is not None or rotations is not None) and cov3D_precomp is not None
         ):
@@ -339,7 +339,7 @@ class GaussianRasterizer(nn.Module):
         if cov3D_precomp is None:
             cov3D_precomp = torch.Tensor([])
         raster_settings = self.raster_settings
-        return _SampleDepth.apply(points3D, means3D, opacities, scales, rotations, cov3D_precomp, raster_settings)
+        return _SampleDepth.apply(points3D, means3D, opacities, scales, rotations, cov3D_precomp, raster_settings, use_median)
 
 
 class _SampleDepth(torch.autograd.Function):
@@ -353,6 +353,7 @@ class _SampleDepth(torch.autograd.Function):
         rotations,
         cov3D_precomp,
         raster_settings,
+        use_median,
     ):
 
         # Invoke C++/CUDA rasterization routine
@@ -375,6 +376,7 @@ class _SampleDepth(torch.autograd.Function):
             raster_settings.campos,
             raster_settings.prefiltered,
             raster_settings.debug,
+            use_median,
         )
 
         # Invoke C++/CUDA rasterizer
@@ -394,6 +396,7 @@ class _SampleDepth(torch.autograd.Function):
             )
 
         ctx.raster_settings = raster_settings
+        ctx.use_median = use_median
         ctx.num_rendered = num_rendered
         ctx.num_points = num_points
         ctx.save_for_backward(
@@ -438,6 +441,7 @@ class _SampleDepth(torch.autograd.Function):
             num_points,
             raster_settings.prefiltered,
             raster_settings.debug,
+            ctx.use_median,
         )
 
         # Compute gradients for relevant tensors by invoking backward method
@@ -461,6 +465,7 @@ class _SampleDepth(torch.autograd.Function):
             grad_scales,
             grad_rotations,
             grad_cov3D_precomp,
+            None,
             None,
         )
 

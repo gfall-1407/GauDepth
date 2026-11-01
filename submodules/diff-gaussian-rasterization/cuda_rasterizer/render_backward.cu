@@ -777,9 +777,9 @@ __global__ void __launch_bounds__(BLOCK_X* BLOCK_Y)
                                                     normalmap[H * W + pix_id],
                                                     normalmap[2 * H * W + pix_id]);
             float normal_len            = normal_length[pix_id];
-            const float small           = static_cast<float>(normal_len < NORMALIZE_EPS);
-            const float large           = 1.0f - small;
-            const float denom           = small * NORMALIZE_EPS + large * normal_len;
+            const float is_small        = static_cast<float>(normal_len < NORMALIZE_EPS);
+            const float large           = 1.0f - is_small;
+            const float denom           = is_small * NORMALIZE_EPS + large * normal_len;
             const glm::vec3 proj        = glm::dot(dL_dpixel_normaln, normaln) * normaln * large;
             const glm::vec3 numerator   = dL_dpixel_normaln - proj;
 #pragma unroll

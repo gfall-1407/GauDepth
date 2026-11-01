@@ -35,13 +35,15 @@ void sampleDepth(
     const float4* ray_planes,
     const float4* conic_opacity,
     const uint32_t* n_contrib,
+    const uint32_t* median_contrib,
     const float* accum_depth,
     const float* final_T,
     const float3* dL_doutput,
     float3* dL_dgaussians2D,
     float4* dL_dconic2D,
     float4* dL_dray_planes,
-    float2* dL_dpoints2D);
+    float2* dL_dpoints2D,
+    bool use_median);
 } // namespace BACKWARD
 
 #endif

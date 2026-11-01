@@ -5,31 +5,10 @@ import json
 from pathlib import Path
 
 import torch
-import torch.nn.functional as F
 
 
 DEPTH_KEYS = ('expected_depth', 'median_depth')
 PARAMETER_NAMES = ('xyz', 'scaling', 'rotation')
-
-
-def sample_native_median_map(points3D, camera, median_depth, alpha_map):
-    """Bilinearly query a native rendered median map at projected world points."""
-    height, width = camera.image_height, camera.image_width
-    point_cam = points3D @ camera.world_view_transform[:3, :3] + camera.world_view_transform[3, :3]
-    z = point_cam[..., 2]
-    z_safe = z.clamp_min(1e-7)
-    pixel_x = camera.Fx * point_cam[..., 0] / z_safe + camera.Cx
-    pixel_y = camera.Fy * point_cam[..., 1] / z_safe + camera.Cy
-    grid = torch.stack((2 * pixel_x / max(width - 1, 1) - 1,
-                        2 * pixel_y / max(height - 1, 1) - 1), dim=-1).unsqueeze(0)
-    median = F.grid_sample(median_depth.unsqueeze(0), grid,
-                           mode="bilinear", padding_mode="zeros", align_corners=True)[0, 0]
-    alpha = F.grid_sample(alpha_map.unsqueeze(0), grid,
-                          mode="bilinear", padding_mode="zeros", align_corners=True)[0, 0]
-    ray = torch.stack((point_cam[..., 0] / z_safe, point_cam[..., 1] / z_safe,
-                       torch.ones_like(z)), dim=-1)
-    inside = (z > 0) & (pixel_x >= 0) & (pixel_x <= width - 1) & (pixel_y >= 0) & (pixel_y <= height - 1) & (alpha > 0)
-    return {"sampled_depth": ray * median.unsqueeze(-1), "inside": inside}
 
 
 def validate_ab_output_dir(model_path):

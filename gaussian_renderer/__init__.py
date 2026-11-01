@@ -14,7 +14,6 @@ import math
 from diff_gaussian_rasterization import GaussianRasterizationSettings, GaussianRasterizer
 from scene.gaussian_model import GaussianModel
 from utils.sh_utils import eval_sh
-from training_depth_plugin import sample_native_median_map
 
 
 def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, kernel_size, scaling_modifier = 1.0, require_depth : bool = True):
@@ -185,15 +184,7 @@ def integrate(points3D, viewpoint_camera, pc : GaussianModel, pipe, bg_color : t
 
 
 def sample_depth(points3D, viewpoint_camera, pc : GaussianModel, pipe : torch.Tensor, kernel_size : float, scaling_modifier = 1.0, depth_source="expected"):
-
-    if depth_source == "median_full":
-        # The native point sampler only implements expected depth. Sample the
-        # native median render at continuous query coordinates instead.
-        background = torch.zeros(3, dtype=points3D.dtype, device=points3D.device)
-        rendered = render(viewpoint_camera, pc, pipe, background, kernel_size, scaling_modifier)
-        return sample_native_median_map(points3D, viewpoint_camera,
-                                        rendered["median_depth"], rendered["mask"])
-    if depth_source != "expected":
+    if depth_source not in ("expected", "median_full"):
         raise ValueError(f"Unknown depth source: {depth_source}")
 
     # Set up rasterization configuration
@@ -241,7 +232,8 @@ def sample_depth(points3D, viewpoint_camera, pc : GaussianModel, pipe : torch.Te
         opacities = opacity,
         scales = scales,
         rotations = rotations,
-        cov3D_precomp = cov3D_precomp,)
+        cov3D_precomp = cov3D_precomp,
+        use_median = depth_source == "median_full",)
 
     # Those Gaussians that were frustum culled or had a radius of 0 were not visible.
     # They will be excluded from value updates used in the splitting criteria.

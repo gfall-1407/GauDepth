@@ -190,10 +190,12 @@ __global__ void __launch_bounds__(BLOCK_X* BLOCK_Y)
         const float4* __restrict__ ray_planes,
         const float4* __restrict__ conic_opacity,
         uint32_t* __restrict__ n_contrib,
+        uint32_t* __restrict__ median_contrib,
         float* __restrict__ accum_depth,
         float* __restrict__ final_T,
         float3* __restrict__ output,
-        bool* __restrict__ inside_output) {
+        bool* __restrict__ inside_output,
+        bool use_median) {
     auto block                 = cg::this_thread_block();
     uint32_t horizontal_blocks = (W + BLOCK_X - 1) / BLOCK_X;
 
@@ -213,10 +215,12 @@ __global__ void __launch_bounds__(BLOCK_X* BLOCK_Y)
     for (int p_round = 0; p_round < p_rounds; p_round++, p_toDo -= BLOCK_SAMPLES_PRE_ROUND) {
         bool done[SAMPLES_PRE_ROUND]   = {false};
         float Depth[SAMPLES_PRE_ROUND] = {0.f};
+        float median_depth[SAMPLES_PRE_ROUND] = {0.f};
         float T[SAMPLES_PRE_ROUND];
         uint32_t point_idx[SAMPLES_PRE_ROUND];
         float2 point_xy[SAMPLES_PRE_ROUND];
         uint32_t last_contributor[SAMPLES_PRE_ROUND] = {0};
+        uint32_t median_contributor[SAMPLES_PRE_ROUND] = {0};
         uint32_t contributor                         = 0;
         int point_done                               = 0;
         int point_num_round                          = 0;
@@ -282,6 +286,10 @@ __global__ void __launch_bounds__(BLOCK_X* BLOCK_Y)
                     const float aT = alpha * T[p];
                     float t        = ray_plane.x * d.x + ray_plane.y * d.y + ray_plane.z;
                     Depth[p] += t * aT;
+                    if (T[p] > 0.5f) {
+                        median_depth[p] = t;
+                        median_contributor[p] = contributor;
+                    }
                     T[p]                = test_T;
                     last_contributor[p] = contributor;
                 }
@@ -291,11 +299,12 @@ __global__ void __launch_bounds__(BLOCK_X* BLOCK_Y)
             float2 pixnf                = {(point_xy[p].x - static_cast<float>(W - 1) / 2.f) / focal_x,
                                            (point_xy[p].y - static_cast<float>(H - 1) / 2.f) / focal_y};
             const float rln             = rnorm3df(pixnf.x, pixnf.y, 1.f);
-            float depth                 = Depth[p] * rln / fmaxf(1.f - T[p], 1e-7f);
+            float depth                 = use_median ? median_depth[p] * rln : Depth[p] * rln / fmaxf(1.f - T[p], 1e-7f);
             output[point_idx[p]]        = {pixnf.x * depth, pixnf.y * depth, depth};
             accum_depth[point_idx[p]]   = Depth[p];
             final_T[point_idx[p]]       = T[p];
             n_contrib[point_idx[p]]     = last_contributor[p];
+            median_contrib[point_idx[p]] = median_contributor[p];
             inside_output[point_idx[p]] = true;
             // inside_output[point_idx[i]] = T[i] < 1.f;
         }
@@ -382,10 +391,12 @@ void FORWARD::sampleDepth(
     const float4* ray_planes,
     const float4* conic_opacity,
     uint32_t* n_contrib,
+    uint32_t* median_contrib,
     float* accum_depth,
     float* final_T,
     float3* output,
-    bool* inside) {
+    bool* inside,
+    bool use_median) {
     sampleDepthCUDA<SAMPLE_BATCH_SIZE><<<grid, block>>>(
         gaussian_ranges,
         point_ranges,
@@ -398,8 +409,10 @@ void FORWARD::sampleDepth(
         ray_planes,
         conic_opacity,
         n_contrib,
+        median_contrib,
         accum_depth,
         final_T,
         output,
-        inside);
+        inside,
+        use_median);
 }

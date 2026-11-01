@@ -156,6 +156,7 @@ public:
         const bool prefiltered,
         float* output,
         bool* inside,
+        bool use_median,
         bool debug = false);
 
     static void sample_depth_backward(
@@ -189,6 +190,7 @@ public:
         float* dL_dscale,
         float* dL_drot,
         float* dL_dpoint,
+        bool use_median,
         bool debug);
 };
 }; // namespace CudaRasterizer

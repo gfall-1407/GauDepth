@@ -311,6 +311,57 @@ void BACKWARD::preprocess_points(
         dL_dpoints3D);
 }
 
+__global__ void medianDepthBackwardCUDA(
+    const uint2* __restrict__ gaussian_ranges,
+    const uint2* __restrict__ point_ranges,
+    const uint32_t* __restrict__ gaussian_list,
+    const uint32_t* __restrict__ point_list,
+    int W, int H, float focal_x, float focal_y,
+    const float2* __restrict__ points2D,
+    const float2* __restrict__ gaussians2D,
+    const float4* __restrict__ ray_planes,
+    const uint32_t* __restrict__ median_contrib,
+    const float3* __restrict__ dL_doutput,
+    float3* __restrict__ dL_dgaussians2D,
+    float4* __restrict__ dL_dray_planes,
+    float2* __restrict__ dL_dpoints2D) {
+    auto block = cg::this_thread_block();
+    const uint32_t horizontal_blocks = (W + BLOCK_X - 1) / BLOCK_X;
+    const uint32_t tile = block.group_index().y * horizontal_blocks + block.group_index().x;
+    const uint2 range = gaussian_ranges[tile];
+    const uint2 p_range = point_ranges[tile];
+    const float ddelx_dx = 0.5f * W;
+    const float ddely_dy = 0.5f * H;
+    for (uint32_t idx = p_range.x + block.thread_rank(); idx < p_range.y; idx += BLOCK_SIZE) {
+        const uint32_t pid = point_list[idx];
+        const uint32_t selected = median_contrib[pid];
+        if (selected == 0 || selected > range.y - range.x)
+            continue;
+        const uint32_t gid = gaussian_list[range.x + selected - 1];
+        const float2 point_xy = points2D[pid];
+        const float2 gaussian_xy = gaussians2D[gid];
+        const float2 d = {gaussian_xy.x - point_xy.x, gaussian_xy.y - point_xy.y};
+        const float4 plane = ray_planes[gid];
+        const float t = plane.x * d.x + plane.y * d.y + plane.z;
+        const float2 pixnf = {(point_xy.x - static_cast<float>(W - 1) / 2.f) / focal_x,
+                              (point_xy.y - static_cast<float>(H - 1) / 2.f) / focal_y};
+        const float rln = rnorm3df(pixnf.x, pixnf.y, 1.f);
+        const float depth = t * rln;
+        const float3 grad = dL_doutput[pid];
+        const float dL_ddepth = grad.x * pixnf.x + grad.y * pixnf.y + grad.z;
+        const float dL_dt = dL_ddepth * rln;
+        const float rln3 = rln * rln * rln;
+        const float dL_dpixel_x = (grad.x * depth - dL_ddepth * t * pixnf.x * rln3) / focal_x - dL_dt * plane.x;
+        const float dL_dpixel_y = (grad.y * depth - dL_ddepth * t * pixnf.y * rln3) / focal_y - dL_dt * plane.y;
+        dL_dpoints2D[pid] = {dL_dpixel_x * ddelx_dx, dL_dpixel_y * ddely_dy};
+        atomicAdd(&dL_dgaussians2D[gid].x, dL_dt * plane.x * ddelx_dx);
+        atomicAdd(&dL_dgaussians2D[gid].y, dL_dt * plane.y * ddely_dy);
+        atomicAdd(&dL_dray_planes[gid].x, dL_dt * d.x);
+        atomicAdd(&dL_dray_planes[gid].y, dL_dt * d.y);
+        atomicAdd(&dL_dray_planes[gid].z, dL_dt);
+    }
+}
+
 void BACKWARD::sampleDepth(
     const dim3 grid, dim3 block,
     const uint2* gaussian_ranges,
@@ -324,13 +375,23 @@ void BACKWARD::sampleDepth(
     const float4* ray_planes,
     const float4* conic_opacity,
     const uint32_t* n_contrib,
+    const uint32_t* median_contrib,
     const float* accum_depth,
     const float* final_T,
     const float3* dL_doutput,
     float3* dL_dgaussians2D,
     float4* dL_dconic2D,
     float4* dL_dray_planes,
-    float2* dL_dpoints2D) {
+    float2* dL_dpoints2D,
+    bool use_median) {
+    if (use_median) {
+        medianDepthBackwardCUDA<<<grid, block>>>(
+            gaussian_ranges, point_ranges, gaussian_list, point_list,
+            W, H, focal_x, focal_y, points2D, gaussians2D,
+            ray_planes, median_contrib, dL_doutput,
+            dL_dgaussians2D, dL_dray_planes, dL_dpoints2D);
+        return;
+    }
     sampleDepthCUDA<SAMPLE_BATCH_SIZE><<<grid, block>>>(
         gaussian_ranges,
         point_ranges,

@@ -53,6 +53,7 @@ struct PointState {
     float* depths;
     float2* points2D;
     uint32_t* n_contrib;
+    uint32_t* median_contrib;
     float* accum_depth;
     float* final_T;
     char* scanning_space;
