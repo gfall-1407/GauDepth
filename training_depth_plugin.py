@@ -11,6 +11,14 @@ DEPTH_KEYS = ('expected_depth', 'median_depth')
 PARAMETER_NAMES = ('xyz', 'scaling', 'rotation')
 
 
+def mesh_depth_channel(depth_ratio, depth_route, depth_target):
+    """Reject a candidate mesh that would silently read an unchanged channel."""
+    channel = 'expected_depth' if depth_ratio < .5 else 'median_depth'
+    if depth_route == 'candidate' and depth_target not in ('both', channel.split('_')[0]):
+        raise ValueError('candidate target does not match the depth channel used for mesh extraction')
+    return channel
+
+
 def validate_ab_output_dir(model_path):
     """Reject an occupied A/B destination before train creates any files."""
     if not model_path:
