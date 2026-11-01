@@ -13,6 +13,11 @@ def member(i, z, alpha, T=1., footprint=1., normal=(0., 0., 1.)):
     return Member(i, (0., 0., z), normal, alpha, T, footprint)
 
 
+def shifts(costs):
+    return {(-.25, 0.): costs, (.25, 0.): costs,
+            (0., -.25): costs, (0., .25): costs}
+
+
 class VisibleBranchReferenceTest(unittest.TestCase):
     def test_two_real_camera_patch_warps(self):
         I = ((1., 0., 0.), (0., 1., 0.), (0., 0., 1.))
@@ -37,7 +42,7 @@ class VisibleBranchReferenceTest(unittest.TestCase):
                        [(0., 0.), (.15, 0.), (9., 0.)]]
         costs = [[0., .01, .7], [0., .01, .8]]
         branch, reason = choose_branch(depths, projections, costs,
-                                       [costs, costs, costs, costs])
+                                       shifts(costs))
         self.assertEqual((branch, reason), ((0, 1), "valid"))
         d, valid, _ = candidate_depth(ms, O, V, costs, branch, 1.948)
         self.assertTrue(valid)
@@ -77,14 +82,14 @@ class VisibleBranchReferenceTest(unittest.TestCase):
         projections = [[(0., 0.), (8., 0.)], [(0., 0.), (9., 0.)]]
         self.assertEqual(choose_branch(depths, projections,
                                        [[.1, .1], [.1, .1]],
-                                       [[[.1, .1], [.1, .1]]]*4)[1],
+                                       shifts([[.1, .1], [.1, .1]]))[1],
                          "witness_disagreement")
         self.assertEqual(choose_branch(depths, projections,
                          [[0., 1.], [0., 1.]],
-                         [[[1., 0.], [0., 1.]]]*4)[1], "unstable_branch")
+                         shifts([[1., 0.], [0., 1.]]))[1], "unstable_branch")
         self.assertIsNone(ncc_cost([1.]*25, [1.]*25))
         self.assertEqual(choose_branch([1.], [[(0., 0.)], [(0., 0.)]],
-                                       [[None], [None]], [[[0.], [0.]]]*4)[1],
+                                       [[None], [None]], shifts([[0.], [0.]]))[1],
                          "invalid_hypothesis_data")
         self.assertEqual(plane_loss([1., 2.], [0., 0.], [False, False],
                                     [1.5, 1.5]), .5)
@@ -95,24 +100,24 @@ class VisibleBranchReferenceTest(unittest.TestCase):
                        [(0., 0.), (0., 0.), (9., 0.)]]
         tied = [[.1, .1, .1], [.1, .1, .1]]
         self.assertEqual(choose_branch(depths, projections, tied,
-                                       [tied]*4)[1], "witness_disagreement")
+                                       shifts(tied))[1], "witness_disagreement")
         # Without the split copy, the two distinct surfaces are also ambiguous.
         two = [[.1, .1], [.1, .1]]
         self.assertEqual(choose_branch([1., 2.],
                                        [v[::2] for v in projections], two,
-                                       [two]*4)[1], "witness_disagreement")
+                                       shifts(two))[1], "witness_disagreement")
         single_projection = [[(0., 0.)], [(0., 0.)]]
         single_cost = [[0.], [0.]]
         self.assertEqual(choose_branch([1.], single_projection, single_cost)[1],
                          "missing_perturbations")
         self.assertEqual(choose_branch([1.], single_projection, single_cost,
-                                       [single_cost]*3)[1],
+                                       {(-.25, 0.): single_cost})[1],
                          "missing_perturbations")
         self.assertEqual(choose_branch([1.], single_projection, single_cost,
-                                       [[[None], [None]]]*4)[1],
+                                       shifts([[None], [None]]))[1],
                          "invalid_perturbation_cost")
         self.assertEqual(choose_branch([1.], single_projection, single_cost,
-                                       [[[float('nan')], [0.]]]*4)[1],
+                                       shifts([[float('nan')], [0.]]))[1],
                          "invalid_perturbation_cost")
 
     def test_audit_nonfinite_and_invalid_costs(self):
@@ -126,15 +131,15 @@ class VisibleBranchReferenceTest(unittest.TestCase):
         for bad in (float('nan'), float('inf')):
             broken = [[(bad, 0.), (8., 0.)], [(0., 0.), (9., 0.)]]
             self.assertEqual(choose_branch([1., 2.], broken, costs,
-                                           [costs]*4)[1], "invalid_hypothesis_data")
+                                           shifts(costs))[1], "invalid_hypothesis_data")
             self.assertEqual(choose_branch([bad], [[(0., 0.)], [(0., 0.)]],
                                            [[0.], [0.]],
-                                           [[[0.], [0.]]]*4)[1],
+                                           shifts([[0.], [0.]]))[1],
                              "invalid_hypothesis_data")
         for bad in (None, -.1, float('nan')):
             broken = [[bad, .2], [0., .2]]
             self.assertEqual(choose_branch([1., 2.], projections, broken,
-                                           [costs]*4)[1], "invalid_hypothesis_data")
+                                           shifts(costs))[1], "invalid_hypothesis_data")
 
     def test_degenerate_grazing_low_opacity(self):
         self.assertIsNone(intersection(member(0, 1., .5, normal=(0., 0., 0.)), O, V))

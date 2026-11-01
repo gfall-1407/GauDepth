@@ -10,6 +10,7 @@ from math import exp, isfinite, sqrt
 
 TAU = 0.1
 EPS = 1e-10
+PERTURB_OFFSETS = {(-.25, 0.), (.25, 0.), (0., -.25), (0., .25)}
 
 
 def dot(x, y):
@@ -132,18 +133,18 @@ def same_branch(i, j, depths, projections, half_pixel=0.5):
 def choose_branch(depths, projections, cost_sets, perturb_cost_sets=None):
     """Choose one branch from two views; ties or unstable winners are invalid.
 
-    perturb_cost_sets contains all four fixed ±0.25-pixel x/y patch shifts. Each
-    item is a pair of complete per-member cost arrays, one for each witness.
+    perturb_cost_sets maps all four fixed ±0.25-pixel x/y patch shifts to
+    pairs of complete per-member cost arrays, one for each witness.
     """
     if len(cost_sets) != 2 or len(projections) != 2:
         raise ValueError("exactly two witnesses required")
     count = len(depths)
     if any(len(v) != count for v in (*cost_sets, *projections)):
         raise ValueError("member array length mismatch")
-    if perturb_cost_sets is None or len(perturb_cost_sets) != 4:
+    if not isinstance(perturb_cost_sets, dict) or set(perturb_cost_sets) != PERTURB_OFFSETS:
         return (), "missing_perturbations"
     if any(len(shifted) != 2 or any(len(v) != count for v in shifted)
-           for shifted in perturb_cost_sets):
+           for shifted in perturb_cost_sets.values()):
         return (), "invalid_perturbation_shape"
 
     def valid_cost(c):
@@ -159,7 +160,7 @@ def choose_branch(depths, projections, cost_sets, perturb_cost_sets=None):
         return (), "invalid_hypothesis_data"
     eligible = list(range(count))
     if any(not valid_cost(shifted[v][i])
-           for shifted in perturb_cost_sets for v in range(2) for i in eligible):
+           for shifted in perturb_cost_sets.values() for v in range(2) for i in eligible):
         return (), "invalid_perturbation_cost"
 
     def winner(costs, view):
@@ -179,7 +180,7 @@ def choose_branch(depths, projections, cost_sets, perturb_cost_sets=None):
     if not branch:
         return (), "empty_branch"
     # Competing branches must remain defeated under all fixed small shifts.
-    for shifted in perturb_cost_sets:
+    for shifted in perturb_cost_sets.values():
         for v in range(2):
             shifted_winner = winner(shifted, v)
             if shifted_winner not in branch:
