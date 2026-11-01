@@ -193,6 +193,8 @@ def fixed_root_vjp(arrays, rows, selected_root):
         term = 1.3*depth + normal @ normal.new_tensor([.2, -.3, .4])
         objective = term if objective is None else objective+term
         outputs[center] = dict(depth=float(depth.detach()), normal=normal.detach().tolist(),
+                               depth_abs_error=abs(float(depth.detach())-row['z']),
+                               normal_max_abs_error=float((normal.detach()-expected_normal).abs().max()),
                                root_value=diagnostic['root_value'],
                                member_count=len(row['indices']))
     names = ('xyz', 'log_scale', 'raw_quat', 'logit')
@@ -201,21 +203,24 @@ def fixed_root_vjp(arrays, rows, selected_root):
     for name, value in grad_map.items():
         if not bool(torch.isfinite(value).all()):
             raise ValueError('nonfinite_raw_gradient_' + name)
-    # Select a deterministic shared ID if present; otherwise the first ID of
-    # each fixed ray. A repeated ID always points to one leaf and accumulates.
+    # A repeated ID always points to one leaf and accumulates. The two chosen
+    # real rays happen not to overlap, so the shared-leaf behavior has a
+    # separate synthetic test. Choose the strongest finite VJP component per
+    # ray and parameter group for a nontrivial numerical derivative check.
     overlap = set(rows[17]['ids']) & set(rows[24]['ids'])
-    if overlap:
-        uid = min(overlap)
-        candidates = [rows[17]['indices'][rows[17]['ids'].index(uid)]]
-    else:
-        candidates = [rows[center]['indices'][0] for center, _ in ROOTS]
     checks = []
     for name in names:
-        for index in candidates:
-            if name == 'logit' and not bool(torch.isfinite(raw[name][index]).all()):
-                checks.append(dict(name=name, row=index, status='infinite_logit_no_finite_difference'))
-                continue
-            component = 0
+        for center, _ in ROOTS:
+            indices = rows[center]['indices']
+            gradient_slice = grad_map[name][indices].abs().clone()
+            if name == 'logit':
+                finite_logit = torch.isfinite(raw[name][indices])
+                gradient_slice[~finite_logit] = -1
+            flat = int(torch.argmax(gradient_slice))
+            local_row, component = divmod(flat, gradient_slice.shape[1])
+            index = indices[local_row]
+            if float(gradient_slice[local_row, component]) <= 0:
+                raise ValueError('no_nonzero_raw_gradient_' + name)
             key = (index, component)
             step = 1e-5
             values = []
@@ -225,12 +230,14 @@ def fixed_root_vjp(arrays, rows, selected_root):
                 changed[name][key] += sign*step
                 try:
                     total = 0.
-                    for center, _ in ROOTS:
-                        z, n, _, _ = root_from_shared(arrays, rows[center], changed, selected_root)
+                    for probe_center, _ in ROOTS:
+                        z, n, _, _ = root_from_shared(
+                            arrays, rows[probe_center], changed, selected_root)
                         total += float((1.3*z+n@n.new_tensor([.2, -.3, .4])).detach())
                     values.append(total)
                 except (ValueError, RuntimeError) as exc:
-                    checks.append(dict(name=name, row=index, status='invalid_branch', reason=str(exc)))
+                    checks.append(dict(name=name, center=center, row=index,
+                                       component=component, status='invalid_branch', reason=str(exc)))
                     values = []
                     break
             if len(values) != 2:
@@ -238,7 +245,7 @@ def fixed_root_vjp(arrays, rows, selected_root):
             finite_difference = (values[0]-values[1])/(2*step)
             analytic = float(grad_map[name][key])
             relative = abs(finite_difference-analytic)/max(1., abs(finite_difference), abs(analytic))
-            checks.append(dict(name=name, row=index, status='compared',
+            checks.append(dict(name=name, center=center, row=index, component=component, status='compared',
                                analytic=analytic, finite_difference=finite_difference,
                                relative_error=relative))
             if not np.isfinite(relative) or relative > 1e-4:
