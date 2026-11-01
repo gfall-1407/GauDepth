@@ -156,11 +156,12 @@ def activation_parity(arrays, activated):
     return errors
 
 
-def root_from_shared(arrays, row, raw, selected_root):
+def root_from_shared(arrays, row, raw, selected_root, xy_override=None):
     activated = activate(raw['xyz'], raw['log_scale'], raw['raw_quat'],
                          raw['logit'], raw['saved_filter'])
     indices = row['indices']
-    xy = torch.tensor(arrays['xy'][row['query']], dtype=DTYPE)
+    xy = (torch.tensor(arrays['xy'][row['query']], dtype=DTYPE) if xy_override is None
+          else xy_override)
     origin, ray, forward = world_camera_ray(
         torch.tensor(arrays['world_view_transform'], dtype=DTYPE),
         torch.tensor(arrays['intrinsics'], dtype=DTYPE), xy)
