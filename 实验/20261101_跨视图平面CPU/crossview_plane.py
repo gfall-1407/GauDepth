@@ -403,26 +403,24 @@ def evaluate_scan(scan):
         normal_semantics=meta['normal_semantics'], trace_model_sha256=meta['model_sha256'])
 
 
-def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--output', type=Path, required=True)
-    args = parser.parse_args()
-    result = dict(status='partial', synthetic=synthetic_check(), support_gradient=support_gradient_check(),
-        parameters=dict(seed=SEED, rays_per_scan=32, sigma_px=SIGMA,tau=TAU,
-        patch='9x9 original pixels', profile_positions=129, max_branches=4, max_newton_steps=8), scans=[])
-    args.output.parent.mkdir(parents=True, exist_ok=True)
-    for scan in (37,40):
-        result['scans'].append(evaluate_scan(scan))
-        args.output.write_text(json.dumps(result, indent=2),encoding='utf8')
+def summarize(result):
     for item in result['scans']:
         rows = item['rows']
+        assert len(rows) == 32 and len({r['index'] for r in rows}) == 32
+        # Freeze eligibility from the native baseline alone, before looking at either candidate.
+        common = [r['index'] for r in rows if r.get('native_heldout') is not None]
+        by_index = {r['index']: r for r in rows}
+        assert all(by_index[i]['valid_input'] for i in common)
+        missing = {name:[i for i in common if
+            (by_index[i]['native_heldout'] if name == 'native' else by_index[i]['branches'][name]['heldout']) is None]
+            for name in ('native','photo','joint')}
+        assert not any(missing.values()), f"Missing candidate cost on fixed native-valid set: {missing}"
         def stats(name):
-            values = [r.get('native_heldout') if name == 'native' else r['branches'][name]['heldout']
-                      for r in rows if r['valid_input']]
-            valid = [v for v in values if v is not None]
-            return dict(valid_count=len(valid), denominator=32,
-                mean=float(np.mean(valid)) if valid else None,
-                median=float(np.median(valid)) if valid else None)
+            values = [by_index[i]['native_heldout'] if name == 'native' else by_index[i]['branches'][name]['heldout']
+                for i in common]
+            return dict(valid_count=len(values), denominator=len(common), coverage_denominator=32,
+                mean=float(np.mean(values)) if values else None,
+                median=float(np.median(values)) if values else None)
         item['summary'] = dict(total_rays=32, native_heldout_valid=sum(r.get('native_heldout') is not None for r in rows),
             photo_reliable=sum(r['branches']['photo']['reliable'] for r in rows if r['valid_input']),
             joint_reliable=sum(r['branches']['joint']['reliable'] for r in rows if r['valid_input']),
@@ -431,16 +429,16 @@ def main():
             seconds_per_ray_mean=float(np.mean([r['seconds'] for r in rows])),
             heldout={name:stats(name) for name in ('native','photo','joint')})
         summary = item['summary']
-        summary['common_evaluable'] = summary['native_heldout_valid']
+        summary['common_evaluable'] = len(common)
+        summary['common_indices'] = common
+        summary['missing_on_common'] = missing
         summary['joint_reliable_improved'] = sum(r['branches']['joint']['reliable']
-            and r['native_heldout'] is not None
             and r['branches']['joint']['heldout'] is not None
             and r['branches']['photo']['heldout'] is not None
             and r['branches']['joint']['heldout'] < min(r['native_heldout'],r['branches']['photo']['heldout'])
-            for r in rows if r['valid_input'])
+            for r in (by_index[i] for i in common))
         held = summary['heldout']
         summary['gate_passed'] = bool(summary['joint_reliable_improved'] >= 8
-            and all(held[name]['valid_count'] == summary['common_evaluable'] for name in held)
             and all(held['joint'][metric] < min(held['native'][metric],held['photo'][metric])
                     for metric in ('mean','median')))
     result['gate_passed'] = all(s['summary']['gate_passed'] for s in result['scans']) and all(
@@ -454,9 +452,33 @@ def main():
         'the active bilinear cells; points within 1e-6 pixel of a cell edge are rejected. '
         'Implicit-solution derivatives are checked locally for one recorded member xi perturbation '
         'on each accepted isolated positive-Hessian branch; this is not full Gaussian backpropagation. '
-        'The 32-ray denominator is retained; native view2-valid rays define a fixed common '
-        'comparison set before either optimization, while unavailable costs remain null.')
+        'All 32 rays remain in coverage and fallback counts. Means and medians use only the fixed '
+        'native view2-valid index set (29/32 scan37; 24/32 scan40), locked before candidate '
+        'outcomes; each candidate must have a cost at every one of those indices.')
     result['status']='complete'
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--output', type=Path, required=True)
+    parser.add_argument('--recompute-from', type=Path, help='Recalculate statistics without rerunning solver')
+    args = parser.parse_args()
+    args.output.parent.mkdir(parents=True, exist_ok=True)
+    if args.recompute_from:
+        assert args.recompute_from.resolve() != args.output.resolve()
+        result = json.loads(args.recompute_from.read_text(encoding='utf8'))
+        result['correction'] = dict(kind='statistics_and_documentation_only',
+            source_sha256=digest(args.recompute_from),solver_rerun=False)
+    else:
+        result = dict(status='partial', synthetic=synthetic_check(), support_gradient=support_gradient_check(),
+            parameters=dict(seed=SEED, rays_per_scan=32, sigma_px=SIGMA,tau=TAU,
+            patch='9x9 original pixels', profile_positions=129, max_branches=4, max_newton_steps=8,
+            line_search_trials=17), scans=[])
+        for scan in (37,40):
+            result['scans'].append(evaluate_scan(scan))
+            args.output.write_text(json.dumps(result, indent=2),encoding='utf8')
+    result['parameters']['line_search_trials'] = 17
+    summarize(result)
     args.output.write_text(json.dumps(result, indent=2),encoding='utf8')
 
 
