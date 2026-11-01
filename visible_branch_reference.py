@@ -78,24 +78,35 @@ def patch_cost(member, reference_camera, reference_image,
     occlusions, textureless patches, or near-parallel patch rays; occlusion
     requires an external visibility check and cannot be inferred here.
     """
+    return patch_cost_diagnostic(member, reference_camera, reference_image,
+                                 witness_camera, witness_image, x, y,
+                                 patch_radius)[0]
+
+
+def patch_cost_diagnostic(member, reference_camera, reference_image,
+                          witness_camera, witness_image, x, y, patch_radius=2):
+    """Return (NCC cost, failure reason) without dropping invalid evidence."""
     ref, witness = [], []
     for oy in range(-patch_radius, patch_radius+1):
         for ox in range(-patch_radius, patch_radius+1):
             px, py = x+ox, y+oy
             color = bilinear(reference_image, px, py)
+            if color is None:
+                return None, "reference_patch_out_of_bounds_or_nonfinite"
             ray = pixel_ray(reference_camera, px, py)
             hit = intersection(member, reference_camera.center, ray)
-            if color is None or hit is None:
-                return None
+            if hit is None:
+                return None, "invalid_plane_intersection"
             point = tuple(o+hit[2]*v for o, v in zip(reference_camera.center, ray))
             coords = project(witness_camera, point)
             if coords is None:
-                return None
+                return None, "invalid_witness_projection"
             sampled = bilinear(witness_image, *coords)
             if sampled is None:
-                return None
+                return None, "witness_patch_out_of_bounds_or_nonfinite"
             ref.append(color); witness.append(sampled)
-    return ncc_cost(ref, witness)
+    cost = ncc_cost(ref, witness)
+    return (cost, "valid" if cost is not None else "textureless_or_nonfinite_patch")
 
 
 def intersection(member, origin, ray):

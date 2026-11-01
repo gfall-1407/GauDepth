@@ -5,9 +5,10 @@ This module never fabricates costs or silently drops a ray from evaluation.
 """
 
 from dataclasses import dataclass
+from collections import Counter
 
 from visible_branch_reference import (PERTURB_OFFSETS, candidate_depth,
-                                      choose_branch, intersection, patch_cost,
+                                      choose_branch, intersection, patch_cost_diagnostic,
                                       pixel_ray, project)
 
 
@@ -22,6 +23,7 @@ class RayResult:
     branch_ids: tuple
     costs: tuple
     perturb_costs: dict
+    cost_failure_counts: dict
 
 
 def evaluate_ray(members, reference_camera, reference_image, witnesses,
@@ -39,6 +41,7 @@ def evaluate_ray(members, reference_camera, reference_image, witnesses,
     projections = [[], []]
     costs = [[], []]
     shifted = {offset: [[], []] for offset in PERTURB_OFFSETS}
+    failures = Counter()
     for m in members:
         hit = intersection(m, reference_camera.center, ray)
         depths.append(None if hit is None else hit[2])
@@ -46,12 +49,18 @@ def evaluate_ray(members, reference_camera, reference_image, witnesses,
             o+hit[2]*v for o, v in zip(reference_camera.center, ray))
         for view, (camera, image) in enumerate(witnesses):
             projections[view].append(None if point is None else project(camera, point))
-            costs[view].append(patch_cost(m, reference_camera, reference_image,
-                                          camera, image, x, y))
+            cost, status = patch_cost_diagnostic(m, reference_camera, reference_image,
+                                                 camera, image, x, y)
+            costs[view].append(cost)
+            if status != "valid":
+                failures["base:"+status] += 1
             for dx, dy in PERTURB_OFFSETS:
-                shifted[(dx, dy)][view].append(patch_cost(
+                cost, status = patch_cost_diagnostic(
                     m, reference_camera, reference_image,
-                    camera, image, x+dx, y+dy))
+                    camera, image, x+dx, y+dy)
+                shifted[(dx, dy)][view].append(cost)
+                if status != "valid":
+                    failures["perturb:"+status] += 1
     branch, reason = choose_branch(depths, projections, costs, shifted)
     depth, valid, depth_reason = candidate_depth(
         members, reference_camera.center, ray, costs, branch, expected_depth)
@@ -63,7 +72,7 @@ def evaluate_ray(members, reference_camera, reference_image, witnesses,
                      len(members), tuple(members[i].gaussian_id for i in branch),
                      tuple(tuple(c) for c in costs),
                      {offset: tuple(tuple(c) for c in shifted[offset])
-                      for offset in sorted(PERTURB_OFFSETS)})
+                      for offset in sorted(PERTURB_OFFSETS)}, dict(failures))
 
 
 def evaluate_fixed_32(rays):

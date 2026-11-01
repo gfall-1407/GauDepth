@@ -190,10 +190,16 @@ def run(capture_dir, image_dir, camera_dir, image_manifest):
     if np.any(cap["overflow"]) or np.max(cap["count"]) > cap["ids"].shape[1]:
         raise ValueError("incomplete native accepted record")
     H, W = map(int, cap["image_size"])
-    roster = camera_roster(camera_dir, W, H)
-    verify_reference_camera(cap, roster, "0049")
-    cams = {view: roster[view][0] for view in ("0049", "0012", "0050", "0058")}
-    imgs = {view: image_gray(image_dir/f"{view}.png", W, H)
+    capture_roster = camera_roster(camera_dir, W, H)
+    verify_reference_camera(cap, capture_roster, "0049")
+    raw_sizes = {view: Image.open(image_dir/f"{view}.png").size
+                 for view in ("0049", "0012", "0050", "0058")}
+    if set(raw_sizes.values()) != {(2*W, 2*H)}:
+        raise ValueError("expected native raw images at exactly twice capture resolution")
+    raw_W, raw_H = 2*W, 2*H
+    raw_roster = camera_roster(camera_dir, raw_W, raw_H)
+    cams = {view: raw_roster[view][0] for view in raw_sizes}
+    imgs = {view: image_gray(image_dir/f"{view}.png", raw_W, raw_H)
             for view in cams}
     witnesses = [(cams[view], imgs[view]) for view in ("0012", "0050")]
     heldout = (cams["0058"], imgs["0058"])
@@ -203,14 +209,19 @@ def run(capture_dir, image_dir, camera_dir, image_manifest):
     rows = []
     for q in range(32):
         slot = q*9+4
-        pixel = tuple(map(float, cap["xy"][slot]))
-        if int(pixel[1])*W+int(pixel[0]) != int(cap["seed_flat"][q]):
+        capture_pixel = tuple(map(float, cap["xy"][slot]))
+        if int(capture_pixel[1])*W+int(capture_pixel[0]) != int(cap["seed_flat"][q]):
             raise ValueError("frozen center pixel disagrees with seed_flat")
         actual_neighbors = cap["xy"][q*9:(q+1)*9]
-        expected_neighbors = np.array([(pixel[0]+dx, pixel[1]+dy)
+        expected_neighbors = np.array([(capture_pixel[0]+dx, capture_pixel[1]+dy)
                                        for dy in (-1, 0, 1) for dx in (-1, 0, 1)])
         if not np.array_equal(actual_neighbors, expected_neighbors):
             raise ValueError("3x3 normal neighborhood ordering mismatch")
+        pixel = ((capture_pixel[0]+.5)*2-.5, (capture_pixel[1]+.5)*2-.5)
+        if not np.allclose(pixel_ray(cams["0049"], *pixel),
+                           pixel_ray(capture_roster["0049"][0], *capture_pixel),
+                           rtol=0, atol=1e-12):
+            raise ValueError("raw and captured center rays disagree")
         count = int(cap["count"][slot])
         ids = cap["ids"][slot, :count]
         if count < 0 or np.any(ids < 0) or bool(cap["overflow"][slot]):
@@ -224,31 +235,47 @@ def run(capture_dir, image_dir, camera_dir, image_manifest):
         rows.append(dict(members=members, reference_camera=cams["0049"],
                          reference_image=imgs["0049"], witnesses=witnesses,
                          pixel=pixel, expected_depth=float(cap["replay_depth"][slot])))
+    # Freeze evaluable indices from the native Expected depth before inspecting
+    # any candidate; candidate failures never shrink the denominator.
+    base_costs = [heldout_cost(row["expected_depth"], cams["0049"], imgs["0049"],
+                               heldout, row["pixel"]) for row in rows]
+    fixed_eval_indices = [i for i, cost in enumerate(base_costs) if cost is not None]
     results = evaluate_fixed_32(rows)
     table = []
-    for result in results:
-        base = heldout_cost(result.expected_depth, cams["0049"], imgs["0049"],
-                            heldout, result.pixel)
+    for i, result in enumerate(results):
+        base = base_costs[i]
         candidate = heldout_cost(result.candidate_depth, cams["0049"], imgs["0049"],
                                  heldout, result.pixel)
-        table.append(dict(pixel=result.pixel, expected=result.expected_depth,
+        table.append(dict(pixel_raw=result.pixel,
+                          pixel_capture=tuple(map(float, cap["xy"][i*9+4])),
+                          expected=result.expected_depth,
                           candidate=result.candidate_depth, valid=result.valid,
                           reason=result.reason, accepted_count=result.accepted_count,
                           branch_ids=result.branch_ids, witness_costs=result.costs,
                           perturb_costs={str(k): v for k, v in result.perturb_costs.items()},
+                          cost_failure_counts=result.cost_failure_counts,
                           heldout_expected=base, heldout_candidate=candidate,
                           heldout_delta=None if base is None or candidate is None
                           else candidate-base))
-    deltas = [r["heldout_delta"] for r in table if r["heldout_delta"] is not None]
-    valid_deltas = [r["heldout_delta"] for r in table
-                    if r["valid"] and r["heldout_delta"] is not None]
+    missing_candidate_indices = [i for i in fixed_eval_indices
+                                 if table[i]["heldout_candidate"] is None]
+    fixed_deltas = [table[i]["heldout_delta"] for i in fixed_eval_indices]
+    fixed_mean = (float(np.mean(fixed_deltas))
+                  if fixed_eval_indices and not missing_candidate_indices else None)
+    valid_indices = [i for i, row in enumerate(table) if row["valid"]]
+    valid_complete = all(i in fixed_eval_indices and table[i]["heldout_delta"] is not None
+                         for i in valid_indices)
+    valid_median = (float(np.median([table[i]["heldout_delta"] for i in valid_indices]))
+                    if valid_indices and valid_complete else None)
     valid_count = sum(r["valid"] for r in table)
     return dict(capture_sha256=meta["result_sha256"], fixed_rays=32,
                 valid=valid_count, coverage_gate_met=valid_count >= 8,
-                heldout_evaluable=len(deltas),
-                heldout_full32_mean_delta=float(np.mean(deltas)) if len(deltas) == 32 else None,
-                heldout_partial_mean_delta=float(np.mean(deltas)) if deltas else None,
-                valid_heldout_median_delta=float(np.median(valid_deltas)) if valid_deltas else None,
+                heldout_fixed_eval_indices=fixed_eval_indices,
+                heldout_fixed_eval_count=len(fixed_eval_indices),
+                heldout_candidate_missing_on_fixed_indices=missing_candidate_indices,
+                heldout_full32_mean_delta=fixed_mean if len(fixed_eval_indices) == 32 else None,
+                heldout_fixed_eval_mean_delta=fixed_mean,
+                valid_heldout_median_delta=valid_median,
                 direction_gate="not_evaluated_no_parameter_gradient",
                 rows=table)
 

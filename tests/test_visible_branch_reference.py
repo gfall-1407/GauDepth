@@ -3,7 +3,8 @@ import unittest
 from dataclasses import replace
 
 from visible_branch_reference import (Camera, Member, candidate_depth, choose_branch,
-                                      intersection, ncc_cost, patch_cost, plane_loss)
+                                      intersection, ncc_cost, patch_cost,
+                                      patch_cost_diagnostic, pixel_ray, plane_loss)
 
 
 O, V = (0., 0., 0.), (0., 0., 1.)
@@ -19,6 +20,23 @@ def shifts(costs):
 
 
 class VisibleBranchReferenceTest(unittest.TestCase):
+    def test_native_raw_pixel_mapping_and_patch_failure_reason(self):
+        I = ((1., 0., 0.), (0., 1., 0.), (0., 0., 1.))
+        small = Camera((0., 0., 0.), I, 1446., 1446., 388., 290.)
+        raw = Camera((0., 0., 0.), I, 2892., 2892., 776.5, 580.5)
+        for x, y in ((0., 0.), (387., 260.), (776., 580.)):
+            orig = ((x+.5)*2-.5, (y+.5)*2-.5)
+            for a, b in zip(pixel_ray(small, x, y), pixel_ray(raw, *orig)):
+                self.assertAlmostEqual(a, b, places=12)
+        image = [[1.]*10 for _ in range(10)]
+        cost, reason = patch_cost_diagnostic(member(0, 1., .5),
+                                             Camera((0., 0., 0.), I, 10., 10., 5., 5.),
+                                             image,
+                                             Camera((20., 0., 0.), I, 10., 10., 5., 5.),
+                                             image, 5., 5.)
+        self.assertIsNone(cost)
+        self.assertEqual(reason, "witness_patch_out_of_bounds_or_nonfinite")
+
     def test_two_real_camera_patch_warps(self):
         I = ((1., 0., 0.), (0., 1., 0.), (0., 0., 1.))
         reference = Camera((0., 0., 0.), I, 10., 10., 20., 20.)
