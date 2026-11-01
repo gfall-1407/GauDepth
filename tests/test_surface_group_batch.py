@@ -48,7 +48,9 @@ class BatchDepthTest(unittest.TestCase):
                             dtype=torch.float64, requires_grad=True)
         scale = torch.tensor([[.04, .04, .01]] * 5 + [[float('inf'), .04, .01]],
                              dtype=torch.float64, requires_grad=True)
-        pc = SimpleNamespace(get_xyz=xyz, get_rotation=quat, get_scaling=scale)
+        pc = SimpleNamespace(get_xyz=xyz,
+                             get_rotation=torch.nn.functional.normalize(quat, dim=-1),
+                             _rotation=quat, get_scaling=scale)
         camera = SimpleNamespace(world_view_transform=torch.eye(4, dtype=torch.float64),
                                  Fx=1000., Fy=1000., Cx=0., Cy=0.)
         xy = torch.tensor([[0., 0.], [float('nan'), 0.], [float('inf'), 0.]],
@@ -136,7 +138,9 @@ class BatchDepthTest(unittest.TestCase):
         quat[:, 0] += 1.
         scale = torch.full((n, 3), .04, dtype=torch.float64)
         scale[:, 2] = .01
-        pc = SimpleNamespace(get_xyz=xyz, get_rotation=quat, get_scaling=scale)
+        pc = SimpleNamespace(get_xyz=xyz,
+                             get_rotation=torch.nn.functional.normalize(quat, dim=-1),
+                             _rotation=quat, get_scaling=scale)
         camera = SimpleNamespace(world_view_transform=torch.eye(4, dtype=torch.float64),
                                  Fx=400., Fy=410., Cx=0., Cy=0.)
         xy = (torch.rand((queries, 2), generator=generator, dtype=torch.float64) - .5) * 4

@@ -50,7 +50,12 @@ def grouped_depth_from_support(pc, camera, xy, ids, alpha, count, overflow,
     if n == 0 or xy.shape[0] == 0:
         return native_z, empty_audit
     wvt = camera.world_view_transform
-    raw_centers, raw_quaternions, raw_scales = pc.get_xyz, pc.get_rotation, pc.get_scaling
+    # GaussianModel.get_rotation normalizes _rotation before returning. If a
+    # latent quaternion is nonfinite, masking only that normalized result can
+    # still backpropagate 0*NaN through normalization. Sanitize the latent first.
+    raw_centers = pc.get_xyz
+    raw_quaternions = pc._rotation if hasattr(pc, '_rotation') else pc.get_rotation
+    raw_scales = pc.get_scaling
     quaternion_norm = torch.linalg.norm(torch.where(torch.isfinite(raw_quaternions),
                                                      raw_quaternions, 0.), dim=-1)
     primitive_valid = (torch.isfinite(raw_centers).all(-1) &
