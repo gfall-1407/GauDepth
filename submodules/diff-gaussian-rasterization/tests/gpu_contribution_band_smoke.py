@@ -2,7 +2,7 @@
 
 import torch
 
-from diff_gaussian_rasterization import GaussianRasterizationSettings, GaussianRasterizer
+from diff_gaussian_rasterization import GaussianRasterizationSettings, GaussianRasterizer, _C
 from utils.contribution_band_reference import band_depth_and_grad
 
 
@@ -100,6 +100,19 @@ def main():
     for i in range(3):
         check_close(edge_opacity.grad[i, 0].item(), edge_grad[i], atol=1e-2)
 
+    near_means, near_opacity, near_scales, near_rotations, near_colors = scene()
+    near_alpha = [.2000004, .5, .4999997499998752]
+    with torch.no_grad():
+        near_opacity[:, 0] = torch.tensor(near_alpha, device="cuda")
+    near_depth = band(means3D=near_means, means2D=torch.zeros_like(near_means),
+                      colors_precomp=near_colors, opacities=near_opacity,
+                      scales=near_scales, rotations=near_rotations)[2][0, 24, 24]
+    near_depth.backward()
+    near_expected, _, near_grad = band_depth_and_grad(near_alpha, [1., 1.5, 2.])
+    check_close(near_depth.item(), near_expected)
+    for i in range(3):
+        check_close(near_opacity.grad[i, 0].item(), near_grad[i], atol=1e-2)
+
     single_means = means.detach()[:1].clone().requires_grad_()
     single_opacity = opacity.detach()[:1].clone().requires_grad_()
     single = band(means3D=single_means, means2D=torch.zeros_like(single_means),
@@ -117,6 +130,63 @@ def main():
     weak_base = baseline(**weak_input)[2][0, 24, 24]
     weak_band = band(**weak_input)[2][0, 24, 24]
     check_close(weak_band.item(), weak_base.item(), atol=1e-6)
+
+    # Native sample binning uses int((x + .5) / BLOCK_X), not int(x) / BLOCK_X.
+    def at_pixel(x, z):
+        return [((x + .5) * 2 / W - 1) * z * .5, 0., z]
+
+    tile_means = torch.tensor([at_pixel(8, 1.), at_pixel(29.05, 2.)],
+                              device="cuda")
+    tile_scales = torch.tensor([[4 / 49, 4 / 49, .01],
+                                [8.4 / 49, 8.4 / 49, .01]], device="cuda")
+    tile_rot = rotations[:2]
+    tile_opacity = torch.tensor([[.05], [.99]], device="cuda", requires_grad=True)
+    tile_points = torch.tensor([[at_pixel(x, 1.) for x in
+                                 (15.49, 15.5, 15.75, 31.5)]], device="cuda")
+    s = band.raster_settings
+    raw = _C.sample_rasterized_depth(
+        tile_points, tile_means, tile_opacity, tile_scales, tile_rot,
+        1., torch.empty(0), s.viewmatrix, s.projmatrix, .5, .5, 0.,
+        H, W, s.campos, False, True, False)
+    rendered = raw[0]
+    sorted_ids = raw[5][:rendered * 4].view(torch.int32).cpu().tolist()
+    tile_count = ((W + 15) // 16) * ((H + 15) // 16)
+    ranges = raw[8][:tile_count * 8].view(torch.int32).reshape(-1, 2).cpu().tolist()
+    members = [sorted_ids[ranges[i][0]:ranges[i][1]] for i in (4, 5, 6)]
+    assert members == [[0], [0, 1], [1]], members
+    tile_depth, tile_inside = band.sample_depth(
+        tile_points, tile_means, tile_opacity, scales=tile_scales, rotations=tile_rot)
+    assert tile_inside.all()
+    tile_z = tile_depth[0, :, 2].detach().cpu().tolist()
+    assert .9 < tile_z[0] < 1.1 and 1.1 < tile_z[1] < 1.5
+    assert 1.2 < tile_z[2] < 1.7 and 1.9 < tile_z[3] < 2.1, tile_z
+
+    eps = 1e-4
+    for index in (1, 2, 3):
+        q = tile_points[:, index:index + 1].detach().clone().requires_grad_()
+        tile_opacity.grad = None
+        z = band.sample_depth(q, tile_means, tile_opacity,
+                              scales=tile_scales, rotations=tile_rot)[0][0, 0, 2]
+        z.backward()
+        plus = q.detach().clone()
+        plus[0, 0, 0] += eps
+        with torch.no_grad():
+            zp = band.sample_depth(plus, tile_means, tile_opacity,
+                                   scales=tile_scales, rotations=tile_rot)[0][0, 0, 2]
+        # Boundary points 15.5 and 31.5 use the right-side tile derivative.
+        check_close(q.grad[0, 0, 0].item(), ((zp - z.detach()) / eps).item(), atol=.1)
+        if index == 2:
+            plus_opacity = tile_opacity.detach().clone()
+            minus_opacity = tile_opacity.detach().clone()
+            plus_opacity[1, 0] += eps
+            minus_opacity[1, 0] -= eps
+            with torch.no_grad():
+                fp = band.sample_depth(q.detach(), tile_means, plus_opacity,
+                                       scales=tile_scales, rotations=tile_rot)[0][0, 0, 2]
+                fm = band.sample_depth(q.detach(), tile_means, minus_opacity,
+                                       scales=tile_scales, rotations=tile_rot)[0][0, 0, 2]
+            check_close(tile_opacity.grad[1, 0].item(), ((fp - fm) / (2 * eps)).item(), atol=.02)
+            assert abs(tile_opacity.grad[1, 0].item()) > .01
     print("contribution-band native smoke passed")
 
 

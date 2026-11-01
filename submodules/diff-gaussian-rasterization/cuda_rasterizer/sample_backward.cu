@@ -91,6 +91,7 @@ __global__ void __launch_bounds__(BLOCK_X* BLOCK_Y)
         const float* __restrict__ accum_depth,
         const float* __restrict__ final_T,
         const float4* __restrict__ band_stats,
+        const uint2* __restrict__ band_owner,
         const bool band_depth,
         const float3* __restrict__ dL_doutputs,
         float3* __restrict__ dL_dgaussians2D,
@@ -134,6 +135,7 @@ __global__ void __launch_bounds__(BLOCK_X* BLOCK_Y)
         float band_tail[SAMPLES_PRE_ROUND] = {0};
         float band_upstream[SAMPLES_PRE_ROUND] = {0};
         float4 band[SAMPLES_PRE_ROUND];
+        uint2 owner[SAMPLES_PRE_ROUND];
 
         int toDo             = range.y - range.x;
         uint32_t contributor = toDo;
@@ -154,6 +156,7 @@ __global__ void __launch_bounds__(BLOCK_X* BLOCK_Y)
                 T_final[p]          = final_T[pid];
                 T[p]                = T_final[p];
                 band[p] = band_depth ? band_stats[pid] : make_float4(0.f, 0.f, 0.f, 0.f);
+                owner[p] = band_depth ? band_owner[pid] : make_uint2(0xffffffffu, 0xffffffffu);
 
                 float2 pixnf      = {(point_xy[p].x - static_cast<float>(W - 1) / 2.f) / focal_x,
                                      (point_xy[p].y - static_cast<float>(H - 1) / 2.f) / focal_y};
@@ -246,7 +249,7 @@ __global__ void __launch_bounds__(BLOCK_X* BLOCK_Y)
                                              (point_xy[p].y - float(H - 1) / 2.f) / focal_y};
                             float rln = rnorm3df(pixnf.x, pixnf.y, 1.f);
                             float di = t * rln;
-                            float clipped_di = pprev <= .250001f ? band[p].y : (pi > .750001f ? band[p].z : di);
+                            float clipped_di = contributor <= owner[p].x ? band[p].y : (contributor >= owner[p].y ? band[p].z : di);
                             float gw = (2.f * clipped_di - .5f * (band[p].y + band[p].z) - band[p].x) / A;
                             dL_dopa += band_upstream[p] * (T[p] * gw - band_tail[p] / (1.f - alpha));
                             band_tail[p] += blending_weight * gw;
@@ -348,6 +351,7 @@ void BACKWARD::sampleDepth(
     const float* accum_depth,
     const float* final_T,
     const float4* band_stats,
+    const uint2* band_owner,
     bool band_depth,
     const float3* dL_doutput,
     float3* dL_dgaussians2D,
@@ -369,6 +373,7 @@ void BACKWARD::sampleDepth(
         accum_depth,
         final_T,
         band_stats,
+        band_owner,
         band_depth,
         dL_doutput,
         dL_dgaussians2D,

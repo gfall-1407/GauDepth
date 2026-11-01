@@ -689,6 +689,7 @@ __global__ void __launch_bounds__(BLOCK_X* BLOCK_Y)
         const float* __restrict__ alphas,
         const float* __restrict__ accum_depth,
         const float4* __restrict__ band_stats,
+        const uint2* __restrict__ band_owner,
         const bool band_depth,
         const float* __restrict__ normal_length,
         const uint32_t* __restrict__ n_contrib,
@@ -751,6 +752,7 @@ __global__ void __launch_bounds__(BLOCK_X* BLOCK_Y)
     [[maybe_unused]] float accum_t_rec = 0;
     [[maybe_unused]] float band_tail = 0.f;
     [[maybe_unused]] float4 band = {0.f, 0.f, 0.f, 0.f};
+    [[maybe_unused]] uint2 owner = {0xffffffffu, 0xffffffffu};
     [[maybe_unused]] float dL_dpixel_t;
     [[maybe_unused]] float dL_dpixel_mt;
     [[maybe_unused]] float accum_normal_rec[3] = {0};
@@ -770,6 +772,7 @@ __global__ void __launch_bounds__(BLOCK_X* BLOCK_Y)
             float dL_dpixel_depth_w = dL_dpixel_depths[pix_id];
             float pixel_accum_depth = accum_depth[pix_id];
             band = band_depth ? band_stats[pix_id] : band;
+            owner = band_depth ? band_owner[pix_id] : owner;
             float inv_w = 1 / w_final;
             if (!(band_depth && band.w > 0.f)) {
                 dL_dfinalT += dL_dpixel_depth_w * (pixel_accum_depth * inv_w) * inv_w;
@@ -902,7 +905,7 @@ __global__ void __launch_bounds__(BLOCK_X* BLOCK_Y)
                         float pi = (1.f - T * (1.f - alpha)) / w_final;
                         float li = fmaxf(0.f, fminf(pi, .75f) - fmaxf(pprev, .25f));
                         float di = t * rln;
-                        float clipped_di = pprev <= .250001f ? band.y : (pi > .750001f ? band.z : di);
+                        float clipped_di = contributor <= owner.x ? band.y : (contributor >= owner.y ? band.z : di);
                         float gw = (2.f * clipped_di - .5f * (band.y + band.z) - band.x) / w_final;
                         float band_grad = dL_dpixel_depths[pix_id];
                         dL_dopa += band_grad * (gw - band_tail / (T * (1.f - alpha)));
@@ -1078,6 +1081,7 @@ void BACKWARD::render(
     const float* alphas,
     const float* accum_depth,
     const float4* band_stats,
+    const uint2* band_owner,
     bool band_depth,
     const float* normal_length,
     const uint32_t* n_contrib,
@@ -1098,7 +1102,7 @@ void BACKWARD::render(
 #define RENDER_CUDA_CALL(template_depth)                                    \
     renderCUDA<NUM_CHANNELS, template_depth><<<grid, block>>>(              \
         ranges, point_list, W, H, bg_color, means2D, conic_opacity, colors, \
-        ray_planes, normals, alphas, accum_depth, band_stats, band_depth, normal_length, \
+        ray_planes, normals, alphas, accum_depth, band_stats, band_owner, band_depth, normal_length, \
         n_contrib, dL_dpixels, dL_dpixel_depth, dL_dpixel_mdepth,           \
         dL_dalphas, dL_dpixel_normals, normalmap,                           \
         focal_x, focal_y, dL_dmean2D, dL_dconic2D, dL_dcolors,              \

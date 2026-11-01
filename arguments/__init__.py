@@ -81,6 +81,26 @@ class PipelineParams(ParamGroup):
         self.depth_estimator = "baseline"  # baseline or contribution_band
         super().__init__(parser, "Pipeline Parameters", sentinel)
 
+    def extract(self, args):
+        group = super().extract(args)
+        # A saved baseline config may predate depth_estimator. Sentinel parsing
+        # must still yield a complete pipeline, including debug.
+        for name, default in (("convert_SHs_python", False),
+                              ("compute_cov3D_python", False),
+                              ("debug", False),
+                              ("depth_estimator", "baseline")):
+            if getattr(group, name, None) is None:
+                setattr(group, name, default)
+        return group
+
+
+def write_model_config(path, dataset, pipe):
+    config = vars(dataset).copy()
+    config.update({name: getattr(pipe, name) for name in
+                   ("convert_SHs_python", "compute_cov3D_python", "debug", "depth_estimator")})
+    with open(path, "w") as stream:
+        stream.write(str(Namespace(**config)))
+
 class OptimizationParams(ParamGroup):
     def __init__(self, parser):
         self.iterations = 30_000

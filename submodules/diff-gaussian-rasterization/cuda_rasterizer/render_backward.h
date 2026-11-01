@@ -33,6 +33,7 @@ void render(
     const float* alphas,
     const float* accum_depth,
     const float4* band_stats,
+    const uint2* band_owner,
     bool band_depth,
     const float* normal_length,
     const uint32_t* n_contrib,

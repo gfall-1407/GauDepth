@@ -56,6 +56,7 @@ struct PointState {
     float* accum_depth;
     float* final_T;
     float4* band_stats;
+    uint2* band_owner;
     char* scanning_space;
     uint32_t* point_offsets;
     uint32_t* tiles_touched;
@@ -73,7 +74,8 @@ struct TileState{
 struct ImageState {
     uint2* ranges;
     float* accum_depth;
-    float4* band_stats; // (D, lower-bound depth, upper-bound depth, unused)
+    float4* band_stats; // (D, lower-bound depth, upper-bound depth, valid)
+    uint2* band_owner;
     uint32_t* n_contrib;
     float* normal_length;
 

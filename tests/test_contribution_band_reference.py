@@ -80,6 +80,16 @@ class ContributionBandReferenceTest(unittest.TestCase):
         numerical_right = (band_depth_and_grad(right, depth)[0] - value) / step
         self.assertAlmostEqual(numerical_right, 2.25, delta=1e-4)
 
+    def test_near_boundary_is_not_tie(self):
+        alpha = [.2000004, .5, .4999997499998752]
+        depth = [1., 3., 6.]
+        value, _, grad_alpha = band_depth_and_grad(alpha, depth)
+        self.assertAlmostEqual(value, 2.999998, delta=1e-5)
+        for i in range(3):
+            self.assertAlmostEqual(
+                grad_alpha[i], self.finite_difference(alpha, depth, 0, i, step=1e-8),
+                delta=1e-5)
+
     def test_invalid_total(self):
         with self.assertRaises(ValueError):
             band_depth_and_grad([0, 0], [1, 2])

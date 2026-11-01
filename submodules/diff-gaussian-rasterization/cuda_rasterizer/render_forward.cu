@@ -562,7 +562,7 @@ __global__ void bandDepthCUDA(
     int W, int H, const float2* means2D, const float4* conic_opacity,
     const float4* ray_planes, float focal_x, float focal_y,
     const uint32_t* n_contrib, const float* out_alpha,
-    float* out_depth, float4* band_stats) {
+    float* out_depth, float4* band_stats, uint2* band_owner) {
     int pix_id = blockIdx.x * blockDim.x + threadIdx.x;
     if (pix_id >= W * H)
         return;
@@ -572,11 +572,17 @@ __global__ void bandDepthCUDA(
     uint32_t last = n_contrib[pix_id];
     float A = out_alpha[pix_id];
     band_stats[pix_id] = make_float4(0.f, 0.f, 0.f, 0.f);
+    band_owner[pix_id] = make_uint2(0xffffffffu, 0xffffffffu);
     if (last == 0 || !(A > 1e-7f) || !isfinite(A))
         return; // original expected-depth fallback
 
     float T = 1.f, sum = 0.f, low = 0.f, high = 0.f;
     bool has_low = false, has_high = false;
+    uint32_t low_owner = 0xffffffffu, high_owner = 0xffffffffu;
+    // One representable float above each boundary is the tie zone; no wide
+    // epsilon is used for genuinely nonboundary prefixes.
+    const float low_tie = nextafterf(.25f, 1.f);
+    const float high_tie = nextafterf(.75f, 1.f);
     float rln = rnorm3df((x - float(W - 1) / 2.f) / focal_x,
                          (y - float(H - 1) / 2.f) / focal_y, 1.f);
     for (uint32_t entry = range.x; entry < range.y && entry - range.x < last; ++entry) {
@@ -595,13 +601,14 @@ __global__ void bandDepthCUDA(
         float di = (plane.x * delta.x + plane.y * delta.y + plane.z) * rln;
         float li = fmaxf(0.f, fminf(after, .75f) - fmaxf(before, .25f));
         sum += 2.f * li * di;
-        if (!has_low && before <= .250001f && after > .250001f) { low = di; has_low = true; }
-        if (!has_high && before <= .750001f && after > .750001f) { high = di; has_high = true; }
+        if (!has_low && after > low_tie) { low = di; low_owner = entry - range.x; has_low = true; }
+        if (!has_high && after > high_tie) { high = di; high_owner = entry - range.x; has_high = true; }
         T *= 1.f - alpha;
     }
     if (!has_low || !has_high || !isfinite(sum))
         return;
     band_stats[pix_id] = make_float4(sum, low, high, 1.f);
+    band_owner[pix_id] = make_uint2(low_owner, high_owner);
     out_depth[pix_id] = sum;
 }
 
@@ -628,7 +635,8 @@ void FORWARD::render(
     float* normal_length,
     bool require_depth,
     bool band_depth,
-    float4* band_stats) {
+    float4* band_stats,
+    uint2* band_owner) {
 #define RENDER_CUDA_CALL(template_depth)                             \
     renderCUDA<NUM_CHANNELS, template_depth><<<grid, block>>>(       \
         ranges, point_list, W, H,                                    \
@@ -644,7 +652,7 @@ void FORWARD::render(
     if (require_depth && band_depth)
         bandDepthCUDA<<<(W * H + 255) / 256, 256>>>(
             ranges, point_list, W, H, means2D, conic_opacity, ray_planes,
-            focal_x, focal_y, n_contrib, out_alpha, out_depth, band_stats);
+            focal_x, focal_y, n_contrib, out_alpha, out_depth, band_stats, band_owner);
 
 #undef RENDER_CUDA_CALL
 }

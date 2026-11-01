@@ -209,6 +209,7 @@ CudaRasterizer::PointState CudaRasterizer::PointState::fromChunk(char*& chunk, s
     obtain(chunk, geom.accum_depth, P, 128);
     obtain(chunk, geom.final_T, P, 128);
     obtain(chunk, geom.band_stats, P, 128);
+    obtain(chunk, geom.band_owner, P, 128);
     cub::DeviceScan::InclusiveSum(nullptr, geom.scan_size, geom.tiles_touched, geom.tiles_touched, P);
     obtain(chunk, geom.scanning_space, geom.scan_size, 128);
     obtain(chunk, geom.point_offsets, P, 128);
@@ -229,6 +230,7 @@ CudaRasterizer::ImageState CudaRasterizer::ImageState::fromChunk(char*& chunk, s
     obtain(chunk, img.ranges, N, 128);
     obtain(chunk, img.accum_depth, N, 128);
     obtain(chunk, img.band_stats, N, 128);
+    obtain(chunk, img.band_owner, N, 128);
     obtain(chunk, img.normal_length, N, 128);
     return img;
 }
@@ -403,7 +405,8 @@ int CudaRasterizer::Rasterizer::forward(
                    imgState.normal_length,
                    require_depth,
                    band_depth,
-                   imgState.band_stats),
+                   imgState.band_stats,
+                   imgState.band_owner),
                debug);
     return num_rendered;
 }
@@ -488,6 +491,7 @@ void CudaRasterizer::Rasterizer::backward(
                    alphas,
                    imgState.accum_depth,
                    imgState.band_stats,
+                   imgState.band_owner,
                    band_depth,
                    imgState.normal_length,
                    imgState.n_contrib,
@@ -980,6 +984,7 @@ int2 CudaRasterizer::Rasterizer::sampleDepth(
                    inside,
                    band_depth,
                    pointState.band_stats,
+                   pointState.band_owner,
                    PN),
                debug)
 
@@ -1057,6 +1062,7 @@ void CudaRasterizer::Rasterizer::sample_depth_backward(
                    pointState.accum_depth,
                    pointState.final_T,
                    pointState.band_stats,
+                   pointState.band_owner,
                    band_depth,
                    (float3*)dL_doutput,
                    (float3*)dL_dmean2D,

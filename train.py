@@ -9,7 +9,7 @@
 # For inquiries contact  george.drettakis@inria.fr
 #
 
-from argparse import ArgumentParser, Namespace
+from argparse import ArgumentParser
 import os
 from random import randint, sample
 import random
@@ -28,7 +28,7 @@ try:
 except ImportError:
     TENSORBOARD_FOUND = False
 
-from arguments import ModelParams, OptimizationParams, PipelineParams
+from arguments import ModelParams, OptimizationParams, PipelineParams, write_model_config
 from gaussian_renderer import network_gui, render
 from scene import GaussianModel, Scene
 from scene.cameras import Camera
@@ -68,7 +68,7 @@ def training(
     if ab_run_id:
         validate_ab_output_dir(dataset.model_path)
     first_iter = 0
-    tb_writer = prepare_output_and_logger(dataset)
+    tb_writer = prepare_output_and_logger(dataset, pipe)
     gaussians = GaussianModel(dataset.sh_degree)
     scene = Scene(dataset, gaussians)
     if warm_start_ply:
@@ -330,7 +330,7 @@ def training(
         ab_log.close()
 
 
-def prepare_output_and_logger(args):
+def prepare_output_and_logger(args, pipe):
     if not args.model_path:
         if os.getenv("OAR_JOB_ID"):
             unique_str = os.getenv("OAR_JOB_ID")
@@ -341,8 +341,7 @@ def prepare_output_and_logger(args):
     # Set up output folder
     print("Output folder: {}".format(args.model_path))
     os.makedirs(args.model_path, exist_ok=True)
-    with open(os.path.join(args.model_path, "cfg_args"), "w") as cfg_log_f:
-        cfg_log_f.write(str(Namespace(**vars(args))))
+    write_model_config(os.path.join(args.model_path, "cfg_args"), args, pipe)
 
     # Create Tensorboard writer
     tb_writer = None

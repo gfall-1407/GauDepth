@@ -62,6 +62,7 @@ void sampleDepth(
     bool* inside,
     bool band_depth,
     float4* band_stats,
+    uint2* band_owner,
     int PN);
 } // namespace FORWARD
 

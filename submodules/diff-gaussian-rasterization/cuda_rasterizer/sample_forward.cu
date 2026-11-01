@@ -375,14 +375,18 @@ __global__ void sampleBandDepthCUDA(
     const float2* points2D, const float2* gaussians2D,
     const float4* conic_opacity, const float4* ray_planes,
     const uint32_t* n_contrib, const float* final_T,
-    const bool* inside, float3* output, float4* band_stats) {
+    const bool* inside, float3* output, float4* band_stats, uint2* band_owner) {
     int pid = blockIdx.x * blockDim.x + threadIdx.x;
     if (pid >= PN) return;
     band_stats[pid] = make_float4(0.f, 0.f, 0.f, 0.f);
+    band_owner[pid] = make_uint2(0xffffffffu, 0xffffffffu);
     if (!inside[pid] || n_contrib[pid] == 0) return;
     float2 xy = points2D[pid];
-    int tx = int(xy.x) / BLOCK_X, ty = int(xy.y) / BLOCK_Y;
-    if (tx < 0 || ty < 0 || tx >= (W + BLOCK_X - 1) / BLOCK_X || ty >= (H + BLOCK_Y - 1) / BLOCK_Y) return;
+    // Match createWithKeys exactly: +0.5 before division, then clamp.
+    int tx = min((W + BLOCK_X - 1) / BLOCK_X - 1,
+                 max(0, int((xy.x + .5f) / BLOCK_X)));
+    int ty = min((H + BLOCK_Y - 1) / BLOCK_Y - 1,
+                 max(0, int((xy.y + .5f) / BLOCK_Y)));
     uint2 range = ranges[ty * ((W + BLOCK_X - 1) / BLOCK_X) + tx];
     float A = 1.f - final_T[pid];
     if (!(A > 1e-7f) || !isfinite(A)) return;
@@ -391,6 +395,9 @@ __global__ void sampleBandDepthCUDA(
     float rln = rnorm3df(pixnf.x, pixnf.y, 1.f);
     float T = 1.f, sum = 0.f, low = 0.f, high = 0.f;
     bool has_low = false, has_high = false;
+    uint32_t low_owner = 0xffffffffu, high_owner = 0xffffffffu;
+    const float low_tie = nextafterf(.25f, 1.f);
+    const float high_tie = nextafterf(.75f, 1.f);
     for (uint32_t entry = range.x; entry < range.y && entry - range.x < n_contrib[pid]; ++entry) {
         int id = gaussian_list[entry];
         float2 delta = {gaussians2D[id].x - xy.x, gaussians2D[id].y - xy.y};
@@ -407,12 +414,13 @@ __global__ void sampleBandDepthCUDA(
         float di = (plane.x * delta.x + plane.y * delta.y + plane.z) * rln;
         float li = fmaxf(0.f, fminf(after, .75f) - fmaxf(before, .25f));
         sum += 2.f * li * di;
-        if (!has_low && before <= .250001f && after > .250001f) { low = di; has_low = true; }
-        if (!has_high && before <= .750001f && after > .750001f) { high = di; has_high = true; }
+        if (!has_low && after > low_tie) { low = di; low_owner = entry - range.x; has_low = true; }
+        if (!has_high && after > high_tie) { high = di; high_owner = entry - range.x; has_high = true; }
         T *= 1.f - alpha;
     }
     if (!has_low || !has_high || !isfinite(sum)) return;
     band_stats[pid] = make_float4(sum, low, high, 1.f);
+    band_owner[pid] = make_uint2(low_owner, high_owner);
     output[pid] = {pixnf.x * sum, pixnf.y * sum, sum};
 }
 
@@ -435,6 +443,7 @@ void FORWARD::sampleDepth(
     bool* inside,
     bool band_depth,
     float4* band_stats,
+    uint2* band_owner,
     int PN) {
     sampleDepthCUDA<SAMPLE_BATCH_SIZE><<<grid, block>>>(
         gaussian_ranges,
@@ -456,5 +465,5 @@ void FORWARD::sampleDepth(
         sampleBandDepthCUDA<<<(PN + 255) / 256, 256>>>(
             PN, W, H, focal_x, focal_y, gaussian_ranges, gaussian_list,
             points2D, gaussians2D, conic_opacity, ray_planes, n_contrib,
-            final_T, inside, output, band_stats);
+            final_T, inside, output, band_stats, band_owner);
 }

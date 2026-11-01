@@ -5,6 +5,13 @@ and early termination are discrete and must be matched by the CUDA caller.
 """
 
 from math import isfinite
+from struct import pack, unpack
+
+
+def _next_up(value):
+    """One binary64 ULP above a positive boundary (also on Python 3.8)."""
+    bits = unpack(">Q", pack(">d", value))[0]
+    return unpack(">d", pack(">Q", bits + 1))[0]
 
 
 def band_depth_and_grad(alpha, depth, lower=0.25, upper=0.75):
@@ -48,8 +55,8 @@ def band_depth_and_grad(alpha, depth, lower=0.25, upper=0.75):
 
     # First prefix strictly exceeding a boundary owns that boundary. At an
     # exact prefix equality this specifies the right-side subgradient.
-    low = next(i for i, p in enumerate(normalized_prefix) if p > lower + 1e-12)
-    high = next(i for i, p in enumerate(normalized_prefix) if p > upper + 1e-12)
+    low = next(i for i, p in enumerate(normalized_prefix) if p > _next_up(lower))
+    high = next(i for i, p in enumerate(normalized_prefix) if p > _next_up(upper))
     clipped = [depth[low] if i <= low else depth[high] if i >= high else depth[i]
                for i in range(len(alpha))]
     clipped_mean = lower * depth[low] + (upper - lower) * result + (1 - upper) * depth[high]
