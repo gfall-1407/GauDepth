@@ -464,8 +464,8 @@ if __name__ == "__main__":
     parser.add_argument('--warm_start_ply', type=str, default=None)
     parser.add_argument('--warm_start_iteration', type=int, default=None)
     args = parser.parse_args(sys.argv[1:])
-    if args.depth_route == 'candidate':
-        parser.error('candidate readout is not implemented; baseline and identity only')
+    if args.depth_route == 'candidate' and not args.ab_run_id:
+        parser.error('candidate requires --ab_run_id for per-iteration coverage and timing logs')
     if args.warm_start_ply and args.start_checkpoint:
         parser.error('warm_start_ply and start_checkpoint are mutually exclusive')
     if bool(args.warm_start_ply) != (args.warm_start_iteration is not None):
