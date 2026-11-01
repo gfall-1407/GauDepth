@@ -25,6 +25,7 @@ setup(
             "cuda_rasterizer/render_forward.cu",
             "cuda_rasterizer/render_backward.cu",
             "cuda_rasterizer/sample_forward.cu",
+            "cuda_rasterizer/support_forward.cu",
             "cuda_rasterizer/sample_backward.cu",
             "rasterize_points.cu",
             "ext.cpp"],

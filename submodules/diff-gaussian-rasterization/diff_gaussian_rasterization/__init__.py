@@ -30,6 +30,8 @@ def rasterize_gaussians(
     rotations,
     cov3Ds_precomp,
     raster_settings,
+    support_xy=None,
+    support_k=128,
 ):
     return _RasterizeGaussians.apply(
         means3D,
@@ -41,6 +43,8 @@ def rasterize_gaussians(
         rotations,
         cov3Ds_precomp,
         raster_settings,
+        support_xy,
+        support_k,
     )
 
 
@@ -57,6 +61,8 @@ class _RasterizeGaussians(torch.autograd.Function):
         rotations,
         cov3Ds_precomp,
         raster_settings,
+        support_xy,
+        support_k,
     ):
 
         # Restructure arguments the way that the C++ lib expects them
@@ -101,10 +107,18 @@ class _RasterizeGaussians(torch.autograd.Function):
         ctx.save_for_backward(
             colors_precomp, opacities, means3D, scales, rotations, cov3Ds_precomp, normal, radii, sh, geomBuffer, binningBuffer, imgBuffer, alpha
         )
+        if support_xy is not None:
+            ids, support_alpha, count, overflow = _C.accepted_gaussians(
+                support_xy.detach().contiguous(), geomBuffer, binningBuffer, imgBuffer,
+                means3D.shape[0], num_rendered, raster_settings.image_width,
+                raster_settings.image_height, support_k, False,
+            )
+            ctx.mark_non_differentiable(ids, support_alpha, count, overflow)
+            return color, radii, depth, mdepth, alpha, normal, ids, support_alpha, count, overflow
         return color, radii, depth, mdepth, alpha, normal
 
     @staticmethod
-    def backward(ctx, grad_color, grad_radii, grad_depth, grad_mdepth, grad_alpha, grad_normal):
+    def backward(ctx, grad_color, grad_radii, grad_depth, grad_mdepth, grad_alpha, grad_normal, *support_grads):
 
         # Restore necessary values from context
         num_rendered = ctx.num_rendered
@@ -175,7 +189,14 @@ class _RasterizeGaussians(torch.autograd.Function):
             None,
         )
 
-        return grads
+        return grads + (None, None)
+
+
+def pixel_grid_xy(height, width, device):
+    """Raster pixel centers in row-major order, shape [H*W, 2]."""
+    y, x = torch.meshgrid(torch.arange(height, device=device, dtype=torch.float32),
+                          torch.arange(width, device=device, dtype=torch.float32), indexing="ij")
+    return torch.stack((x, y), dim=-1).reshape(-1, 2)
 
 
 class GaussianRasterizationSettings(NamedTuple):
@@ -208,7 +229,8 @@ class GaussianRasterizer(nn.Module):
 
         return visible
 
-    def forward(self, means3D, means2D, opacities, shs=None, colors_precomp=None, scales=None, rotations=None, cov3D_precomp=None):
+    def forward(self, means3D, means2D, opacities, shs=None, colors_precomp=None, scales=None, rotations=None, cov3D_precomp=None,
+                support_xy=None, support_k=128):
 
         raster_settings = self.raster_settings
 
@@ -243,6 +265,8 @@ class GaussianRasterizer(nn.Module):
             rotations,
             cov3D_precomp,
             raster_settings,
+            support_xy,
+            support_k,
         )
 
     def integrate(
@@ -326,7 +350,8 @@ class GaussianRasterizer(nn.Module):
 
         return color_integrated, alpha_integrated, inside
 
-    def sample_depth(self, points3D, means3D, opacities, scales=None, rotations=None, cov3D_precomp=None):
+    def sample_depth(self, points3D, means3D, opacities, scales=None, rotations=None, cov3D_precomp=None,
+                     support_xy=None, support_k=128):
         if ((scales is None or rotations is None) and cov3D_precomp is None) or (
             (scales is not None or rotations is not None) and cov3D_precomp is not None
         ):
@@ -339,7 +364,8 @@ class GaussianRasterizer(nn.Module):
         if cov3D_precomp is None:
             cov3D_precomp = torch.Tensor([])
         raster_settings = self.raster_settings
-        return _SampleDepth.apply(points3D, means3D, opacities, scales, rotations, cov3D_precomp, raster_settings)
+        return _SampleDepth.apply(points3D, means3D, opacities, scales, rotations, cov3D_precomp,
+                                  raster_settings, support_xy, support_k)
 
 
 class _SampleDepth(torch.autograd.Function):
@@ -353,6 +379,8 @@ class _SampleDepth(torch.autograd.Function):
         rotations,
         cov3D_precomp,
         raster_settings,
+        support_xy,
+        support_k,
     ):
 
         # Invoke C++/CUDA rasterization routine
@@ -400,10 +428,19 @@ class _SampleDepth(torch.autograd.Function):
             points3D, means3D, opacities, scales, rotations, cov3D_precomp, geomBuffer, binningBuffer, pointBuffer, pointBinningBuffer, tileBuffer
         )
 
+        if support_xy is not None:
+            ids, support_alpha, count, overflow = _C.accepted_gaussians(
+                support_xy.detach().contiguous(), geomBuffer, binningBuffer, tileBuffer,
+                means3D.shape[0], num_rendered, raster_settings.image_width,
+                raster_settings.image_height, support_k, True,
+            )
+            ctx.mark_non_differentiable(ids, support_alpha, count, overflow)
+            return camera_points, inside, ids, support_alpha, count, overflow
+
         return camera_points, inside
 
     @staticmethod
-    def backward(ctx, grad_camera_points, grad_inside):
+    def backward(ctx, grad_camera_points, grad_inside, *support_grads):
         num_rendered = ctx.num_rendered
         num_points = ctx.num_points
         raster_settings = ctx.raster_settings
@@ -464,4 +501,4 @@ class _SampleDepth(torch.autograd.Function):
             None,
         )
 
-        return grads
+        return grads + (None, None)

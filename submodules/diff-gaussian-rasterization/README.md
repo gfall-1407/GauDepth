@@ -2,6 +2,26 @@
 
 **NOTE**: this is a modified version to support depth & alpha rendering (both forward and backward) from the [original repository](https://github.com/graphdeco-inria/diff-gaussian-rasterization). 
 
+## Accepted Gaussian query (optional)
+
+Pass `support_xy` (contiguous CUDA float32 `[Q,2]`, image pixel coordinates) and
+`support_k` (default 128) to `GaussianRasterizer.forward` or `sample_depth`.
+The normal return values are followed by `ids[Q,K]`, `support_alpha[Q,K]`,
+`count[Q]`, `overflow[Q]`. `ids` contains original Gaussian tensor row indices,
+with `-1` padding; `count` is the full accepted count even when it exceeds K.
+An overflowed query must use the host depth instead of treating the prefix as
+complete. The optional outputs have no gradient. Gather the current Gaussian
+parameters by `ids` to construct a differentiable depth. `pixel_grid_xy(H,W,device)`
+returns the full raster grid in row-major order. Fractional coordinates are
+evaluated as provided, without pixel rounding. Invalid/out-of-image queries
+return zero count and padded IDs.
+
+The query reads the native sorted tile list and per-Gaussian conic/opacity from
+the same forward pass. It applies the original `power > 0`, `alpha < 1/255`, and
+`test_T < 1e-4` acceptance/stop rules. `support_alpha` is per-Gaussian alpha,
+not transmittance-weighted contribution. The full-grid storage cost is
+`8*H*W*K` bytes for IDs and alpha alone; use query chunks if needed.
+
 ```python
 rendered_image, radii, rendered_depth, rendered_alpha = rasterizer(
     means3D=means3D,
