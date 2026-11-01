@@ -131,7 +131,7 @@ class PatchMatch:
         if debug:
             os.makedirs(os.path.join(model_path, "debug"), exist_ok=True)
 
-    def __call__(self, gaussians: GaussianModel, render_pkg: dict, viewpoint_cam: Camera, nearest_cam: Camera, iteration=0, depth_normal=None):
+    def __call__(self, gaussians: GaussianModel, render_pkg: dict, viewpoint_cam: Camera, nearest_cam: Camera, iteration=0, depth_normal=None, audit=None):
         if nearest_cam is None:
             return torch.tensor([0], dtype=torch.float32, device="cuda"), torch.tensor([0], dtype=torch.float32, device="cuda")
         H, W = viewpoint_cam.image_height, viewpoint_cam.image_width
@@ -159,6 +159,8 @@ class PatchMatch:
 
         pts_in_nearest_cam = sampled_pkg["sampled_depth"]
         d_mask = sampled_pkg["inside"]
+        if audit is not None:
+            audit['inside_mask'] = d_mask.reshape(-1).detach().clone()
         R = nearest_cam.R
         T = nearest_cam.T
 
@@ -184,6 +186,13 @@ class PatchMatch:
             d_mask = torch.logical_and(d_mask, pixel_noise < self.pixel_noise_th)
             weights = torch.exp(-pixel_noise)
             weights[~d_mask] = 0
+        if audit is not None:
+            # These are tensors from this exact PM call. Masks/weights follow
+            # the native detach boundary; pixel_noise keeps its loss gradient.
+            audit['pm_mask'] = d_mask.reshape(-1).detach().clone()
+            audit['reprojection_lt_threshold'] = (pixel_noise.reshape(-1) < self.pixel_noise_th).detach()
+            audit['pixel_noise'] = pixel_noise.reshape(-1)
+            audit['weights'] = weights.reshape(-1).detach().clone()
         ##############################################
 
         if iteration % 200 == 0 and self.debug:
@@ -208,6 +217,9 @@ class PatchMatch:
             cv2.imwrite(os.path.join(self.model_path, "debug", "%05d" % iteration + "_" + viewpoint_cam.image_name + ".jpg"), image_to_show)
         ################## Compute NCC for warped patches ##################
         if not d_mask.any():
+            if audit is not None:
+                audit['ncc_mask'] = torch.zeros(H * W, dtype=torch.bool, device=pixel_noise.device)
+                audit['ncc_raw'] = None
             return torch.tensor([0], dtype=torch.float32, device="cuda"), torch.tensor([0], dtype=torch.float32, device="cuda")
 
         geo_loss = ((weights * pixel_noise)[d_mask]).mean()
@@ -242,6 +254,12 @@ class PatchMatch:
         )
         ncc = torch.clamp(1 - cc, 0.0, 2.0)
         ncc_mask = (ncc < 0.9) & valid_mask
+
+        if audit is not None:
+            dense_ncc = torch.zeros(H * W, dtype=ncc.dtype, device=ncc.device)
+            audit['ncc_raw'] = dense_ncc.scatter(0, valid_indices, ncc.reshape(-1))
+            dense_mask = torch.zeros(H * W, dtype=torch.bool, device=ncc.device)
+            audit['ncc_mask'] = dense_mask.scatter(0, valid_indices, ncc_mask.reshape(-1))
 
         ncc = ncc.squeeze() * weights
         ncc = ncc[ncc_mask.squeeze()]
