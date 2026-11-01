@@ -6,6 +6,11 @@ from gpu_contribution_band_smoke import W, H, make_raster, scene, check_close
 from utils.contribution_band_reference import band_depth_stopgrad_weights
 
 
+def assert_finite(*tensors):
+    for tensor in tensors:
+        assert torch.isfinite(tensor).all().item(), "nonfinite synthetic input/output/gradient"
+
+
 def main():
     assert torch.cuda.is_available()
     full, sg = make_raster(1), make_raster(2)
@@ -13,10 +18,13 @@ def main():
     means, opacity, scales, rotations, colors = scene()
     scales = scales.clone().requires_grad_()
     colors = colors.clone().requires_grad_()
+    assert_finite(means, opacity, scales, rotations, colors)
     inputs = dict(means3D=means, means2D=torch.zeros_like(means),
                   colors_precomp=colors, opacities=opacity, scales=scales,
                   rotations=rotations)
     full_out, sg_out, base_out = full(**inputs), sg(**inputs), baseline(**inputs)
+    assert_finite(*(output[i] for output in (full_out, sg_out, base_out)
+                    for i in (0, 2, 3, 4, 5)))
     for a, b in zip(full_out, sg_out):
         torch.testing.assert_close(a, b, rtol=0, atol=0)
     for i in (0, 1, 4, 5):
@@ -26,6 +34,7 @@ def main():
     _, expected_di, _ = band_depth_stopgrad_weights([.25, .4, .5], [1., 1.5, 2.])
     grad_mean, grad_opacity, grad_scale = torch.autograd.grad(
         depth, (means, opacity, scales), retain_graph=True)
+    assert_finite(grad_mean, grad_opacity, grad_scale)
     torch.testing.assert_close(grad_opacity, torch.zeros_like(grad_opacity), atol=1e-5, rtol=0)
     torch.testing.assert_close(grad_scale, torch.zeros_like(grad_scale), atol=1e-4, rtol=0)
     for i in range(3):
@@ -38,21 +47,25 @@ def main():
                                    retain_graph=True)
     rgb_sg = torch.autograd.grad(sg_out[0].sum(), (means, opacity, scales, colors),
                                  retain_graph=True)
+    assert_finite(*rgb_full, *rgb_sg)
     for a, b in zip(rgb_full, rgb_sg):
         torch.testing.assert_close(a, b, rtol=1e-4, atol=1e-4)
     assert rgb_sg[1].abs().max().item() > 0
 
     query = torch.tensor([[[.01, .005, 1.]]], device="cuda", requires_grad=True)
+    assert_finite(query)
     sampled_full, inside_full = full.sample_depth(query, means, opacity, scales=scales,
                                                    rotations=rotations)
     sampled_sg, inside_sg = sg.sample_depth(query, means, opacity, scales=scales,
                                             rotations=rotations)
     torch.testing.assert_close(sampled_full, sampled_sg, rtol=0, atol=0)
+    assert_finite(sampled_full, sampled_sg)
     assert inside_full.item() and inside_sg.item()
     sample_grads = torch.autograd.grad(sampled_sg[0, 0, 2], (means, opacity, scales, query),
                                        retain_graph=True)
     full_sample_grads = torch.autograd.grad(
         sampled_full[0, 0, 2], (means, opacity, scales, query), retain_graph=True)
+    assert_finite(*sample_grads, *full_sample_grads)
     torch.testing.assert_close(sample_grads[1], torch.zeros_like(opacity), atol=1e-5, rtol=0)
     torch.testing.assert_close(sample_grads[2], torch.zeros_like(scales), atol=1e-4, rtol=0)
     assert full_sample_grads[1].abs().max().item() > 1e-3
@@ -69,8 +82,10 @@ def main():
         edge_inputs = dict(inputs, opacities=edge_opacity)
         edge_full = full(**edge_inputs)[2][0, H // 2, W // 2]
         edge_sg = sg(**edge_inputs)[2][0, H // 2, W // 2]
+        assert_finite(edge_opacity, edge_full, edge_sg)
         torch.testing.assert_close(edge_full, edge_sg, rtol=0, atol=0)
         edge_grad = torch.autograd.grad(edge_sg, edge_opacity)[0]
+        assert_finite(edge_grad)
         torch.testing.assert_close(edge_grad, torch.zeros_like(edge_grad), rtol=0, atol=1e-5)
 
     # Empty acceptance and the weak-alpha fallback retain the baseline forward.
