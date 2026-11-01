@@ -1,7 +1,8 @@
 import unittest
 
 from local_roots_photo import OFFSETS, decide, finalize_root
-from run_local_roots_photo import heldout_summary
+from run_local_roots_photo import heldout_summary, native_expected_camera_z
+from visible_branch_reference import Camera, pixel_ray, project
 
 
 def root(index, costs_a, costs_b, p_a, p_b):
@@ -15,6 +16,21 @@ def root(index, costs_a, costs_b, p_a, p_b):
 
 
 class LocalRootsPhotoTest(unittest.TestCase):
+    def test_oblique_camera_z_and_rotated_camera(self):
+        c2w = ((0., 0., 1.), (0., 1., 0.), (-1., 0., 0.))
+        camera = Camera((2., 3., 4.), c2w, 10., 12., 5., 6.)
+        pixel = (8., 9.)
+        ray = pixel_ray(camera, *pixel)
+        self.assertGreater(sum(v*v for v in ray), 1.)
+        native_z = native_expected_camera_z(3.25)
+        self.assertEqual(native_z, 3.25)
+        point = tuple(o+native_z*v for o, v in zip(camera.center, ray))
+        self.assertAlmostEqual(project(camera, point)[0], pixel[0])
+        self.assertAlmostEqual(project(camera, point)[1], pixel[1])
+        forward = tuple(camera.camera_to_world[r][2] for r in range(3))
+        self.assertAlmostEqual(sum((p-o)*f for p, o, f in
+                                   zip(point, camera.center, forward)), native_z)
+
     def test_missing_distant_competitor_can_be_excluded(self):
         best = root(0, [.1]*5, [.12]*5, (10., 10.), (10., 10.))
         far = root(1, [None]*5, [.8]*5, (30., 10.), (30., 10.))

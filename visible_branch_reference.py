@@ -59,15 +59,21 @@ def project(camera, point):
 
 def bilinear(image, x, y):
     width, height = len(image[0]), len(image)
-    if not (isfinite(x) and isfinite(y) and
-            0 <= x < width-1 and 0 <= y < height-1):
+    if not isfinite(x) or not isfinite(y):
+        raise ValueError("nonfinite sample coordinates")
+    if not (0 <= x < width-1 and 0 <= y < height-1):
         return None
     ix, iy = int(x), int(y)
     dx, dy = x-ix, y-iy
-    value = sum(image[iy+oy][ix+ox] *
-               (dx if ox else 1-dx) * (dy if oy else 1-dy)
-               for oy in (0, 1) for ox in (0, 1))
-    return value if isfinite(value) else None
+    corners = [image[iy+oy][ix+ox] for oy in (0, 1) for ox in (0, 1)]
+    if not all(isfinite(v) for v in corners):
+        raise ValueError("nonfinite image sample")
+    value = sum(corners[2*oy+ox] *
+                (dx if ox else 1-dx) * (dy if oy else 1-dy)
+                for oy in (0, 1) for ox in (0, 1))
+    if not isfinite(value):
+        raise ValueError("nonfinite bilinear interpolation")
+    return value
 
 
 def patch_cost(member, reference_camera, reference_image,
@@ -86,27 +92,45 @@ def patch_cost(member, reference_camera, reference_image,
 def patch_cost_diagnostic(member, reference_camera, reference_image,
                           witness_camera, witness_image, x, y, patch_radius=2):
     """Return (NCC cost, failure reason) without dropping invalid evidence."""
+    for camera in (reference_camera, witness_camera):
+        values = (*camera.center, *camera.camera_to_world[0],
+                  *camera.camera_to_world[1], *camera.camera_to_world[2],
+                  camera.fx, camera.fy, camera.cx, camera.cy)
+        if not all(isfinite(v) for v in values) or camera.fx <= 0 or camera.fy <= 0:
+            raise ValueError("corrupt camera")
+    if not all(isfinite(v) for v in (*member.mu, *member.normal, x, y)):
+        raise ValueError("nonfinite plane or reference pixel")
     ref, witness = [], []
     for oy in range(-patch_radius, patch_radius+1):
         for ox in range(-patch_radius, patch_radius+1):
             px, py = x+ox, y+oy
             color = bilinear(reference_image, px, py)
             if color is None:
-                return None, "reference_patch_out_of_bounds_or_nonfinite"
+                return None, "reference_patch_oob"
             ray = pixel_ray(reference_camera, px, py)
             hit = intersection(member, reference_camera.center, ray)
             if hit is None:
                 return None, "invalid_plane_intersection"
             point = tuple(o+hit[2]*v for o, v in zip(reference_camera.center, ray))
-            coords = project(witness_camera, point)
-            if coords is None:
-                return None, "invalid_witness_projection"
+            if not all(isfinite(v) for v in point):
+                raise ValueError("nonfinite plane intersection")
+            delta = sub(point, witness_camera.center)
+            local = tuple(sum(witness_camera.camera_to_world[r][c]*delta[r]
+                              for r in range(3)) for c in range(3))
+            if not all(isfinite(v) for v in local):
+                raise ValueError("nonfinite witness camera point")
+            if local[2] <= EPS:
+                return None, "witness_negative_or_near_zero_depth"
+            coords = (witness_camera.fx*local[0]/local[2]+witness_camera.cx,
+                      witness_camera.fy*local[1]/local[2]+witness_camera.cy)
+            if not all(isfinite(v) for v in coords):
+                raise ValueError("nonfinite witness projection")
             sampled = bilinear(witness_image, *coords)
             if sampled is None:
-                return None, "witness_patch_out_of_bounds_or_nonfinite"
+                return None, "witness_patch_oob"
             ref.append(color); witness.append(sampled)
     cost = ncc_cost(ref, witness)
-    return (cost, "valid" if cost is not None else "textureless_or_nonfinite_patch")
+    return (cost, "valid" if cost is not None else "low_texture")
 
 
 def intersection(member, origin, ray):

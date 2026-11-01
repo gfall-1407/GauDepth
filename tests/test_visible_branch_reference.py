@@ -35,7 +35,20 @@ class VisibleBranchReferenceTest(unittest.TestCase):
                                              Camera((20., 0., 0.), I, 10., 10., 5., 5.),
                                              image, 5., 5.)
         self.assertIsNone(cost)
-        self.assertEqual(reason, "witness_patch_out_of_bounds_or_nonfinite")
+        self.assertEqual(reason, "witness_patch_oob")
+
+    def test_nonfinite_image_is_error_not_unknown_evidence(self):
+        I = ((1., 0., 0.), (0., 1., 0.), (0., 0., 1.))
+        camera = Camera((0., 0., 0.), I, 10., 10., 5., 5.)
+        image = [[float(x+y) for x in range(12)] for y in range(12)]
+        corrupt = [row.copy() for row in image]
+        corrupt[5][5] = float("nan")
+        with self.assertRaisesRegex(ValueError, "nonfinite image sample"):
+            patch_cost_diagnostic(member(0, 1., .5), camera, corrupt,
+                                  camera, image, 5., 5.)
+        with self.assertRaisesRegex(ValueError, "nonfinite image sample"):
+            patch_cost_diagnostic(member(0, 1., .5), camera, image,
+                                  camera, corrupt, 5., 5.)
 
     def test_two_real_camera_patch_warps(self):
         I = ((1., 0., 0.), (0., 1., 0.), (0., 0., 1.))

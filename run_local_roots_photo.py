@@ -32,6 +32,14 @@ def plane_cost(normal, depth, reference, reference_image, target, pixel):
                                  camera, image, *pixel)
 
 
+def native_expected_camera_z(value):
+    """The captured replay_depth already uses camera-z, even for oblique rays."""
+    depth = float(value)
+    if not np.isfinite(depth):
+        raise ValueError("nonfinite native Expected")
+    return depth
+
+
 def heldout_summary(rays):
     """Missing formal deltas retain the frozen 31-index denominator."""
     known, missing = [], []
@@ -135,7 +143,7 @@ def run(geometry_path, capture_dir, image_dir, camera_dir, image_manifest,
         ray = pixel_ray(ref, *pixel_raw)
         ray_length = sqrt(sum(v*v for v in ray))
         expected = float(cap["replay_depth"][q])
-        expected_z = expected/ray_length
+        expected_z = native_expected_camera_z(expected)
         if abs(expected-source_ray["native_expected"]) > 2e-6:
             raise ValueError("geometry native Expected mismatch")
         candidates = []
@@ -163,12 +171,12 @@ def run(geometry_path, capture_dir, image_dir, camera_dir, image_manifest,
                                             bool(source_root["outside_all_3sigma"]),
                                             evidence))
         decision = decide(candidates, expected_z)
-        decision["output_depth_native_metric"] = decision["output_depth"]*ray_length
+        decision["output_depth_camera_z"] = decision["output_depth"]
         selection["rays"].append(dict(center_index=i, query_index=q,
                                       pixel_capture=pixel_capture, pixel_raw=pixel_raw,
                                       native_expected=expected,
                                       native_expected_camera_z=expected_z,
-                                      ray_length=ray_length,
+                                      ray_length_for_audit_only=ray_length,
                                       roots=candidates, **decision))
         journal.write(json.dumps(selection["rays"][-1], allow_nan=False)+"\n")
         journal.flush()
