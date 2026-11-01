@@ -38,6 +38,19 @@ def covariance(sx=.04, sy=.04, h=.01):
     return np.diag([sx*sx, sy*sy, h*h]).tolist()
 
 
+def geometry_signature(mu, symmetric_cov):
+    """Exact float64 geometry identity after the same symmetrization used by eigh.
+
+    Only signed zero is canonicalized; distinct finite values are never merged by
+    a tolerance. Opacity and labels are not geometric evidence of independence.
+    """
+    center = np.array(mu, dtype=np.float64, copy=True)
+    cov = np.array(symmetric_cov, dtype=np.float64, copy=True)
+    center[center == 0] = 0.
+    cov[cov == 0] = 0.
+    return center.tobytes(), cov.tobytes()
+
+
 def member(x, y, z, cov=None, opacity=.5, label=''):
     return dict(center=[x, y, z], covariance=cov if cov is not None else covariance(),
                 opacity=opacity, label=label)
@@ -77,6 +90,10 @@ def generate_manifest():
     scaled = [dict(m, center=(2*np.asarray(m['center'])).tolist(),
                    covariance=(4*np.asarray(m['covariance'])).tolist()) for m in base]
     a0, s, h = .02, .04, .01
+    signed_zero_cov = covariance()
+    signed_zero_cov[0][1] = signed_zero_cov[1][0] = -0.
+    antisymmetric_cov = covariance()
+    antisymmetric_cov[0][1], antisymmetric_cov[1][0] = 1e-15, -1e-15
     cases = [
         case('same_layout', base, truth_t=1.),
         case('same_seeded_layout', seeded, truth_t=1.),
@@ -86,6 +103,10 @@ def generate_manifest():
         case('same_duplicate_density', base + [dict(base[0], label=f'copy_{i}') for i in range(8)], truth_t=1.),
         case('single_member_control', base[:1], truth_t=1., allow_single=True),
         case('duplicate_only_reject', [base[0], dict(base[0], label='duplicate')], expected='insufficient_unique_members'),
+        case('signed_zero_duplicate_reject', [member(0., 0., 1.),
+             member(-0., 0., 1., signed_zero_cov)], expected='insufficient_unique_members'),
+        case('antisymmetric_duplicate_reject', [member(0., 0., 1.),
+             member(0., 0., 1., antisymmetric_cov)], expected='insufficient_unique_members'),
         case('product_peak_shift', [member(a0, 0, 1, covariance(s, s, h)),
                                     member(2*a0, 0, 1, covariance(s, s, h))],
              origin=(-1, 0, 0), ray=(2**-.5, 0, 2**-.5), truth_t=2**.5),
@@ -157,8 +178,9 @@ def solve(item, mode):
             d['member_status']='nonfinite_member';reasons.append('nonfinite_member');continue
         if not np.allclose(cov, cov.T, rtol=1e-12, atol=1e-14*max(1., float(np.max(np.abs(cov))))):
             d['member_status']='nonsymmetric_cov';reasons.append('nonsymmetric_cov');continue
-        signatures.add((mu.tobytes(), cov.tobytes()))
-        lam, axes = np.linalg.eigh((cov+cov.T)/2)
+        symmetric_cov = (cov+cov.T)/2
+        signatures.add(geometry_signature(mu, symmetric_cov))
+        lam, axes = np.linalg.eigh(symmetric_cov)
         d.update(lambda0=float(lam[0]), lambda1=float(lam[1]), lambda2=float(lam[2]))
         if not np.isfinite(lam).all() or lam[0] <= 0:
             d['member_status']='non_spd';reasons.append('non_spd');continue
@@ -232,6 +254,13 @@ def check_results(manifest, rows, member_rows):
                     'rigid_rotation','uniform_scale_x2','normal_sign_flip'):
                 check(f"{item['name']}/{mode}/exact_plane", abs(row['t_hat']-item['truth_t'])<1e-10,
                       row['t_hat']-item['truth_t'])
+    for name in ('signed_zero_duplicate_reject', 'antisymmetric_duplicate_reject'):
+        members=next(item['members'] for item in manifest['cases'] if item['name']==name)
+        raw=[(np.asarray(m['center'],float).tobytes(),np.asarray(m['covariance'],float).tobytes()) for m in members]
+        canonical=[geometry_signature(np.asarray(m['center'],float),
+                     (np.asarray(m['covariance'],float)+np.asarray(m['covariance'],float).T)/2) for m in members]
+        check(f'{name}/canonical_identity',raw[0]!=raw[1] and canonical[0]==canonical[1],
+              dict(raw_bytes_differ=raw[0]!=raw[1], effective_geometry_equal=canonical[0]==canonical[1]))
     a=.02;s=.04;h=.01
     peak_offset=3*a*h*h/(2*(h*h+s*s))
     product=by['product_peak_shift','precision_gap']
