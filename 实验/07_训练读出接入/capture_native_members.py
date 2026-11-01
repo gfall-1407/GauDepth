@@ -118,7 +118,7 @@ def filter_camera_roster(camera_files, dataset):
             T=torch.tensor(row.tvec, dtype=torch.float32, device='cuda'),
             Fx=raw_fx * width / lens.width, Fy=raw_fy * height / lens.height,
             image_width=width, image_height=height))
-    return cameras, [Path(row.name).stem for row in rows]
+    return cameras, [row.name for row in rows]
 
 
 def main():
@@ -223,7 +223,7 @@ def main():
                        camera_R=camera.R.cpu().numpy(), camera_T=camera.T.cpu().numpy(),
                        intrinsics=np.array([camera.Fx, camera.Fy, camera.Cx, camera.Cy]),
                        image_size=np.array([height, width]))
-        filter_cameras, filter_views = filter_camera_roster(camera_files, dataset)
+        filter_cameras, filter_image_names = filter_camera_roster(camera_files, dataset)
         gaussians.compute_3D_filter(filter_cameras)
         filter_delta = (gaussians.filter_3D - saved_filter).abs()
         filter_max = float(filter_delta.max().item())
@@ -254,7 +254,11 @@ def main():
                     source_sha256={str(p.relative_to(source_root)): sha256(p) for p in sources},
                     binary_path=str(binary), binary_sha256=sha256(binary),
                     filter_provenance='PLY field compared with recomputation from sorted same-scene train cameras; saved filter may predate final 100 training iterations',
-                    filter_views=filter_views, filter_recompute_max_abs=filter_max,
+                    filter_views=[Path(name).stem for name in filter_image_names],
+                    train_image_sha256={str(Path(dataset.source_path) / dataset.images / Path(name).name):
+                                        sha256(Path(dataset.source_path) / dataset.images / Path(name).name)
+                                        for name in filter_image_names},
+                    filter_recompute_max_abs=filter_max,
                     filter_recompute_mean_abs=filter_mean,
                     nonfinite_counts=nonfinite,
                     normal_definition='native preprocess computeCov2D camera-space normal; stored float4 GeometryState.normals',
