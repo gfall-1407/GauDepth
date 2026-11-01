@@ -15,7 +15,7 @@ import torch
 from arguments import ModelParams, OptimizationParams
 from gaussian_renderer import render
 from scene.colmap_loader import (read_extrinsics_binary, read_intrinsics_binary,
-                                 read_extrinsics_text, read_intrinsics_text)
+                                 read_extrinsics_text, read_intrinsics_text, qvec2rotmat)
 from scene.dataset_readers import readColmapCameras
 from scene.gaussian_model import GaussianModel
 from utils.camera_utils import cameraList_from_camInfos
@@ -51,7 +51,21 @@ def selected_cameras(dataset, names):
         raise ValueError('camera pair missing or ambiguous in COLMAP images')
     infos = readColmapCameras(picked, intr, str(Path(dataset.source_path) / dataset.images))
     cameras = cameraList_from_camInfos(infos, 1., dataset)
-    return {info.image_name: camera for info, camera in zip(infos, cameras)}, camera_files, infos
+    # Training recomputes filter_3D against every train camera after PLY load.
+    # Lightweight camera records reproduce the exact R/T/Fx/size it consumes
+    # without allocating all 49 full-resolution images on GPU.
+    filter_cameras = []
+    for value in extr.values():
+        intrinsics = intr[value.camera_id]
+        resized_width = round(intrinsics.width / dataset.resolution)
+        resized_height = round(intrinsics.height / dataset.resolution)
+        focal = float(intrinsics.params[0]) * resized_width / intrinsics.width
+        filter_cameras.append(SimpleNamespace(
+            R=torch.tensor(qvec2rotmat(value.qvec).T, dtype=torch.float32, device='cuda'),
+            T=torch.tensor(value.tvec, dtype=torch.float32, device='cuda'),
+            image_width=resized_width, image_height=resized_height, Fx=focal))
+    return ({info.image_name: camera for info, camera in zip(infos, cameras)},
+            camera_files, infos, filter_cameras)
 
 
 def masked_mean(values, selected):
@@ -127,7 +141,8 @@ def main():
     output, ply = Path(args.output).resolve(), Path(args.ply).resolve()
     if output.exists() or not ply.is_file() or args.samples < 1:
         raise ValueError('output must be new, PLY must exist, and samples must be positive')
-    cameras, camera_files, infos = selected_cameras(dataset, (args.reference_view, args.nearest_view))
+    cameras, camera_files, infos, filter_cameras = selected_cameras(
+        dataset, (args.reference_view, args.nearest_view))
     reference, nearest = cameras[args.reference_view], cameras[args.nearest_view]
     if (reference.image_height, reference.image_width) != (nearest.image_height, nearest.image_width):
         raise ValueError('camera pair image dimensions differ')
@@ -138,6 +153,12 @@ def main():
     pixel_tensor = torch.from_numpy(pixels.astype(np.int64)).cuda()
     gaussians = GaussianModel(dataset.sh_degree)
     gaussians.load_ply(str(ply))
+    ply_filter_sha256 = hashlib.sha256(gaussians.filter_3D.detach().cpu().numpy().tobytes()).hexdigest()
+    if dataset.disable_filter3D:
+        gaussians.reset_3D_filter()
+    else:
+        gaussians.compute_3D_filter(cameras=filter_cameras)
+    running_filter_sha256 = hashlib.sha256(gaussians.filter_3D.detach().cpu().numpy().tobytes()).hexdigest()
     torch.cuda.reset_peak_memory_stats()
     parameters = {name: getattr(gaussians, '_' + name) for name in PARAMS}
     background = torch.tensor([1., 1., 1.] if dataset.white_background else [0., 0., 0.],
@@ -155,6 +176,10 @@ def main():
                     raster_binary=dict(path=raster_module._C.__file__, sha256=digest(raster_module._C.__file__)),
                     ncc_module=dict(path=warp_patch_ncc.__file__, sha256=digest(warp_patch_ncc.__file__)),
                     kernel_size=dataset.kernel_size, white_background=dataset.white_background,
+                    disable_filter3D=dataset.disable_filter3D,
+                    filter_camera_count=len(filter_cameras),
+                    ply_filter_sha256=ply_filter_sha256,
+                    running_filter_sha256=running_filter_sha256,
                     regularization_weights=dict(normal=optimization.lambda_depth_normal,
                                                 geo=optimization.lambda_multi_view_geo,
                                                 ncc=optimization.lambda_multi_view_ncc),
