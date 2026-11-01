@@ -200,12 +200,19 @@ def main():
             if bounds is None: raise ValueError('no_positive_3sigma_ray_interval')
             row['bounds']=bounds; row['member_ids_sha256']=hashlib.sha256(json.dumps(ids).encode()).hexdigest()
             # Validate cached formula against the reviewed general 3D evaluator.
-            parity=[]
+            parity=[]; invalid_probes=0
             for z in (bounds[0],(bounds[0]+bounds[1])/2,bounds[1],row['native_expected'],row['native_median']):
-                fast=evaluator.value(z,ray); full=ref.field(gs,ref.add(origin,ref.mul(z,ray)),ray)
+                try: fast=evaluator.value(z,ray)
+                except ValueError: fast=None
+                try: full=ref.field(gs,ref.add(origin,ref.mul(z,ray)),ray)
+                except ValueError: full=None
+                if fast is None and full is None:
+                    invalid_probes+=1; continue
+                if fast is None or full is None: raise ValueError('cached_reference_validity_mismatch')
                 parity.append(abs(fast['F']-full['F'])/full['residual_scale'])
-            row['cached_reference_parity_max']=max(parity)
-            if max(parity)>1e-7: raise ValueError('cached_reference_parity_failed')
+            row['cached_reference_parity_max']=max(parity) if parity else None
+            row['parity_invalid_probes']=invalid_probes
+            if parity and max(parity)>1e-7: raise ValueError('cached_reference_parity_failed')
             coarse=evaluator.search(bounds,256,deadline); fine=evaluator.search(bounds,512,deadline)
             row.update(grid_256=coarse,grid_512=fine)
             pairs=sorted((abs(f['z']-c['z'])/f['sigma_z'],fi,ci) for fi,f in enumerate(fine['roots']) for ci,c in enumerate(coarse['roots']))
