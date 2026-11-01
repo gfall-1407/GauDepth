@@ -40,7 +40,7 @@ class CapturedAuditTest(unittest.TestCase):
                 module.main()
             summary = json.loads((output / 'summary.json').read_text(encoding='utf-8'))
             self.assertTrue(summary['cpu_v1_parity']['ok'])
-            self.assertEqual(summary['reason_count'], {'accepted': 1})
+            self.assertEqual(summary['native_v1_reason_count'], {'accepted': 1})
         finally:
             shutil.rmtree(temporary)
 
@@ -80,6 +80,24 @@ class CapturedAuditTest(unittest.TestCase):
         second = module.audit_ray(1, capture, prepared)
         self.assertEqual(second['reason'], 'overflow_unresolved')
         self.assertEqual(second['groups'], [])
+
+    def test_wide_capture_and_later_group_do_not_inflate_v1_coverage(self):
+        def row(pixel, count, reason, later=0, overflow=False):
+            return dict(flat_pixel=pixel, accepted_count=count, reason=reason,
+                        later_qualified_groups=later, overflow=overflow,
+                        groups=[dict(ids=[1], alpha=.4)], first_boundary=None)
+        rows = [row(1, 100, 'accepted', 1),
+                row(2, 110, 'singleton', 1),
+                row(3, 129, 'accepted', 1),
+                row(4, 513, 'overflow_unresolved', overflow=True)]
+        summary = module.summarize_rows(rows, 512)
+        self.assertEqual((summary['count_le128'], summary['count_129_to_capture_cap'],
+                          summary['capture_overflow']), (2, 1, 1))
+        self.assertEqual(summary['native_v1_reason_count'],
+                         {'accepted': 1, 'singleton': 1})
+        self.assertEqual(summary['later_qualified_after_first_failure_v1_eligible'], 1)
+        self.assertEqual(summary['fixed_examples']['over_v1_cap'], [3])
+        self.assertEqual(summary['fixed_examples']['overflow'], [4])
 
 
 if __name__ == '__main__':

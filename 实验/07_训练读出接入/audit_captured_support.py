@@ -133,6 +133,41 @@ def audit_ray(row, captured, prepared):
     return result
 
 
+def summarize_rows(rows, capacity):
+    """Keep the frozen v1 K=128 domain distinct from wider CPU-only captures."""
+    eligible = [row for row in rows if row['accepted_count'] <= 128 and not row['overflow']]
+    wider = [row for row in rows if 128 < row['accepted_count'] <= capacity and not row['overflow']]
+    overflow = [row for row in rows if row['overflow']]
+    strata = {'success': [], 'overflow': [], 'over_v1_cap': [],
+              'low_support': [], 'other': []}
+    for row in rows:
+        label = ('overflow' if row['overflow'] else
+                 'over_v1_cap' if row['accepted_count'] > 128 else
+                 'success' if row['reason'] == 'accepted' else
+                 'low_support' if row['reason'] in ('singleton', 'duplicate', 'low_alpha')
+                 else 'other')
+        if len(strata[label]) < 4:
+            strata[label].append(row['flat_pixel'])
+    return dict(count_le128=len(eligible), count_129_to_capture_cap=len(wider),
+                capture_overflow=len(overflow),
+                cpu_reason_count_captured=dict(Counter(row['reason'] for row in rows)),
+                native_v1_reason_count=dict(Counter(row['reason'] for row in eligible)),
+                later_qualified_after_first_failure_v1_eligible=sum(
+                    row['reason'] != 'accepted' and row.get('later_qualified_groups', 0) > 0
+                    for row in eligible),
+                first_singleton_v1_eligible=sum(
+                    bool(row['groups']) and len(row['groups'][0]['ids']) == 1 for row in eligible),
+                first_alpha_pass_v1_eligible=sum(
+                    bool(row['groups']) and row['groups'][0]['alpha'] >= .5 for row in eligible),
+                boundary_angle_fail_v1_eligible=sum(
+                    bool(row['first_boundary']) and row['first_boundary']['angle_fail']
+                    for row in eligible),
+                boundary_distance_fail_v1_eligible=sum(
+                    bool(row['first_boundary']) and row['first_boundary']['distance_fail']
+                    for row in eligible),
+                fixed_examples=strata)
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--capture', required=True)
@@ -215,26 +250,9 @@ def main():
                     parity['group_size_mismatch'] == 0 and
                     parity['invalid_count_mismatch'] == 0 and
                     parity['depth_over_2e5'] in (None, 0))
-    counter = Counter(row['reason'] for row in rows)
-    nonoverflow = [row for row in rows if not row['overflow']]
     summary = dict(capture=str(args.capture), capture_sha256=capture_hash,
                    queries=len(rows), cpu_v1_parity=parity,
-                   reason_count=dict(counter),
-                   overflow=len(rows)-len(nonoverflow),
-                   first_singleton=sum(len(row['groups'][0]['ids']) == 1 for row in nonoverflow if row['groups']),
-                   first_alpha_pass=sum(row['groups'][0]['alpha'] >= .5 for row in nonoverflow if row['groups']),
-                   later_qualified=sum(row.get('later_qualified_groups', 0) > 0 for row in nonoverflow),
-                   boundary_angle_fail=sum(bool(row['first_boundary']['angle_fail']) for row in nonoverflow if row['first_boundary']),
-                   boundary_distance_fail=sum(bool(row['first_boundary']['distance_fail']) for row in nonoverflow if row['first_boundary']))
-    # Fixed by pixel order within each category; no topping up an empty stratum.
-    strata = {'success': [], 'overflow': [], 'low_support': [], 'other': []}
-    for row in rows:
-        label = ('success' if row['reason'] == 'accepted' else
-                 'overflow' if row['reason'] == 'overflow_unresolved' else
-                 'low_support' if row['reason'] in ('singleton', 'duplicate', 'low_alpha') else 'other')
-        if len(strata[label]) < 4:
-            strata[label].append(row['flat_pixel'])
-    summary['fixed_examples'] = strata
+                   **summarize_rows(rows, capacity))
     output.mkdir(parents=True, exist_ok=False)
     (output / 'summary.json').write_text(json.dumps(summary, indent=2), encoding='utf-8')
     with (output / 'rays.jsonl').open('x', encoding='utf-8') as stream:
