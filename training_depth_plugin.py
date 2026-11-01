@@ -86,7 +86,7 @@ def route_depth(render_pkg, mode='baseline', target='expected'):
     raise ValueError(f'unknown depth route: {mode}')
 
 
-def summarize_candidate_audit(audit, elapsed_ms):
+def summarize_candidate_audit(audit, elapsed_ms, peak_allocated_mb=None):
     """Small scalar diagnostics; only call in an opt-in A/B log path."""
     if audit is None:
         return None
@@ -99,7 +99,8 @@ def summarize_candidate_audit(audit, elapsed_ms):
                 low_alpha=int(audit['low_alpha'].sum().item()),
                 footprint_fail=int(audit['footprint_fail'].sum().item()),
                 insufficient_distinct=int(audit['insufficient_distinct'].sum().item()),
-                elapsed_ms=float(elapsed_ms))
+                elapsed_ms=float(elapsed_ms),
+                gpu_peak_allocated_mb=None if peak_allocated_mb is None else float(peak_allocated_mb))
 
 
 def file_digest(path):

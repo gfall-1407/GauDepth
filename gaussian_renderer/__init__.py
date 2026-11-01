@@ -114,6 +114,7 @@ def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, 
         result['candidate_depth'] = candidate_depth
         result['candidate_audit'] = candidate_audit
         result['candidate_elapsed_ms'] = candidate_elapsed_ms
+        result['candidate_peak_allocated_mb'] = torch.cuda.max_memory_allocated(means3D.device) / (1024 * 1024)
     return result
 
 # adopted from GOF for marching tetrahedra https://github.com/autonomousvision/gaussian-opacity-fields/blob/main/gaussian_renderer/__init__.py
@@ -250,12 +251,9 @@ def sample_depth(points3D, viewpoint_camera, pc : GaussianModel, pipe : torch.Te
 
     # Rasterize visible Gaussians to image, obtain their radii (on screen). 
     support_xy = None
-    projected_camera = None
     if depth_support:
-        projected_camera = points3D @ viewpoint_camera.world_view_transform[:3, :3] + viewpoint_camera.world_view_transform[3, :3]
-        pixel_xy = projected_camera[..., :2] / projected_camera[..., 2:].clamp_min(1e-7)
-        pixel_xy = pixel_xy * pixel_xy.new_tensor([viewpoint_camera.Fx, viewpoint_camera.Fy]) + pixel_xy.new_tensor([viewpoint_camera.Cx, viewpoint_camera.Cy])
-        support_xy = pixel_xy.reshape(-1, 2)
+        from surface_group_batch import native_sample_xy
+        support_xy = native_sample_xy(points3D, viewpoint_camera).reshape(-1, 2)
     if depth_support:
         torch.cuda.synchronize(means3D.device)
         candidate_start = time.perf_counter()
@@ -290,4 +288,5 @@ def sample_depth(points3D, viewpoint_camera, pc : GaussianModel, pipe : torch.Te
     if depth_support:
         result['candidate_audit'] = candidate_audit
         result['candidate_elapsed_ms'] = candidate_elapsed_ms
+        result['candidate_peak_allocated_mb'] = torch.cuda.max_memory_allocated(means3D.device) / (1024 * 1024)
     return result

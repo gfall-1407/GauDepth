@@ -320,11 +320,16 @@ def training(
                                   depth_normal_loss=float(depth_normal_loss.item()),
                                   ncc_loss=float(ncc_loss.item()), geo_loss=float(geo_loss.item()),
                                   step_applied=step_applied,
+                                  candidate_iteration_peak_allocated_mb=
+                                      torch.cuda.max_memory_allocated() / (1024 * 1024)
+                                      if depth_route == 'candidate' and reg_kick_on else None,
                                   candidate_render=summarize_candidate_audit(
-                                      render_pkg.get('candidate_audit'), render_pkg.get('candidate_elapsed_ms'))
+                                      render_pkg.get('candidate_audit'), render_pkg.get('candidate_elapsed_ms'),
+                                      render_pkg.get('candidate_peak_allocated_mb'))
                                       if depth_route == 'candidate' and reg_kick_on else None,
                                   candidate_sample=summarize_candidate_audit(
-                                      patchmatch.last_candidate_audit, patchmatch.last_candidate_elapsed_ms)
+                                      patchmatch.last_candidate_audit, patchmatch.last_candidate_elapsed_ms,
+                                      patchmatch.last_candidate_peak_allocated_mb)
                                       if depth_route == 'candidate' and reg_kick_on and
                                       opt.lambda_multi_view_ncc > 0 and depth_target in ('expected', 'both') else None,
                                   parameters=add_step_metrics(metrics, before, gaussians.optimizer, step_applied)

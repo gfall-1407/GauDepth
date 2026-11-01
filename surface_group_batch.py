@@ -11,6 +11,19 @@ import torch
 from surface_group_reference import rotation_matrix_wxyz
 
 
+def native_sample_xy(points_world, camera):
+    """Match sample_forward.cu preprocessPointsCUDA's full-projective pixels.
+
+    transformPoint4x4 uses the stored transposed full_proj_transform; native
+    divides by homogeneous w+1e-7 before ndc2Pix(v,S)=((v+1)S-1)/2.
+    """
+    matrix = camera.full_proj_transform
+    hom = points_world @ matrix[:3, :] + matrix[3, :]
+    ndc_xy = hom[..., :2] / (hom[..., 3:4] + 1e-7)
+    size = ndc_xy.new_tensor([camera.image_width, camera.image_height])
+    return ((ndc_xy + 1.) * size - 1.) * .5
+
+
 def grouped_depth_from_support(pc, camera, xy, ids, alpha, count, overflow,
                                native_z, chunk_size=256):
     """Return camera-z [Q] and per-query audit masks from renderer support.
@@ -24,13 +37,31 @@ def grouped_depth_from_support(pc, camera, xy, ids, alpha, count, overflow,
             count.shape != (xy.shape[0],) or overflow.shape != count.shape or
             native_z.shape != count.shape or ids.shape[1] > 128 or chunk_size < 1):
         raise ValueError('support shape/capacity mismatch')
+    empty_audit = dict(candidate=torch.zeros_like(count, dtype=torch.bool),
+                       invalid_count=torch.zeros_like(count),
+                       first_group_size=torch.zeros_like(count),
+                       group_switch=torch.zeros_like(count, dtype=torch.bool),
+                       no_valid=torch.ones_like(count, dtype=torch.bool),
+                       overflow=overflow.bool(),
+                       low_alpha=torch.zeros_like(count, dtype=torch.bool),
+                       footprint_fail=torch.zeros_like(count, dtype=torch.bool),
+                       insufficient_distinct=torch.zeros_like(count, dtype=torch.bool))
     n = pc.get_xyz.shape[0]
-    if n == 0:
-        return native_z, {'candidate': torch.zeros_like(count, dtype=torch.bool)}
+    if n == 0 or xy.shape[0] == 0:
+        return native_z, empty_audit
     wvt = camera.world_view_transform
-    world_centers = pc.get_xyz
-    world_rotations = rotation_matrix_wxyz(pc.get_rotation)
-    scales = pc.get_scaling  # Unfiltered, un-AA physical axes.
+    raw_centers, raw_quaternions, raw_scales = pc.get_xyz, pc.get_rotation, pc.get_scaling
+    quaternion_norm = torch.linalg.norm(torch.where(torch.isfinite(raw_quaternions),
+                                                     raw_quaternions, 0.), dim=-1)
+    primitive_valid = (torch.isfinite(raw_centers).all(-1) &
+                       torch.isfinite(raw_quaternions).all(-1) &
+                       torch.isfinite(quaternion_norm) & (quaternion_norm > 0) &
+                       torch.isfinite(raw_scales).all(-1) & (raw_scales > 0).all(-1))
+    world_centers = torch.where(torch.isfinite(raw_centers), raw_centers, 0.)
+    identity_q = raw_quaternions.new_tensor([1., 0., 0., 0.])
+    safe_quaternions = torch.where(primitive_valid[:, None], raw_quaternions, identity_q)
+    world_rotations = rotation_matrix_wxyz(safe_quaternions)
+    scales = torch.where(primitive_valid[:, None], raw_scales, 1.)  # Unfiltered, un-AA.
     centers = world_centers @ wvt[:3, :3] + wvt[3, :3]
     rotations = wvt[:3, :3].T @ world_rotations
     depths, audit = [], {'candidate': [], 'invalid_count': [], 'first_group_size': [],
@@ -42,7 +73,7 @@ def grouped_depth_from_support(pc, camera, xy, ids, alpha, count, overflow,
         out, rows = _chunk(centers, rotations, scales, xy[start:stop],
                            ids[start:stop], alpha[start:stop], count[start:stop],
                            overflow[start:stop], native_z[start:stop],
-                           camera.Fx, camera.Fy, camera.Cx, camera.Cy)
+                           camera.Fx, camera.Fy, camera.Cx, camera.Cy, primitive_valid)
         depths.append(out)
         for key in audit:
             audit[key].append(rows[key])
@@ -50,7 +81,7 @@ def grouped_depth_from_support(pc, camera, xy, ids, alpha, count, overflow,
 
 
 def _chunk(centers, rotations, scales, xy, ids, alpha, count, overflow,
-           native_z, fx, fy, cx, cy):
+           native_z, fx, fy, cx, cy, primitive_valid):
     q, k = ids.shape
     device = ids.device
     pos = torch.arange(k, device=device)[None, :]
@@ -60,7 +91,9 @@ def _chunk(centers, rotations, scales, xy, ids, alpha, count, overflow,
     m = centers[safe]
     rot = rotations[safe]
     scale = scales[safe]
-    v = torch.cat(((xy - xy.new_tensor([cx, cy])) /
+    query_valid = torch.isfinite(xy).all(-1)
+    safe_xy = torch.where(torch.isfinite(xy), xy, 0.)
+    v = torch.cat(((safe_xy - xy.new_tensor([cx, cy])) /
                    xy.new_tensor([fx, fy]), torch.ones_like(xy[:, :1])), dim=1)
 
     with torch.no_grad():
@@ -69,7 +102,8 @@ def _chunk(centers, rotations, scales, xy, ids, alpha, count, overflow,
         ni = torch.gather(rd, 3, axis[:, :, :1, None].expand(-1, -1, 3, -1)).squeeze(-1)
         inc = (ni * vd[:, None, :]).sum(-1)
         t = (ni * md).sum(-1) / inc
-        valid = (member & torch.isfinite(md).all(-1) & torch.isfinite(rd).all(-1).all(-1) &
+        valid = (member & primitive_valid[safe] & query_valid[:, None] &
+                 torch.isfinite(md).all(-1) & torch.isfinite(rd).all(-1).all(-1) &
                  torch.isfinite(sd).all(-1) & (sd > 0).all(-1) &
                  torch.isfinite(ad) & (ad >= 0) & (ad < 1) &
                  (sorted_scale[:, :, 1] / sorted_scale[:, :, 0] > 1.001) &

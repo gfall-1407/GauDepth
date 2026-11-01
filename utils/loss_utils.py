@@ -130,12 +130,14 @@ class PatchMatch:
         self.model_path = model_path
         self.last_candidate_audit = None
         self.last_candidate_elapsed_ms = None
+        self.last_candidate_peak_allocated_mb = None
         if debug:
             os.makedirs(os.path.join(model_path, "debug"), exist_ok=True)
 
     def __call__(self, gaussians: GaussianModel, render_pkg: dict, viewpoint_cam: Camera, nearest_cam: Camera, iteration=0, depth_normal=None, depth_support=False):
         self.last_candidate_audit = None
         self.last_candidate_elapsed_ms = None
+        self.last_candidate_peak_allocated_mb = None
         if nearest_cam is None:
             return torch.tensor([0], dtype=torch.float32, device="cuda"), torch.tensor([0], dtype=torch.float32, device="cuda")
         H, W = viewpoint_cam.image_height, viewpoint_cam.image_width
@@ -164,6 +166,7 @@ class PatchMatch:
         if depth_support:
             self.last_candidate_audit = sampled_pkg['candidate_audit']
             self.last_candidate_elapsed_ms = sampled_pkg['candidate_elapsed_ms']
+            self.last_candidate_peak_allocated_mb = sampled_pkg['candidate_peak_allocated_mb']
 
         pts_in_nearest_cam = sampled_pkg["sampled_depth"]
         d_mask = sampled_pkg["inside"]
