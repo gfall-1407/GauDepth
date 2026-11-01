@@ -11,6 +11,31 @@ DEPTH_KEYS = ('expected_depth', 'median_depth')
 PARAMETER_NAMES = ('xyz', 'scaling', 'rotation')
 
 
+def fixed_group_short_axis_ls_z(centers_camera, normals_camera, ray_v, members):
+    """Differentiable camera-z LS for an externally fixed member group.
+
+    Camera origin is zero and ray_v=(x,y,1), not a unit ray. This routine does
+    no grouping, surface selection, footprint check, or full-image rendering.
+    """
+    if (centers_camera.ndim != 2 or centers_camera.shape[1] != 3 or
+            normals_camera.shape != centers_camera.shape or ray_v.shape != (3,) or
+            not torch.isfinite(centers_camera).all() or
+            not torch.isfinite(normals_camera).all() or
+            not torch.isfinite(ray_v).all() or ray_v[2] != 1):
+        raise ValueError('expected finite camera-space [N,3] centers/normals and ray (x,y,1)')
+    ids = torch.as_tensor(members, dtype=torch.long, device=centers_camera.device).detach()
+    if ids.ndim != 1 or ids.numel() == 0 or torch.any(ids < 0) or torch.any(ids >= centers_camera.shape[0]):
+        raise ValueError('fixed group must contain valid member indices')
+    normals = normals_camera.index_select(0, ids)
+    centers = centers_camera.index_select(0, ids)
+    incidence = (normals * ray_v).sum(dim=-1)
+    offsets = (normals * centers).sum(dim=-1)
+    denominator = (incidence * incidence).sum()
+    if not torch.isfinite(denominator) or denominator <= 0:
+        raise ValueError('degenerate fixed group')
+    return (incidence * offsets).sum() / denominator
+
+
 def route_depth(render_pkg, mode='baseline', target='expected'):
     """Keep baseline tensors untouched until a reviewed candidate exists.
 

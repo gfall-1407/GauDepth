@@ -5,7 +5,8 @@ from pathlib import Path
 import torch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from training_depth_plugin import add_step_metrics, parameter_metrics, route_depth
+from training_depth_plugin import (add_step_metrics, fixed_group_short_axis_ls_z,
+                                   parameter_metrics, route_depth)
 
 
 class DepthPluginWiringTest(unittest.TestCase):
@@ -30,6 +31,46 @@ class DepthPluginWiringTest(unittest.TestCase):
         optimizer.step()
         rows = add_step_metrics(rows, before, optimizer, True)
         self.assertGreater(rows['xyz']['step_rms'], 0)
+
+    def test_fixed_group_ls_camera_z_autograd_and_finite_difference(self):
+        centers = torch.tensor([[.1, 0., 1.], [-.15, .2, 1.03]],
+                               dtype=torch.float64, requires_grad=True)
+        theta = torch.tensor(.22, dtype=torch.float64, requires_grad=True)
+        ray = torch.tensor([.2, -.1, 1.], dtype=torch.float64)
+
+        def value(mu, angle):
+            zero = torch.zeros_like(angle)
+            one = torch.ones_like(angle)
+            normals = torch.stack([torch.stack([zero, zero, one]),
+                                   torch.stack([torch.sin(angle), zero, torch.cos(angle)])])
+            return fixed_group_short_axis_ls_z(mu, normals, ray, [0, 1])
+
+        z = value(centers, theta)
+        grad_mu, grad_theta = torch.autograd.grad(z, (centers, theta))
+        eps = 1e-6
+        with torch.no_grad():
+            plus = centers.clone(); plus[1, 2] += eps
+            minus = centers.clone(); minus[1, 2] -= eps
+            fd_mu = (value(plus, theta) - value(minus, theta)) / (2 * eps)
+            fd_theta = (value(centers, theta + eps) - value(centers, theta - eps)) / (2 * eps)
+        self.assertAlmostEqual(grad_mu[1, 2].item(), fd_mu.item(), places=8)
+        self.assertAlmostEqual(grad_theta.item(), fd_theta.item(), places=8)
+        self.assertGreater(abs(grad_theta.item()), 1e-4)
+        normals = torch.tensor([[0., 0., 1.], [.2, 0., .9797958971132712]], dtype=torch.float64)
+        original = fixed_group_short_axis_ls_z(centers.detach(), normals, ray, [0, 1])
+        flipped = fixed_group_short_axis_ls_z(centers.detach(),
+                                               torch.stack([-normals[0], normals[1]]), ray, [0, 1])
+        self.assertAlmostEqual(original.item(), flipped.item(), places=12)
+        self.assertAlmostEqual(fixed_group_short_axis_ls_z(
+            torch.tensor([[0., 0., 1.]], dtype=torch.float64),
+            torch.tensor([[0., 0., 1.]], dtype=torch.float64),
+            torch.tensor([.2, 0., 1.], dtype=torch.float64), [0]).item(), 1., places=12)
+
+    def test_fixed_group_rejects_grazing_denominator(self):
+        with self.assertRaisesRegex(ValueError, 'degenerate'):
+            fixed_group_short_axis_ls_z(torch.tensor([[0., 0., 1.]]),
+                                        torch.tensor([[1., 0., 0.]]),
+                                        torch.tensor([0., 0., 1.]), [0])
 
 
 if __name__ == '__main__':
