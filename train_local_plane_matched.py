@@ -51,6 +51,13 @@ def extension_sources():
         if not items:raise ValueError("extension_source_directory_empty:"+directory)
         for path in items:
             found[path.relative_to(root).as_posix()]=sha256(path)
+    required=("submodules/diff-gaussian-rasterization/cuda_rasterizer/sample_forward.cu",
+              "submodules/diff-gaussian-rasterization/cuda_rasterizer/sample_backward.cu",
+              "submodules/diff-gaussian-rasterization/ext.cpp")
+    if not all(name in found for name in required) or not any(
+            name.startswith("submodules/diff-gaussian-rasterization/third_party/glm/")
+            for name in found):
+        raise ValueError("extension_sample_wrapper_or_glm_source_missing")
     return dict(sorted(found.items()))
 
 
