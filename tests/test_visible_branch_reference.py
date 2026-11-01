@@ -76,17 +76,65 @@ class VisibleBranchReferenceTest(unittest.TestCase):
         depths = [1., 2.]
         projections = [[(0., 0.), (8., 0.)], [(0., 0.), (9., 0.)]]
         self.assertEqual(choose_branch(depths, projections,
-                                       [[.1, .1], [.1, .1]])[1],
+                                       [[.1, .1], [.1, .1]],
+                                       [[[.1, .1], [.1, .1]]]*4)[1],
                          "witness_disagreement")
         self.assertEqual(choose_branch(depths, projections,
                          [[0., 1.], [0., 1.]],
-                         [[[1., 0.], [0., 1.]]])[1], "unstable_branch")
+                         [[[1., 0.], [0., 1.]]]*4)[1], "unstable_branch")
         self.assertIsNone(ncc_cost([1.]*25, [1.]*25))
         self.assertEqual(choose_branch([1.], [[(0., 0.)], [(0., 0.)]],
-                                       [[None], [None]])[1],
-                         "no_eligible_hypothesis")
+                                       [[None], [None]], [[[0.], [0.]]]*4)[1],
+                         "invalid_hypothesis_data")
         self.assertEqual(plane_loss([1., 2.], [0., 0.], [False, False],
                                     [1.5, 1.5]), .5)
+
+    def test_audit_split_tie_and_required_perturbations(self):
+        depths = [1., 1., 2.]
+        projections = [[(0., 0.), (0., 0.), (8., 0.)],
+                       [(0., 0.), (0., 0.), (9., 0.)]]
+        tied = [[.1, .1, .1], [.1, .1, .1]]
+        self.assertEqual(choose_branch(depths, projections, tied,
+                                       [tied]*4)[1], "witness_disagreement")
+        # Without the split copy, the two distinct surfaces are also ambiguous.
+        two = [[.1, .1], [.1, .1]]
+        self.assertEqual(choose_branch([1., 2.],
+                                       [v[::2] for v in projections], two,
+                                       [two]*4)[1], "witness_disagreement")
+        single_projection = [[(0., 0.)], [(0., 0.)]]
+        single_cost = [[0.], [0.]]
+        self.assertEqual(choose_branch([1.], single_projection, single_cost)[1],
+                         "missing_perturbations")
+        self.assertEqual(choose_branch([1.], single_projection, single_cost,
+                                       [single_cost]*3)[1],
+                         "missing_perturbations")
+        self.assertEqual(choose_branch([1.], single_projection, single_cost,
+                                       [[[None], [None]]]*4)[1],
+                         "invalid_perturbation_cost")
+        self.assertEqual(choose_branch([1.], single_projection, single_cost,
+                                       [[[float('nan')], [0.]]]*4)[1],
+                         "invalid_perturbation_cost")
+
+    def test_audit_nonfinite_and_invalid_costs(self):
+        patch = [float(i) for i in range(25)]
+        for bad in (float('nan'), float('inf'), -float('inf')):
+            corrupted = patch.copy(); corrupted[0] = bad
+            self.assertIsNone(ncc_cost(corrupted, patch))
+            self.assertIsNone(ncc_cost(patch, corrupted))
+        projections = [[(0., 0.), (8., 0.)], [(0., 0.), (9., 0.)]]
+        costs = [[0., .2], [0., .2]]
+        for bad in (float('nan'), float('inf')):
+            broken = [[(bad, 0.), (8., 0.)], [(0., 0.), (9., 0.)]]
+            self.assertEqual(choose_branch([1., 2.], broken, costs,
+                                           [costs]*4)[1], "invalid_hypothesis_data")
+            self.assertEqual(choose_branch([bad], [[(0., 0.)], [(0., 0.)]],
+                                           [[0.], [0.]],
+                                           [[[0.], [0.]]]*4)[1],
+                             "invalid_hypothesis_data")
+        for bad in (None, -.1, float('nan')):
+            broken = [[bad, .2], [0., .2]]
+            self.assertEqual(choose_branch([1., 2.], projections, broken,
+                                           [costs]*4)[1], "invalid_hypothesis_data")
 
     def test_degenerate_grazing_low_opacity(self):
         self.assertIsNone(intersection(member(0, 1., .5, normal=(0., 0., 0.)), O, V))

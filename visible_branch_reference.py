@@ -49,21 +49,24 @@ def project(camera, point):
     delta = sub(point, camera.center)
     local = tuple(sum(camera.camera_to_world[r][c]*delta[r]
                       for r in range(3)) for c in range(3))
-    if local[2] <= EPS:
+    if not all(isfinite(x) for x in local) or local[2] <= EPS:
         return None
-    return (camera.fx*local[0]/local[2]+camera.cx,
-            camera.fy*local[1]/local[2]+camera.cy)
+    pixel = (camera.fx*local[0]/local[2]+camera.cx,
+             camera.fy*local[1]/local[2]+camera.cy)
+    return pixel if all(isfinite(x) for x in pixel) else None
 
 
 def bilinear(image, x, y):
     width, height = len(image[0]), len(image)
-    if not (0 <= x < width-1 and 0 <= y < height-1):
+    if not (isfinite(x) and isfinite(y) and
+            0 <= x < width-1 and 0 <= y < height-1):
         return None
     ix, iy = int(x), int(y)
     dx, dy = x-ix, y-iy
-    return sum(image[iy+oy][ix+ox] *
+    value = sum(image[iy+oy][ix+ox] *
                (dx if ox else 1-dx) * (dy if oy else 1-dy)
                for oy in (0, 1) for ox in (0, 1))
+    return value if isfinite(value) else None
 
 
 def patch_cost(member, reference_camera, reference_image,
@@ -96,6 +99,8 @@ def patch_cost(member, reference_camera, reference_image,
 
 def intersection(member, origin, ray):
     n = member.normal
+    if not all(isfinite(x) for x in (*n, *member.mu, *origin, *ray)):
+        return None
     norm = sqrt(dot(n, n))
     if norm <= 1e-8 or not isfinite(norm):
         return None
@@ -111,11 +116,13 @@ def intersection(member, origin, ray):
 
 def same_branch(i, j, depths, projections, half_pixel=0.5):
     """Require the two hypotheses to agree in both witness projections."""
-    if depths[i] is None or depths[j] is None:
+    if (depths[i] is None or depths[j] is None or
+            not isfinite(depths[i]) or not isfinite(depths[j])):
         return False
     for view in projections:
         pi, pj = view[i], view[j]
-        if pi is None or pj is None:
+        if (pi is None or pj is None or
+                not all(isfinite(x) for x in (*pi, *pj))):
             return False
         if sqrt(sum((x-y)**2 for x, y in zip(pi, pj))) > half_pixel:
             return False
@@ -125,7 +132,7 @@ def same_branch(i, j, depths, projections, half_pixel=0.5):
 def choose_branch(depths, projections, cost_sets, perturb_cost_sets=None):
     """Choose one branch from two views; ties or unstable winners are invalid.
 
-    perturb_cost_sets contains fixed ±0.25-pixel reference patch shifts. Each
+    perturb_cost_sets contains all four fixed ±0.25-pixel x/y patch shifts. Each
     item is a pair of complete per-member cost arrays, one for each witness.
     """
     if len(cost_sets) != 2 or len(projections) != 2:
@@ -133,18 +140,35 @@ def choose_branch(depths, projections, cost_sets, perturb_cost_sets=None):
     count = len(depths)
     if any(len(v) != count for v in (*cost_sets, *projections)):
         raise ValueError("member array length mismatch")
-    eligible = [i for i in range(count) if depths[i] is not None and all(
-        cost_sets[v][i] is not None and isfinite(cost_sets[v][i]) and
-        projections[v][i] is not None
-        for v in range(2))]
-    if not eligible:
+    if perturb_cost_sets is None or len(perturb_cost_sets) != 4:
+        return (), "missing_perturbations"
+    if any(len(shifted) != 2 or any(len(v) != count for v in shifted)
+           for shifted in perturb_cost_sets):
+        return (), "invalid_perturbation_shape"
+
+    def valid_cost(c):
+        return c is not None and isfinite(c) and 0 <= c <= 1
+
+    if not count:
         return (), "no_eligible_hypothesis"
+    if any(depths[i] is None or not isfinite(depths[i]) or
+           any(not valid_cost(cost_sets[v][i]) or
+               projections[v][i] is None or
+               not all(isfinite(x) for x in projections[v][i])
+               for v in range(2)) for i in range(count)):
+        return (), "invalid_hypothesis_data"
+    eligible = list(range(count))
+    if any(not valid_cost(shifted[v][i])
+           for shifted in perturb_cost_sets for v in range(2) for i in eligible):
+        return (), "invalid_perturbation_cost"
 
     def winner(costs, view):
         ranked = sorted(eligible, key=lambda i: (costs[view][i], i))
-        if len(ranked) > 1 and abs(costs[view][ranked[0]] - costs[view][ranked[1]]) <= EPS:
-            if not same_branch(ranked[0], ranked[1], depths, projections):
-                return None
+        minimum = costs[view][ranked[0]]
+        tied = [i for i in ranked if costs[view][i]-minimum <= EPS]
+        if any(not same_branch(i, j, depths, projections)
+               for pos, i in enumerate(tied) for j in tied[pos+1:]):
+            return None
         return ranked[0]
 
     leaders = [winner(cost_sets, v) for v in range(2)]
@@ -155,11 +179,7 @@ def choose_branch(depths, projections, cost_sets, perturb_cost_sets=None):
     if not branch:
         return (), "empty_branch"
     # Competing branches must remain defeated under all fixed small shifts.
-    for shifted in perturb_cost_sets or ():
-        if len(shifted) != 2:
-            raise ValueError("perturbation requires both witnesses")
-        if any(len(v) != count for v in shifted):
-            raise ValueError("perturbation member count mismatch")
+    for shifted in perturb_cost_sets:
         for v in range(2):
             shifted_winner = winner(shifted, v)
             if shifted_winner not in branch:
@@ -176,10 +196,13 @@ def candidate_depth(members, origin, ray, costs, branch, fallback):
         if hit is None:
             return fallback, False, "invalid_member"
         a, b, _ = hit
-        if not (0 < m.alpha < 1 and 0 <= m.transmittance <= 1 and
-                0 <= m.footprint <= 1):
+        if not (isfinite(m.alpha) and isfinite(m.transmittance) and
+                isfinite(m.footprint) and 0 < m.alpha < 1 and
+                0 <= m.transmittance <= 1 and 0 <= m.footprint <= 1):
             return fallback, False, "invalid_weight"
         c1, c2 = costs[0][i], costs[1][i]
+        if any(c is None or not isfinite(c) or c < 0 or c > 1 for c in (c1, c2)):
+            return fallback, False, "invalid_cost"
         weight = (m.transmittance * m.alpha * m.footprint *
                   exp(-(c1 + c2) / (2 * TAU)))
         numerator += weight * a * b
@@ -196,14 +219,19 @@ def ncc_cost(reference, witness):
     """Fixed 5x5 grayscale or channel-flattened patch; lower is better."""
     if len(reference) != len(witness) or not reference:
         raise ValueError("patch sizes differ")
+    if not all(isfinite(x) for x in (*reference, *witness)):
+        return None
     xr = sum(reference) / len(reference)
     yw = sum(witness) / len(witness)
     a = [x - xr for x in reference]
     b = [y - yw for y in witness]
     xx, yy = dot(a, a), dot(b, b)
-    if xx <= EPS or yy <= EPS:
+    if not all(isfinite(x) for x in (xx, yy)) or xx <= EPS or yy <= EPS:
         return None  # no texture: do not manufacture a winning branch
-    ncc = max(-1.0, min(1.0, dot(a, b) / sqrt(xx * yy)))
+    correlation = dot(a, b) / sqrt(xx * yy)
+    if not isfinite(correlation):
+        return None
+    ncc = max(-1.0, min(1.0, correlation))
     return (1.0 - ncc) / 2.0
 
 
