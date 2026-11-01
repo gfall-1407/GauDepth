@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import copy
 import hashlib
 import importlib.util
 import json
@@ -337,6 +338,41 @@ def derivative_check(f, cams):
         gradient_max_relative_error=gerror,hessian_max_relative_error=herror)
 
 
+def implicit_checks(f,cams,rows):
+    """Check local stationary-root JVP only for accepted isolated positive-Hessian branches."""
+    records = []
+    for row in rows:
+        branch = row.get('branches',{}).get('joint',{})
+        if not branch.get('reliable'): continue
+        case = ray_case(f,row['index'],cams)
+        p = np.asarray(branch['pi'])
+        k = int(np.argmax(case['q']))
+        step = 1e-4
+        g,H,reason = local_derivatives(p,case,cams,True)
+        if reason or np.linalg.eigvalsh(H)[0] <= 1e-6:
+            records.append(dict(index=row['index'],status='invalid_base',reason=reason));continue
+        perturbed = []; shifted_grad = []; errors = []
+        for sign in (1,-1):
+            other = copy.deepcopy(case)
+            other['xi'][k] += sign*step
+            gg,HH,error = local_derivatives(p,other,cams,True)
+            if error: errors.append(error);break
+            root = p-np.linalg.solve(HH,gg)
+            gr,hr,error = local_derivatives(root,other,cams,True)
+            if error or np.linalg.norm(gr) >= 1e-4 or np.linalg.eigvalsh(hr)[0] <= 1e-6:
+                errors.append(error or 'perturbed_root_not_stationary_positive');break
+            perturbed.append(root);shifted_grad.append(gg)
+        if errors:
+            records.append(dict(index=row['index'],status='not_evaluable',reason=errors[0]));continue
+        analytic = -np.linalg.solve(H,(shifted_grad[0]-shifted_grad[1])/(2*step))
+        finite = (perturbed[0]-perturbed[1])/(2*step)
+        error = float(np.linalg.norm(analytic-finite)/max(np.linalg.norm(analytic),1e-8))
+        records.append(dict(index=row['index'],status='pass' if error < 1e-4 else 'fail',
+            member=k,member_xi_perturbation_px=step,relative_error=error,
+            base_hessian_min=float(np.linalg.eigvalsh(H)[0])))
+    return records
+
+
 def evaluate_scan(scan):
     f, meta, cams, hashes = load_scan(scan)
     numerical_check = derivative_check(f,cams) if scan == 37 else None
@@ -362,7 +398,8 @@ def evaluate_scan(scan):
                     pi=branch['pi'].tolist() if branch else None)
         row['seconds'] = time.perf_counter()-start
         rows.append(row)
-    return dict(scan=scan, rows=rows, hashes=hashes, numerical_check=numerical_check, source_commit=meta['git_commit'],
+    return dict(scan=scan, rows=rows, hashes=hashes, numerical_check=numerical_check,
+        implicit_checks=implicit_checks(f,cams,rows),source_commit=meta['git_commit'],
         normal_semantics=meta['normal_semantics'], trace_model_sha256=meta['model_sha256'])
 
 
@@ -406,14 +443,17 @@ def main():
             and all(held[name]['valid_count'] == summary['common_evaluable'] for name in held)
             and all(held['joint'][metric] < min(held['native'][metric],held['photo'][metric])
                     for metric in ('mean','median')))
-    result['gate_passed'] = all(s['summary']['gate_passed'] for s in result['scans'])
+    result['gate_passed'] = all(s['summary']['gate_passed'] for s in result['scans']) and all(
+        any(check['status']=='pass' for check in s['implicit_checks'])
+        and not any(check['status']=='fail' for check in s['implicit_checks']) for s in result['scans'])
     result['limitations'] = ('The observed images are training views of the frozen original model; view2 is held out '
         'from the local solver only. No GT reconstruction metric or Gaussian parameter backpropagation. '
         'Host warp_patch_ncc uses squared signed correlation and a 5e-6 variance gate, whereas this '
         'probe uses signed 1-ZNCC on grayscale with variance >1e-8; native, photo and joint are '
         'compared under this same probe metric. Local image derivatives are valid only inside '
         'the active bilinear cells; points within 1e-6 pixel of a cell edge are rejected. '
-        'Implicit-solution derivatives with respect to recorded depths/weights remain unverified. '
+        'Implicit-solution derivatives are checked locally for one recorded member xi perturbation '
+        'on each accepted isolated positive-Hessian branch; this is not full Gaussian backpropagation. '
         'The 32-ray denominator is retained; native view2-valid rays define a fixed common '
         'comparison set before either optimization, while unavailable costs remain null.')
     result['status']='complete'
