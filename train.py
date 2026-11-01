@@ -204,7 +204,7 @@ def training(
             rendered_expected_depth: torch.Tensor = render_pkg["expected_depth"]
             rendered_median_depth: torch.Tensor = render_pkg["median_depth"]
             rendered_normal: torch.Tensor = render_pkg["normal"]
-            if pipe.depth_estimator == "contribution_band":
+            if pipe.depth_estimator in ("contribution_band", "contribution_band_sg"):
                 depth_normal = depth_to_normal(viewpoint_cam, render_pkg["selected_depth"])
                 normal_error_map = 1 - torch.linalg.vecdot(rendered_normal, depth_normal, dim=0)
                 depth_normal_loss = normal_error_map.mean()
