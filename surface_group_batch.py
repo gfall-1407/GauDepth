@@ -110,7 +110,8 @@ def grouped_depth_from_support(pc, camera, xy, ids, alpha, count, overflow,
     depths, audit = [], {key: [] for key in empty_audit}
     for start in range(0, xy.shape[0], chunk_size):
         stop = min(start + chunk_size, xy.shape[0])
-        out, rows = _chunk(centers, rotations, scales, xy[start:stop],
+        chunk_fn = _chunk_cuda if xy.is_cuda and selection == 'first_qualified' else _chunk
+        out, rows = chunk_fn(centers, rotations, scales, xy[start:stop],
                            ids[start:stop], alpha[start:stop], count[start:stop],
                            overflow[start:stop], native_z[start:stop],
                            camera.Fx, camera.Fy, camera.Cx, camera.Cy, primitive_valid,
@@ -119,6 +120,51 @@ def grouped_depth_from_support(pc, camera, xy, ids, alpha, count, overflow,
         for key in audit:
             audit[key].append(rows[key])
     return torch.cat(depths), {key: torch.cat(rows) for key, rows in audit.items()}
+
+
+def _chunk_cuda(centers, rotations, scales, xy, ids, alpha, count, overflow,
+                native_z, fx, fy, cx, cy, primitive_valid, selection):
+    """Hard selection in CUDA; the selected plane LS remains live Torch."""
+    from diff_gaussian_rasterization import _C
+    if not hasattr(_C, 'select_support_groups'):
+        raise RuntimeError('rebuild diff_gaussian_rasterization with group_select.cu')
+    slots, axes, ints, floats, flags = _C.select_support_groups(
+        centers.detach().contiguous(), rotations.detach().contiguous(),
+        scales.detach().contiguous(), primitive_valid.detach().contiguous(),
+        xy.detach().contiguous(), ids.detach().contiguous(), alpha.detach().contiguous(),
+        count.detach().contiguous(), overflow.detach().contiguous(),
+        float(fx), float(fy), float(cx), float(cy))
+    selected = slots >= 0
+    safe_slots = slots.clamp_min(0).long()
+    safe_ids = ids.gather(1, safe_slots).long().clamp(0, centers.shape[0]-1)
+    safe_axes = axes.clamp_min(0).long()
+    live_m = centers[safe_ids]
+    live_rot = rotations[safe_ids]
+    live_n = torch.gather(live_rot, 3, safe_axes[:, :, None, None].expand(-1, -1, 3, 1)).squeeze(-1)
+    live_m = torch.where(selected[:, :, None], live_m, 0.)
+    live_n = torch.where(selected[:, :, None], live_n, 0.)
+    safe_xy = torch.where(torch.isfinite(xy), xy, 0.)
+    v = torch.cat(((safe_xy - xy.new_tensor([cx, cy])) /
+                   xy.new_tensor([fx, fy]), torch.ones_like(xy[:, :1])), dim=1)
+    c = (live_n * v[:, None, :]).sum(-1)
+    b = (live_n * live_m).sum(-1)
+    candidate = torch.where(selected, c*b, 0.).sum(1) / torch.where(
+        selected, c*c, 0.).sum(1).clamp_min(torch.finfo(native_z.dtype).tiny)
+    good = flags[:, 0]
+    output = torch.where(good, candidate, native_z)
+    rows = dict(candidate=good, invalid_count=ints[:, 0], accepted_count=count,
+                valid_count=ints[:, 1], invalid_basic=ints[:, 2],
+                invalid_short_axis=ints[:, 3], invalid_grazing=ints[:, 4],
+                invalid_tau=ints[:, 5], first_group_size=ints[:, 6],
+                chosen_group_index=ints[:, 7], skipped_prefix_groups=ints[:, 8],
+                skipped_prefix_members=ints[:, 9],
+                first_group_alpha=floats[:, 0], skipped_prefix_alpha=floats[:, 1],
+                skipped_tau_min=floats[:, 2], skipped_tau_max=floats[:, 3],
+                group_switch=flags[:, 1], boundary_angle_fail=flags[:, 2],
+                boundary_distance_fail=flags[:, 3], no_valid=flags[:, 4],
+                low_alpha=flags[:, 5], footprint_fail=flags[:, 6],
+                insufficient_distinct=flags[:, 7], overflow=overflow.bool())
+    return output, rows
 
 
 def _chunk(centers, rotations, scales, xy, ids, alpha, count, overflow,

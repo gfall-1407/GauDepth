@@ -15,6 +15,13 @@
 #include <torch/extension.h>
 #include <tuple>
 
+std::tuple<torch::Tensor,torch::Tensor,torch::Tensor,torch::Tensor,torch::Tensor>
+SelectSupportGroupsCUDA(const torch::Tensor& centers,const torch::Tensor& rotations,
+    const torch::Tensor& scales,const torch::Tensor& primitive_valid,
+    const torch::Tensor& xy,const torch::Tensor& ids,const torch::Tensor& alpha,
+    const torch::Tensor& count,const torch::Tensor& overflow,
+    float fx,float fy,float cx,float cy);
+
 // Read-only membership query over buffers returned by this rasterizer's forward pass.
 std::tuple<torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor>
 AcceptedGaussiansCUDA(const torch::Tensor& xy, const torch::Tensor& geom_buffer,

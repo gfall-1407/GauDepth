@@ -20,4 +20,5 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
   m.def("sample_rasterized_depth", &SampleRasterizedDepthCUDA);
   m.def("sample_rasterized_depth_backward", &SampleRasterizedDepthBackwardCUDA);
   m.def("accepted_gaussians", &AcceptedGaussiansCUDA);
+  m.def("select_support_groups", &SelectSupportGroupsCUDA);
 }
