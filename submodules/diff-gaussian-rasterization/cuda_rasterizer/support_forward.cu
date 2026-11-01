@@ -1,7 +1,10 @@
 #include "config.h"
 #include "rasterizer_impl.h"
 #include <torch/extension.h>
+#include <ATen/cuda/CUDAContext.h>
+#include <c10/cuda/CUDAGuard.h>
 #include <cmath>
+#include <limits>
 #include <tuple>
 
 namespace {
@@ -33,8 +36,9 @@ __global__ void acceptedCUDA(
         const float test_T = T * (1.f - alpha);
         if (test_T < 0.0001f) break;  // Candidate is not accepted by render/sample.
         if (count < K) {
-            ids[q * K + count] = static_cast<int>(id);
-            alphas[q * K + count] = alpha;
+            const int64_t offset = static_cast<int64_t>(q) * K + count;
+            ids[offset] = static_cast<int>(id);
+            alphas[offset] = alpha;
         }
         ++count;
         T = test_T;
@@ -55,10 +59,25 @@ AcceptedGaussiansCUDA(
                 xy.dim() == 2 && xy.size(1) == 2 && xy.is_contiguous(),
                 "xy must be contiguous CUDA float32 [Q,2]");
     TORCH_CHECK(P >= 0 && R >= 0 && W > 0 && H > 0 && K > 0, "invalid support dimensions");
+    TORCH_CHECK(W <= std::numeric_limits<int>::max() - BLOCK_X &&
+                H <= std::numeric_limits<int>::max() - BLOCK_Y,
+                "image dimensions exceed tile index range");
+    TORCH_CHECK(static_cast<int64_t>(W) * H <= std::numeric_limits<int>::max(),
+                "image pixel count exceeds native rasterizer index range");
     TORCH_CHECK(geom_buffer.is_cuda() && binning_buffer.is_cuda() && range_buffer.is_cuda(),
                 "raster buffers must be CUDA tensors");
+    TORCH_CHECK(geom_buffer.scalar_type() == torch::kUInt8 && geom_buffer.is_contiguous() &&
+                binning_buffer.scalar_type() == torch::kUInt8 && binning_buffer.is_contiguous() &&
+                range_buffer.scalar_type() == torch::kUInt8 && range_buffer.is_contiguous(),
+                "raster buffers must be contiguous uint8 tensors");
     TORCH_CHECK(xy.device() == geom_buffer.device() && xy.device() == binning_buffer.device() &&
                 xy.device() == range_buffer.device(), "query and raster buffers must share a device");
+    TORCH_CHECK(xy.size(0) <= std::numeric_limits<int>::max() - 127,
+                "too many support queries for one launch");
+    c10::cuda::CUDAGuard device_guard(xy.device());
+    const auto stream = at::cuda::getCurrentCUDAStream(xy.get_device());
+    TORCH_CHECK(stream.stream() == at::cuda::getDefaultCUDAStream(xy.get_device()).stream(),
+                "native rasterizer uses the default CUDA stream; support queries require it");
     const int Q = static_cast<int>(xy.size(0));
     auto ids = torch::full({Q, K}, -1, xy.options().dtype(torch::kInt32));
     auto alpha = torch::zeros({Q, K}, xy.options());
@@ -69,10 +88,12 @@ AcceptedGaussiansCUDA(
                 "geometry buffer too small");
     TORCH_CHECK(binning_buffer.numel() >= CudaRasterizer::required<CudaRasterizer::BinningState>(R),
                 "binning buffer too small");
-    const size_t tile_count = ((W + BLOCK_X - 1) / BLOCK_X) * ((H + BLOCK_Y - 1) / BLOCK_Y);
+    const size_t tile_count = static_cast<size_t>((W + BLOCK_X - 1) / BLOCK_X) *
+                              static_cast<size_t>((H + BLOCK_Y - 1) / BLOCK_Y);
     TORCH_CHECK(range_buffer.numel() >= (sampled
                 ? CudaRasterizer::required<CudaRasterizer::TileState>(tile_count)
-                : CudaRasterizer::required<CudaRasterizer::ImageState>(W * H)),
+                : CudaRasterizer::required<CudaRasterizer::ImageState>(
+                      static_cast<size_t>(W) * H)),
                 "range buffer too small");
     char* g = reinterpret_cast<char*>(geom_buffer.data_ptr());
     char* b = reinterpret_cast<char*>(binning_buffer.data_ptr());
@@ -81,9 +102,9 @@ AcceptedGaussiansCUDA(
     auto bin = CudaRasterizer::BinningState::fromChunk(b, R);
     const uint2* ranges = sampled
         ? CudaRasterizer::TileState::fromChunk(r, tile_count).gaussian_ranges
-        : CudaRasterizer::ImageState::fromChunk(r, W * H).ranges;
+        : CudaRasterizer::ImageState::fromChunk(r, static_cast<size_t>(W) * H).ranges;
     {
-        acceptedCUDA<<<(Q + 127) / 128, 128>>>(
+        acceptedCUDA<<<(Q + 127) / 128, 128, 0, stream.stream()>>>(
             reinterpret_cast<const float2*>(xy.data_ptr<float>()), Q, K, W, H,
             ranges, bin.point_list, geom.means2D, geom.conic_opacity,
             ids.data_ptr<int>(), alpha.data_ptr<float>(), count.data_ptr<int>(),

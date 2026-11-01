@@ -20,6 +20,15 @@ def cpu_deep_copy_tuple(input_tuple):
     return tuple(copied_tensors)
 
 
+def _check_support_stream(xy):
+    # The existing native forward launches on CUDA's default stream.
+    # Reject a different stream before it builds buffers for the read-only query.
+    if not isinstance(xy, torch.Tensor) or not xy.is_cuda:
+        raise ValueError("support_xy must be a CUDA tensor")
+    if torch.cuda.current_stream(xy.device).cuda_stream != torch.cuda.default_stream(xy.device).cuda_stream:
+        raise RuntimeError("support queries require the native rasterizer's default CUDA stream")
+
+
 def rasterize_gaussians(
     means3D,
     means2D,
@@ -65,6 +74,8 @@ class _RasterizeGaussians(torch.autograd.Function):
         support_k,
     ):
 
+        if support_xy is not None:
+            _check_support_stream(support_xy)
         # Restructure arguments the way that the C++ lib expects them
         args = (
             raster_settings.bg,
@@ -383,6 +394,8 @@ class _SampleDepth(torch.autograd.Function):
         support_k,
     ):
 
+        if support_xy is not None:
+            _check_support_stream(support_xy)
         # Invoke C++/CUDA rasterization routine
         # Restructure arguments the way that the C++ lib expects them
         args = (
