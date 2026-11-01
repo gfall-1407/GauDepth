@@ -55,7 +55,7 @@ public:
         float* out_normal,
         int* radii         = nullptr,
         bool require_depth = true,
-        bool band_depth    = false,
+        int band_depth    = 0,
         bool debug         = false);
 
     static void backward(
@@ -97,7 +97,7 @@ public:
         float* dL_dscale,
         float* dL_drot,
         bool require_depth = true,
-        bool band_depth    = false,
+        int band_depth    = 0,
         bool debug         = false);
 
     static int integrate(
@@ -158,7 +158,7 @@ public:
         const bool prefiltered,
         float* output,
         bool* inside,
-        bool band_depth = false,
+        int band_depth = 0,
         bool debug = false);
 
     static void sample_depth_backward(
@@ -192,7 +192,7 @@ public:
         float* dL_dscale,
         float* dL_drot,
         float* dL_dpoint,
-        bool band_depth = false,
+        int band_depth = 0,
         bool debug = false);
 };
 }; // namespace CudaRasterizer

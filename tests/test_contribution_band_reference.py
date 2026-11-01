@@ -4,7 +4,7 @@ import math
 import random
 import unittest
 
-from utils.contribution_band_reference import band_depth_and_grad
+from utils.contribution_band_reference import band_depth_and_grad, band_depth_stopgrad_weights
 
 
 class ContributionBandReferenceTest(unittest.TestCase):
@@ -93,6 +93,19 @@ class ContributionBandReferenceTest(unittest.TestCase):
     def test_invalid_total(self):
         with self.assertRaises(ValueError):
             band_depth_and_grad([0, 0], [1, 2])
+
+    def test_stopgrad_weights_preserves_forward_and_depth_gradient(self):
+        for alpha, depth in (([.25, .4, .5], [1., 1.5, 2.]),
+                             ([.2, .5, .5], [1., 3., 6.]),
+                             ([.2000004, .5, .4999997499998752], [1., 3., 6.]),
+                             ([.4], [2.3])):
+            full = band_depth_and_grad(alpha, depth)
+            proxy = band_depth_stopgrad_weights(alpha, depth)
+            self.assertEqual(proxy[0], full[0])
+            self.assertEqual(proxy[1], full[1])
+            self.assertEqual(proxy[2], [0.] * len(alpha))
+            for i in range(len(depth)):
+                self.assertAlmostEqual(proxy[1][i], self.finite_difference(alpha, depth, 1, i), delta=1e-8)
 
 
 if __name__ == "__main__":

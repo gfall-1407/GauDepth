@@ -441,7 +441,7 @@ void FORWARD::sampleDepth(
     float* final_T,
     float3* output,
     bool* inside,
-    bool band_depth,
+    int band_depth,
     float4* band_stats,
     uint2* band_owner,
     int PN) {

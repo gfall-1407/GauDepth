@@ -73,7 +73,7 @@ void render(
     float* accum_depth,
     float* normal_length,
     bool require_depth,
-    bool band_depth,
+    int band_depth,
     float4* band_stats,
     uint2* band_owner);
 } // namespace FORWARD

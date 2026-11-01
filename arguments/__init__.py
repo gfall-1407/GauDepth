@@ -78,7 +78,7 @@ class PipelineParams(ParamGroup):
         self.convert_SHs_python = False
         self.compute_cov3D_python = False
         self.debug = False
-        self.depth_estimator = "baseline"  # baseline or contribution_band
+        self.depth_estimator = "baseline"  # baseline, contribution_band, or contribution_band_sg
         super().__init__(parser, "Pipeline Parameters", sentinel)
 
     def extract(self, args):

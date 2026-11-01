@@ -33,7 +33,7 @@ def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, 
         pass
 
     depth_estimator = getattr(pipe, "depth_estimator", None) or "baseline"
-    if depth_estimator not in ("baseline", "contribution_band"):
+    if depth_estimator not in ("baseline", "contribution_band", "contribution_band_sg"):
         raise ValueError(f"Unknown depth_estimator: {depth_estimator}")
     raster_settings = GaussianRasterizationSettings(
         image_height=int(viewpoint_camera.image_height),
@@ -50,7 +50,7 @@ def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, 
         prefiltered=False,
         require_depth = require_depth,
         debug=pipe.debug,
-        band_depth=depth_estimator == "contribution_band",
+        band_depth={"baseline": 0, "contribution_band": 1, "contribution_band_sg": 2}[depth_estimator],
     )
 
     rasterizer = GaussianRasterizer(raster_settings=raster_settings)
@@ -196,7 +196,7 @@ def sample_depth(points3D, viewpoint_camera, pc : GaussianModel, pipe : torch.Te
 
         
     depth_estimator = getattr(pipe, "depth_estimator", None) or "baseline"
-    if depth_estimator not in ("baseline", "contribution_band"):
+    if depth_estimator not in ("baseline", "contribution_band", "contribution_band_sg"):
         raise ValueError(f"Unknown depth_estimator: {depth_estimator}")
     raster_settings = GaussianRasterizationSettings(
         image_height=int(viewpoint_camera.image_height),
@@ -213,7 +213,7 @@ def sample_depth(points3D, viewpoint_camera, pc : GaussianModel, pipe : torch.Te
         prefiltered=False,
         debug=pipe.debug,
         require_depth = True,
-        band_depth=depth_estimator == "contribution_band",
+        band_depth={"baseline": 0, "contribution_band": 1, "contribution_band_sg": 2}[depth_estimator],
     )
 
     rasterizer = GaussianRasterizer(raster_settings=raster_settings)

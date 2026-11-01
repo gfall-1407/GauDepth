@@ -280,7 +280,7 @@ int CudaRasterizer::Rasterizer::forward(
     float* out_normal,
     int* radii,
     bool require_depth,
-    bool band_depth,
+    int band_depth,
     bool debug) {
     const float focal_y = height / (2.0f * tan_fovy);
     const float focal_x = width / (2.0f * tan_fovx);
@@ -452,7 +452,7 @@ void CudaRasterizer::Rasterizer::backward(
     float* dL_dscale,
     float* dL_drot,
     bool require_depth,
-    bool band_depth,
+    int band_depth,
     bool debug) {
     GeometryState geomState   = GeometryState::fromChunk(geom_buffer, P);
     BinningState binningState = BinningState::fromChunk(binning_buffer, R);
@@ -801,7 +801,7 @@ int2 CudaRasterizer::Rasterizer::sampleDepth(
     const bool prefiltered,
     float* output,
     bool* inside,
-    bool band_depth,
+    int band_depth,
     bool debug) {
     const float focal_y = height / (2.0f * tan_fovy);
     const float focal_x = width / (2.0f * tan_fovx);
@@ -1022,7 +1022,7 @@ void CudaRasterizer::Rasterizer::sample_depth_backward(
     float* dL_dscale,
     float* dL_drot,
     float* dL_dpoint,
-    bool band_depth,
+    int band_depth,
     bool debug) {
     GeometryState geomState         = GeometryState::fromChunk(geom_buffer, P);
     BinningState binningState       = BinningState::fromChunk(binning_buffer, R);

@@ -45,3 +45,17 @@ class DepthConfigRoundtripTest(TestCase):
             self.assertIs(loaded.convert_SHs_python, False)
         finally:
             cfg.unlink(missing_ok=True)
+
+    def test_stopgrad_candidate_saved_and_loaded(self):
+        root = Path(__file__).parent.resolve()
+        cfg = root / "cfg_args"
+        try:
+            dataset = SimpleNamespace(model_path=str(root), source_path=str(root), depth_ratio=0.)
+            pipe = SimpleNamespace(convert_SHs_python=False,
+                                   compute_cov3D_python=False, debug=False,
+                                   depth_estimator="contribution_band_sg")
+            write_model_config(cfg, dataset, pipe)
+            loaded = self.mesh_pipeline(root)
+            self.assertEqual(loaded.depth_estimator, "contribution_band_sg")
+        finally:
+            cfg.unlink(missing_ok=True)

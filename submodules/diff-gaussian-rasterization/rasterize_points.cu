@@ -58,7 +58,7 @@ RasterizeGaussiansCUDA(
     const torch::Tensor& campos,
     const bool prefiltered,
     const bool require_depth,
-    const bool band_depth,
+    const int band_depth,
     const bool debug) {
     if (means3D.ndimension() != 2 || means3D.size(1) != 3) {
         AT_ERROR("means3D must have dimensions (num_points, 3)");
@@ -160,7 +160,7 @@ RasterizeGaussiansBackwardCUDA(
     const torch::Tensor& imageBuffer,
     const torch::Tensor& alphas,
     const bool require_depth,
-    const bool band_depth,
+    const int band_depth,
     const bool debug) {
     const int P = means3D.size(0);
     const int H = dL_dout_color.size(1);
@@ -373,7 +373,7 @@ SampleRasterizedDepthCUDA(
     const int image_width,
     const torch::Tensor& campos,
     const bool prefiltered,
-    const bool band_depth,
+    const int band_depth,
     const bool debug) {
     if (means3D.ndimension() != 2 || means3D.size(1) != 3) {
         AT_ERROR("means3D must have dimensions (num_points, 3)");
@@ -469,7 +469,7 @@ SampleRasterizedDepthBackwardCUDA(
     const torch::Tensor& tileBuffer,
     int R, int RN,
     const bool prefiltered,
-    const bool band_depth,
+    const int band_depth,
     const bool debug) {
     const int PN = points3D.numel() / 3;
     const int P  = means3D.size(0);

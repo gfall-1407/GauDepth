@@ -690,7 +690,7 @@ __global__ void __launch_bounds__(BLOCK_X* BLOCK_Y)
         const float* __restrict__ accum_depth,
         const float4* __restrict__ band_stats,
         const uint2* __restrict__ band_owner,
-        const bool band_depth,
+        const int band_depth,
         const float* __restrict__ normal_length,
         const uint32_t* __restrict__ n_contrib,
         const float* __restrict__ dL_dpixels,
@@ -908,8 +908,12 @@ __global__ void __launch_bounds__(BLOCK_X* BLOCK_Y)
                         float clipped_di = contributor <= owner.x ? band.y : (contributor >= owner.y ? band.z : di);
                         float gw = (2.f * clipped_di - .5f * (band.y + band.z) - band.x) / w_final;
                         float band_grad = dL_dpixel_depths[pix_id];
-                        dL_dopa += band_grad * (gw - band_tail / (T * (1.f - alpha)));
-                        band_tail += blending_weight * gw;
+                        // Mode 2 keeps the same forward depth and d(depth)/d(di),
+                        // but treats every contribution weight as stop-gradient.
+                        if (band_depth != 2) {
+                            dL_dopa += band_grad * (gw - band_tail / (T * (1.f - alpha)));
+                            band_tail += blending_weight * gw;
+                        }
                         dL_dt = band_grad * 2.f * li * rln;
                     } else {
                         dL_dopa += (t - accum_t_rec) * dL_dpixel_t;
@@ -1082,7 +1086,7 @@ void BACKWARD::render(
     const float* accum_depth,
     const float4* band_stats,
     const uint2* band_owner,
-    bool band_depth,
+    int band_depth,
     const float* normal_length,
     const uint32_t* n_contrib,
     const float* dL_dpixels,

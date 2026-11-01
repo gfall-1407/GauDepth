@@ -92,7 +92,7 @@ __global__ void __launch_bounds__(BLOCK_X* BLOCK_Y)
         const float* __restrict__ final_T,
         const float4* __restrict__ band_stats,
         const uint2* __restrict__ band_owner,
-        const bool band_depth,
+        const int band_depth,
         const float3* __restrict__ dL_doutputs,
         float3* __restrict__ dL_dgaussians2D,
         float4* __restrict__ dL_dconic2D,
@@ -251,8 +251,11 @@ __global__ void __launch_bounds__(BLOCK_X* BLOCK_Y)
                             float di = t * rln;
                             float clipped_di = contributor <= owner[p].x ? band[p].y : (contributor >= owner[p].y ? band[p].z : di);
                             float gw = (2.f * clipped_di - .5f * (band[p].y + band[p].z) - band[p].x) / A;
-                            dL_dopa += band_upstream[p] * (T[p] * gw - band_tail[p] / (1.f - alpha));
-                            band_tail[p] += blending_weight * gw;
+                            // Mode 2 only routes depth loss through the member depths.
+                            if (band_depth != 2) {
+                                dL_dopa += band_upstream[p] * (T[p] * gw - band_tail[p] / (1.f - alpha));
+                                band_tail[p] += blending_weight * gw;
+                            }
                             dL_dt = band_upstream[p] * 2.f * li * rln;
                         }
                         dL_dt_local += dL_dt;
@@ -352,7 +355,7 @@ void BACKWARD::sampleDepth(
     const float* final_T,
     const float4* band_stats,
     const uint2* band_owner,
-    bool band_depth,
+    int band_depth,
     const float3* dL_doutput,
     float3* dL_dgaussians2D,
     float4* dL_dconic2D,

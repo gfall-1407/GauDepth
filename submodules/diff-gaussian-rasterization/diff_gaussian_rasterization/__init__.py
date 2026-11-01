@@ -195,7 +195,7 @@ class GaussianRasterizationSettings(NamedTuple):
     prefiltered: bool
     require_depth: bool
     debug: bool
-    band_depth: bool = False
+    band_depth: int = 0  # 0: baseline; 1: full band gradient; 2: stop band weight gradient
 
 
 class GaussianRasterizer(nn.Module):

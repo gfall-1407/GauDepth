@@ -42,7 +42,7 @@ def extract_mesh(dataset, pipe, iteration, num_cluster=1):
     scene = Scene(dataset, gaussians, load_iteration=iteration, shuffle=False)
     kernel_size = dataset.kernel_size
     depth_estimator = getattr(pipe, "depth_estimator", None) or "baseline"
-    depth_name = "selected_depth" if depth_estimator == "contribution_band" else ("expected_depth" if dataset.depth_ratio < 0.5 else "median_depth")
+    depth_name = "selected_depth" if depth_estimator in ("contribution_band", "contribution_band_sg") else ("expected_depth" if dataset.depth_ratio < 0.5 else "median_depth")
     print(f"Mesh depth estimator: {depth_estimator}; tensor: {depth_name}")
 
     bg_color = [1, 1, 1]

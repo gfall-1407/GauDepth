@@ -71,3 +71,13 @@ def band_depth_and_grad(alpha, depth):
         )
         weighted_tail += weights[k] * weight_grad[k]
     return result, depth_grad, alpha_grad
+
+
+def band_depth_stopgrad_weights(alpha, depth):
+    """Same forward depth, with the accepted weights treated as constants in backward.
+
+    This is a surrogate gradient, so finite differences of the full forward
+    function must not be compared with its zero alpha gradient.
+    """
+    result, depth_grad, _ = band_depth_and_grad(alpha, depth)
+    return result, depth_grad, [0.0] * len(alpha)
