@@ -205,7 +205,7 @@ def solve(item, mode):
     return result, details
 
 
-def check_results(manifest, rows):
+def check_results(manifest, rows, member_rows):
     by={(r['case'],r['mode']):r for r in rows}
     checks=[]
     def check(name, passed, observed):
@@ -260,6 +260,12 @@ def check_results(manifest, rows):
               by['uniform_scale_x2',mode]['t_hat']-2*base)
         check(f'normal_flip_invariance/{mode}',abs(by['normal_sign_flip',mode]['t_hat']-base)<1e-10,
               by['normal_sign_flip',mode]['t_hat']-base)
+        for transform in ('rigid_rotation','uniform_scale_x2','normal_sign_flip'):
+            base_q=[x['footprint_q'] for x in member_rows if x['case']=='same_layout' and x['mode']==mode]
+            transformed_q=[x['footprint_q'] for x in member_rows if x['case']==transform and x['mode']==mode]
+            check(f'{transform}/{mode}/footprint_invariance',
+                  len(base_q)==len(transformed_q) and np.allclose(base_q,transformed_q,rtol=1e-11,atol=1e-11),
+                  float(np.max(np.abs(np.asarray(base_q)-np.asarray(transformed_q)))))
     return checks
 
 
@@ -302,9 +308,11 @@ def main():
     for item in manifest['cases']:
         for mode in MODES:
             row, detail=solve(item,mode)
+            for member_row in detail:
+                member_row.update(group_status=row['status'], group_reason=row['reason'])
             rows.append(row);members.extend(detail)
             print(json.dumps(dict(case=item['name'],mode=mode,status=row['status'],reason=row['reason'],t_hat=row['t_hat'])))
-    checks=check_results(manifest,rows)
+    checks=check_results(manifest,rows,members)
     args.output.mkdir(parents=True,exist_ok=True)
     write_csv(args.output/'cases.csv',rows)
     write_csv(args.output/'members.csv',members)
