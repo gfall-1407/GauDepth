@@ -137,6 +137,14 @@ class BatchDepthTest(unittest.TestCase):
                             torch.full((3,), 6), torch.zeros(3, dtype=torch.bool), native)
         self.assertEqual(audit['candidate'].tolist(), [True, False, False])
         self.assertEqual(audit['invalid_count'].tolist(), [4, 6, 6])
+        partition = (audit['invalid_basic'] + audit['invalid_short_axis'] +
+                     audit['invalid_grazing'] + audit['invalid_tau'])
+        torch.testing.assert_close(partition, audit['invalid_count'])
+        self.assertEqual(audit['first_group_size'].tolist(), [2, 0, 0])
+        summary = summarize_candidate_audit(audit, 1.)
+        self.assertEqual(summary['first_ge2'], 1)
+        self.assertEqual(summary['first_alpha_pass'], 1)
+        self.assertEqual(summary['selected'], 1)
         depth.sum().backward()
         for grad in (xyz.grad, quat.grad, xy.grad, native.grad):
             self.assertTrue(torch.isfinite(grad).all(), grad)
@@ -232,6 +240,7 @@ class BatchDepthTest(unittest.TestCase):
                 alpha[row, :count[row]], ray, 400., 410., native[row], gaussian_ids=selected)
             torch.testing.assert_close(batch[row], single, atol=1e-12, rtol=1e-12)
             self.assertEqual(bool(audit['candidate'][row]), info['candidate_valid'])
+            self.assertEqual(int(audit['valid_count'][row]), info['valid_count'])
 
     def test_route_preserves_each_native_fallback(self):
         expected = torch.tensor([[[1., 2.]]], requires_grad=True)

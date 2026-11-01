@@ -90,12 +90,34 @@ def summarize_candidate_audit(audit, elapsed_ms, peak_allocated_mb=None):
     """Small scalar diagnostics; only call in an opt-in A/B log path."""
     if audit is None:
         return None
+    first_ge2 = audit['first_group_size'] >= 2
+    distinct = first_ge2 & ~audit['insufficient_distinct']
+    alpha_pass = distinct & ~audit['low_alpha']
+    footprint_pass = alpha_pass & ~audit['footprint_fail']
     return dict(queries=int(audit['candidate'].numel()),
                 selected=int(audit['candidate'].sum().item()),
+                accepted_ge2=int((audit['accepted_count'] >= 2).sum().item()),
+                valid_ge2=int((audit['valid_count'] >= 2).sum().item()),
+                first_singleton=int((audit['first_group_size'] == 1).sum().item()),
+                first_size_2=int((audit['first_group_size'] == 2).sum().item()),
+                first_size_3plus=int((audit['first_group_size'] >= 3).sum().item()),
+                first_ge2=int(first_ge2.sum().item()),
+                first_distinct_ge2=int(distinct.sum().item()),
+                first_distinct_alpha_lt_025=int((distinct & (audit['first_group_alpha'] < .25)).sum().item()),
+                first_distinct_alpha_025_to_05=int((distinct & (audit['first_group_alpha'] >= .25) &
+                                                    (audit['first_group_alpha'] < .5)).sum().item()),
+                first_alpha_pass=int(alpha_pass.sum().item()),
+                first_footprint_pass=int(footprint_pass.sum().item()),
                 overflow=int(audit['overflow'].sum().item()),
                 invalid_members=int(audit['invalid_count'].sum().item()),
+                invalid_basic=int(audit['invalid_basic'].sum().item()),
+                invalid_short_axis=int(audit['invalid_short_axis'].sum().item()),
+                invalid_grazing=int(audit['invalid_grazing'].sum().item()),
+                invalid_tau=int(audit['invalid_tau'].sum().item()),
                 no_valid=int(audit['no_valid'].sum().item()),
                 group_switch=int(audit['group_switch'].sum().item()),
+                boundary_angle_fail=int(audit['boundary_angle_fail'].sum().item()),
+                boundary_distance_fail=int(audit['boundary_distance_fail'].sum().item()),
                 low_alpha=int(audit['low_alpha'].sum().item()),
                 footprint_fail=int(audit['footprint_fail'].sum().item()),
                 insufficient_distinct=int(audit['insufficient_distinct'].sum().item()),

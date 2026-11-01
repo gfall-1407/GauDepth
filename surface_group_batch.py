@@ -62,8 +62,16 @@ def grouped_depth_from_support(pc, camera, xy, ids, alpha, count, overflow,
         raise ValueError('support shape/capacity mismatch')
     empty_audit = dict(candidate=torch.zeros_like(count, dtype=torch.bool),
                        invalid_count=torch.zeros_like(count),
+                       accepted_count=count, valid_count=torch.zeros_like(count),
+                       invalid_basic=torch.zeros_like(count),
+                       invalid_short_axis=torch.zeros_like(count),
+                       invalid_grazing=torch.zeros_like(count),
+                       invalid_tau=torch.zeros_like(count),
                        first_group_size=torch.zeros_like(count),
+                       first_group_alpha=torch.zeros_like(count, dtype=alpha.dtype),
                        group_switch=torch.zeros_like(count, dtype=torch.bool),
+                       boundary_angle_fail=torch.zeros_like(count, dtype=torch.bool),
+                       boundary_distance_fail=torch.zeros_like(count, dtype=torch.bool),
                        no_valid=torch.ones_like(count, dtype=torch.bool),
                        overflow=overflow.bool(),
                        low_alpha=torch.zeros_like(count, dtype=torch.bool),
@@ -92,10 +100,7 @@ def grouped_depth_from_support(pc, camera, xy, ids, alpha, count, overflow,
     scales = torch.where(primitive_valid[:, None], raw_scales, 1.)  # Unfiltered, un-AA.
     centers = world_centers @ wvt[:3, :3] + wvt[3, :3]
     rotations = wvt[:3, :3].T @ world_rotations
-    depths, audit = [], {'candidate': [], 'invalid_count': [], 'first_group_size': [],
-                        'group_switch': [], 'no_valid': [],
-                        'overflow': [], 'low_alpha': [], 'footprint_fail': [],
-                        'insufficient_distinct': []}
+    depths, audit = [], {key: [] for key in empty_audit}
     for start in range(0, xy.shape[0], chunk_size):
         stop = min(start + chunk_size, xy.shape[0])
         out, rows = _chunk(centers, rotations, scales, xy[start:stop],
@@ -130,14 +135,19 @@ def _chunk(centers, rotations, scales, xy, ids, alpha, count, overflow,
         ni = torch.gather(rd, 3, axis[:, :, :1, None].expand(-1, -1, 3, -1)).squeeze(-1)
         inc = (ni * vd[:, None, :]).sum(-1)
         t = (ni * md).sum(-1) / inc
-        valid = (member & primitive_valid[safe] & query_valid[:, None] &
+        basic = (member & primitive_valid[safe] & query_valid[:, None] &
                  torch.isfinite(md).all(-1) & torch.isfinite(rd).all(-1).all(-1) &
                  torch.isfinite(sd).all(-1) & (sd > 0).all(-1) &
-                 torch.isfinite(ad) & (ad >= 0) & (ad < 1) &
-                 (sorted_scale[:, :, 1] / sorted_scale[:, :, 0] > 1.001) &
-                 (inc.abs() / torch.linalg.norm(vd, dim=1)[:, None] >= .1) &
-                 torch.isfinite(t) & (t > 0))
+                 torch.isfinite(ad) & (ad >= 0) & (ad < 1))
+        short_ok = sorted_scale[:, :, 1] / sorted_scale[:, :, 0] > 1.001
+        incidence_ok = inc.abs() / torch.linalg.norm(vd, dim=1)[:, None] >= .1
+        tau_ok = torch.isfinite(t) & (t > 0)
+        valid = basic & short_ok & incidence_ok & tau_ok
         invalid_count = (member & ~valid).sum(1)
+        invalid_basic = (member & ~basic).sum(1)
+        invalid_short_axis = (basic & ~short_ok).sum(1)
+        invalid_grazing = (basic & short_ok & ~incidence_ok).sum(1)
+        invalid_tau = (basic & short_ok & incidence_ok & ~tau_ok).sum(1)
         # Stable tau sort after stable global-ID sort; padding goes last.
         id_order = torch.argsort(torch.where(valid, ids.long(), torch.iinfo(torch.int64).max),
                                  dim=1, stable=True)
@@ -162,13 +172,17 @@ def _chunk(centers, rotations, scales, xy, ids, alpha, count, overflow,
         gap = torch.maximum((proj - diag[:, :, None]).abs(),
                             (proj.transpose(1, 2) - diag[:, None, :]).abs())
         delta = ts * max(1/fx, 1/fy)
-        pair_ok = angle_ok & (gap <= delta[:, :, None] + delta[:, None, :])
+        distance_ok = gap <= delta[:, :, None] + delta[:, None, :]
+        pair_ok = angle_ok & distance_ok
         i = torch.arange(k, device=device)
         previous = i[:, None] < i[None, :]
         prefix_ok = (pair_ok | ~previous[None, :, :]).all(dim=1)
         break_at = torch.where((~prefix_ok) & (i[None, :] < nv[:, None]),
                                i[None, :], k).min(dim=1).values
         size = torch.minimum(break_at, nv)
+        boundary = i[None, None, :] == break_at[:, None, None]
+        boundary_angle_fail = ((~angle_ok) & previous[None, :, :] & boundary).any(1).any(1)
+        boundary_distance_fail = ((~distance_ok) & previous[None, :, :] & boundary).any(1).any(1)
         first = (i[None, :] < size[:, None])
         group_alpha = 1 - torch.prod(torch.where(first, 1 - al, 1.), dim=1)
         c0 = (ns * vd[:, None, :]).sum(-1)
@@ -203,7 +217,13 @@ def _chunk(centers, rotations, scales, xy, ids, alpha, count, overflow,
         first, live_c * live_c, 0.).sum(1).clamp_min(torch.finfo(native_z.dtype).tiny)
     output = torch.where(good, candidate, native_z)
     rows = dict(candidate=good, invalid_count=invalid_count, first_group_size=size,
+                first_group_alpha=group_alpha,
+                accepted_count=count, valid_count=nv,
+                invalid_basic=invalid_basic, invalid_short_axis=invalid_short_axis,
+                invalid_grazing=invalid_grazing, invalid_tau=invalid_tau,
                 group_switch=size < nv, no_valid=nv == 0,
+                boundary_angle_fail=boundary_angle_fail,
+                boundary_distance_fail=boundary_distance_fail,
                 overflow=overflow, low_alpha=low_alpha, footprint_fail=footprint_fail,
                 insufficient_distinct=insufficient)
     return output, rows
