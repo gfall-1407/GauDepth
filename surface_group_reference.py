@@ -1,7 +1,8 @@
-"""Small-ray Torch reference for the proposed hard-branch depth heuristic.
+"""One-query Torch reference for the frozen v1 front-group depth candidate.
 
-This is not a training/rendering implementation. Inputs are already accepted
-members for ONE query, in native acceptance order, in camera coordinates.
+The accepted IDs and their native alpha come from the renderer. This reference
+does not replace rendering, and discrete selection intentionally has no gradient.
+All geometry and returned depth are in camera coordinates (camera z).
 """
 
 import math
@@ -10,167 +11,165 @@ import torch
 
 MAX_ACCEPTED = 128
 ANGLE_LIMIT = math.radians(10.)
-ANGLE_TOL = 1e-6
 INCIDENCE_MIN = .1
-SHORT_GAP_MIN = 1e-3
-SCALE_RATIO_MIN = 1e-6
+SHORT_RATIO_MIN = 1.001
 FOOTPRINT_Q_MAX = 4.
-DIST_TOL_REL = 1e-7
 ALPHA_MIN = .5
 
 
 def rotation_matrix_wxyz(quaternions):
-    """Quaternion-to-rotation, with Torch autograd and no fixed device."""
     q = torch.nn.functional.normalize(quaternions, dim=-1)
     w, x, y, z = q.unbind(dim=-1)
     return torch.stack((
         1-2*(y*y+z*z), 2*(x*y-w*z), 2*(x*z+w*y),
         2*(x*y+w*z), 1-2*(x*x+z*z), 2*(y*z-w*x),
-        2*(x*z-w*y), 2*(y*z+w*x), 1-2*(x*x+y*y)), dim=-1
+        2*(x*z+w*y), 2*(y*z+w*x), 1-2*(x*x+y*y)), dim=-1
     ).reshape(-1, 3, 3)
 
 
-def _complete_link_groups(positions, edges):
-    groups = [(i,) for i in positions]
-    while True:
-        choice = next(((a, b) for a in range(len(groups)) for b in range(a+1, len(groups))
-                       if all((min(i, j), max(i, j)) in edges for i in groups[a] for j in groups[b])), None)
-        if choice is None:
-            return groups
-        a, b = choice
-        groups = ([g for k, g in enumerate(groups) if k not in (a, b)] +
-                  [tuple(sorted(groups[a] + groups[b]))])
-        groups.sort(key=lambda g: min(positions.index(i) for i in g))
+def _same_geometry_signature(center, rotation, scales):
+    c = center.detach().double().cpu().numpy().copy()
+    r = rotation.detach().double().cpu().numpy()
+    s = scales.detach().double().cpu().numpy()
+    cov = (r * (s*s)[None, :]) @ r.T
+    cov = (cov + cov.T) / 2
+    c[c == 0] = 0.
+    cov[cov == 0] = 0.
+    return c.tobytes(), cov.tobytes()
 
 
 def one_ray_reference(centers_camera, quaternions_wxyz, scales_unaa, alpha,
-                      ray_v, fx, fy, baseline_z, max_accepted=MAX_ACCEPTED):
-    """Return (depth, info). Discrete decisions detach; chosen LS stays live.
+                      ray_v, fx, fy, baseline_z, gaussian_ids=None,
+                      max_accepted=MAX_ACCEPTED):
+    """Return (candidate or original depth, audit info) for one accepted list.
 
-    A rejected earliest group falls back to baseline_z. No later group is
-    allowed to claim first visibility. All depths use camera-z coordinates.
+    Invalid member geometry is excluded and counted; this may miss foreground.
+    The first depth-ordered complete-link *contiguous segment* alone is tested.
     """
     n = centers_camera.shape[0]
-    info = dict(accepted_count=n, selected=[], groups=[], edges=[], reason='',
-                candidate_valid=False, group_alpha=None, tau=[], footprint_q=[],
-                pairs=[], order_ambiguous=False, p3_witness=None,
-                thresholds=dict(max_accepted=max_accepted,
-                                         angle_limit_rad=ANGLE_LIMIT, angle_tol_rad=ANGLE_TOL,
-                                         incidence_min=INCIDENCE_MIN, short_gap_min=SHORT_GAP_MIN,
-                                         scale_ratio_min=SCALE_RATIO_MIN,
-                                         footprint_q_max=FOOTPRINT_Q_MAX,
-                                         distance_tol_rel=DIST_TOL_REL,
-                                         group_alpha_min=ALPHA_MIN))
+    info = dict(accepted_count=n, valid_count=0, invalid_count=0,
+                invalid_reasons={}, selected=[], groups=[], edges=[], pairs=[],
+                reason='', candidate_valid=False, group_alpha=None, tau=[],
+                footprint_q=[], thresholds=dict(max_accepted=max_accepted,
+                    angle_limit_rad=ANGLE_LIMIT, incidence_min=INCIDENCE_MIN,
+                    short_ratio_min=SHORT_RATIO_MIN,
+                    footprint_q_max=FOOTPRINT_Q_MAX, group_alpha_min=ALPHA_MIN))
 
     def fallback(reason):
         info['reason'] = reason
         return baseline_z, info
 
-    if n == 0:
-        return fallback('empty')
     if max_accepted < 1:
         raise ValueError('max_accepted must be positive')
+    if n == 0:
+        return fallback('empty')
     if n > max_accepted:
         return fallback('overflow')
+    if gaussian_ids is None:
+        gaussian_ids = torch.arange(n, device=centers_camera.device)
     if (centers_camera.shape != (n, 3) or quaternions_wxyz.shape != (n, 4) or
-            scales_unaa.shape != (n, 3) or alpha.shape != (n,) or ray_v.shape != (3,)):
+            scales_unaa.shape != (n, 3) or alpha.shape != (n,) or
+            ray_v.shape != (3,) or gaussian_ids.shape != (n,)):
         raise ValueError('one-ray input shape mismatch')
     if (not math.isfinite(fx) or not math.isfinite(fy) or fx <= 0 or fy <= 0 or
-            not torch.isfinite(ray_v).all() or ray_v[2] != 1):
+            not bool(torch.isfinite(ray_v).all()) or not bool(ray_v[2] == 1)):
         raise ValueError('invalid camera ray or focal length')
 
     with torch.no_grad():
-        if (not torch.isfinite(centers_camera).all() or
-                not torch.isfinite(quaternions_wxyz).all() or
-                not torch.isfinite(scales_unaa).all() or
-                not torch.isfinite(alpha).all() or
-                (scales_unaa <= 0).any() or (alpha < 0).any() or (alpha >= 1).any() or
-                (torch.linalg.norm(quaternions_wxyz, dim=-1) <= 0).any()):
-            return fallback('invalid_member')
-        scales, axis = torch.sort(scales_unaa.detach(), dim=-1)
-        if ((scales[:, 0] / scales[:, 2]) <= SCALE_RATIO_MIN).any() or (
-                (1 - scales[:, 0] / scales[:, 1]) <= SHORT_GAP_MIN).any():
-            return fallback('ambiguous_short_axis')
-        rotation = rotation_matrix_wxyz(quaternions_wxyz.detach())
-        normals = rotation[torch.arange(n, device=axis.device), :, axis[:, 0]]
-        unit_ray = ray_v.detach() / torch.linalg.norm(ray_v.detach())
-        incidence = (normals * ray_v.detach()).sum(dim=-1)
-        if ((normals * unit_ray).sum(dim=-1).abs() < INCIDENCE_MIN).any():
-            return fallback('grazing')
-        tau = (normals * centers_camera.detach()).sum(dim=-1) / incidence
-        if (not torch.isfinite(tau).all() or (tau <= 0).any()):
-            return fallback('nonpositive_intersection')
-        info['tau'] = tau.cpu().tolist()
-        # Each member's own plane intersection must be within its 2-sigma
-        # tangential footprint. This test never clips the intersection.
-        points = tau[:, None] * ray_v.detach()[None, :]
-        local = torch.einsum('nji,nj->ni', rotation, points - centers_camera.detach())
-        q = (local / scales_unaa.detach()).square()
-        q[torch.arange(n, device=axis.device), axis[:, 0]] = 0
-        footprint_q = q.sum(dim=-1)
-        info['footprint_q'] = footprint_q.cpu().tolist()
-        if (footprint_q > FOOTPRINT_Q_MAX).any():
-            return fallback('outside_member_footprint')
-        order = sorted(range(n), key=lambda i: (float(tau[i]), i))
-        edges = set()
+        m0, q0, s0, a0, v0 = (x.detach() for x in
+                             (centers_camera, quaternions_wxyz, scales_unaa, alpha, ray_v))
+        ids = gaussian_ids.detach()
+        rotation = rotation_matrix_wxyz(torch.where(torch.isfinite(q0), q0, 0.))
+        normals = torch.empty_like(m0)
+        axes = torch.full((n,), -1, dtype=torch.long, device=m0.device)
+        tau = torch.full((n,), float('nan'), dtype=m0.dtype, device=m0.device)
+        reasons = [None] * n
+        ray_norm = torch.linalg.norm(v0)
         for i in range(n):
-            for j in range(i+1, n):
-                angle = torch.atan2(torch.linalg.norm(torch.linalg.cross(normals[i], normals[j])),
-                                    torch.abs(torch.dot(normals[i], normals[j])))
-                delta_m = centers_camera[j].detach() - centers_camera[i].detach()
-                gap = torch.maximum(torch.abs(torch.dot(normals[i], delta_m)),
-                                    torch.abs(torch.dot(normals[j], delta_m)))
-                distance_limit = (tau[i] + tau[j]) * max(1/fx, 1/fy)
-                tolerance = DIST_TOL_REL * max(1., abs(float(tau[i])), abs(float(tau[j])))
-                compatible = bool(angle <= ANGLE_LIMIT + ANGLE_TOL and gap <= distance_limit + tolerance)
-                info['pairs'].append(dict(i=i, j=j, angle_rad=float(angle),
-                                          distance=float(gap), distance_limit=float(distance_limit),
-                                          distance_tolerance=tolerance, compatible=compatible))
-                if compatible:
-                    edges.add((i, j))
-        groups = _complete_link_groups(order, edges)
-        for b in order:
-            neighbors = [i for i in order if i != b and (min(i, b), max(i, b)) in edges]
-            for ai, a in enumerate(neighbors):
-                for c in neighbors[ai + 1:]:
-                    if (min(a, c), max(a, c)) not in edges:
-                        info['order_ambiguous'] = True
-                        info['p3_witness'] = [a, b, c]
-                        break
-                if info['order_ambiguous']:
-                    break
-            if info['order_ambiguous']:
-                break
-        info['edges'] = sorted([list(e) for e in edges])
-        info['groups'] = [list(g) for g in groups]
-        first = groups[0]
-        info['selected'] = list(first)
-        signatures = set()
-        for i in first:
-            c = centers_camera[i].detach().double().cpu().numpy().copy()
-            r = rotation[i].detach().double().cpu().numpy()
-            s = scales_unaa[i].detach().double().cpu().numpy()
-            cov = (r * (s*s)[None, :]) @ r.T
-            c[c == 0] = 0.
-            cov[cov == 0] = 0.
-            signatures.add((c.tobytes(), cov.tobytes()))
-        if len(signatures) < 2:
-            return fallback('insufficient_distinct_geometry')
-        group_alpha = 1 - torch.prod(1 - alpha.detach()[list(first)])
-        info['group_alpha'] = float(group_alpha)
-        if group_alpha < ALPHA_MIN:
-            return fallback('low_group_alpha')
-        chosen = list(first)
-        chosen_axes = axis[chosen, 0].detach()
+            if (not bool(torch.isfinite(m0[i]).all()) or not bool(torch.isfinite(q0[i]).all()) or
+                    not bool(torch.isfinite(s0[i]).all()) or not bool(torch.isfinite(a0[i])) or
+                    bool((s0[i] <= 0).any()) or not bool(0 <= a0[i] < 1) or
+                    not bool(torch.linalg.norm(q0[i]) > 0)):
+                reasons[i] = 'invalid_member'
+                continue
+            sorted_scale, sorted_axis = torch.sort(s0[i])
+            if not bool(sorted_scale[1] / sorted_scale[0] > SHORT_RATIO_MIN):
+                reasons[i] = 'ambiguous_short_axis'
+                continue
+            axis = sorted_axis[0]
+            ni = rotation[i, :, axis]
+            ai = torch.dot(ni, v0)
+            if not bool(torch.abs(ai) / ray_norm >= INCIDENCE_MIN):
+                reasons[i] = 'grazing'
+                continue
+            ti = torch.dot(ni, m0[i]) / ai
+            if not bool(torch.isfinite(ti)) or not bool(ti > 0):
+                reasons[i] = 'nonpositive_intersection'
+                continue
+            axes[i], normals[i], tau[i] = axis, ni, ti
+        valid = [i for i, reason in enumerate(reasons) if reason is None]
+        info['valid_count'] = len(valid)
+        info['invalid_count'] = n - len(valid)
+        info['invalid_reasons'] = {str(i): reason for i, reason in enumerate(reasons) if reason}
+        info['tau'] = [float(t) if bool(torch.isfinite(t)) else None for t in tau]
+        if not valid:
+            return fallback('no_valid_members')
+        order = sorted(valid, key=lambda i: (float(tau[i]), int(ids[i])))
 
-    # Recompute normal with live quaternion; center, rotation and query remain
-    # differentiable. Scale and opacity only control the detached branch here.
+        def compatible(i, j):
+            ni, nj = normals[i], normals[j]
+            angle = torch.atan2(torch.linalg.norm(torch.linalg.cross(ni, nj)),
+                                torch.abs(torch.dot(ni, nj)))
+            delta_m = m0[j] - m0[i]
+            gap = torch.maximum(torch.abs(torch.dot(ni, delta_m)),
+                                torch.abs(torch.dot(nj, delta_m)))
+            distance_limit = (tau[i] + tau[j]) * max(1/fx, 1/fy)
+            good = bool(angle <= ANGLE_LIMIT and gap <= distance_limit)
+            info['pairs'].append(dict(i=i, j=j, angle_rad=float(angle),
+                distance=float(gap), distance_limit=float(distance_limit), compatible=good))
+            if good:
+                info['edges'].append([min(i, j), max(i, j)])
+            return good
+
+        # Do not backfill an older group. Rejection starts a new contiguous
+        # segment, even when the new member is compatible with a still older one.
+        groups = [[order[0]]]
+        for i in order[1:]:
+            if all(compatible(i, j) for j in groups[-1]):
+                groups[-1].append(i)
+            else:
+                groups.append([i])
+        info['groups'] = groups
+        chosen = groups[0]
+        info['selected'] = chosen
+        if len({_same_geometry_signature(m0[i], rotation[i], s0[i]) for i in chosen}) < 2:
+            return fallback('insufficient_distinct_geometry')
+        group_alpha = 1 - torch.prod(1 - a0[chosen])
+        info['group_alpha'] = float(group_alpha)
+        if not bool(group_alpha >= ALPHA_MIN):
+            return fallback('low_group_alpha')
+        c = (normals[chosen] * v0).sum(dim=-1)
+        b = (normals[chosen] * m0[chosen]).sum(dim=-1)
+        denom = (c*c).sum()
+        if not bool(torch.isfinite(denom)) or not bool(denom > 0):
+            return fallback('invalid_denominator')
+        z0 = (c*b).sum() / denom
+        if not bool(torch.isfinite(z0)) or not bool(z0 > 0):
+            return fallback('invalid_ls_depth')
+        point = z0 * v0
+        for i in chosen:
+            local = rotation[i].T @ (point - m0[i])
+            tangential = [j for j in range(3) if j != int(axes[i])]
+            footprint_q = ((local[tangential] / s0[i, tangential])**2).sum()
+            info['footprint_q'].append(dict(i=i, q=float(footprint_q)))
+            if not bool(torch.isfinite(footprint_q)) or not bool(footprint_q <= FOOTPRINT_Q_MAX):
+                return fallback('outside_group_footprint')
+        chosen_axes = axes[chosen]
+
     live_rotation = rotation_matrix_wxyz(quaternions_wxyz[chosen])
-    live_normals = live_rotation[torch.arange(len(chosen), device=chosen_axes.device), :, chosen_axes]
-    m = centers_camera[chosen]
-    c = (live_normals * ray_v).sum(dim=-1)
-    b = (live_normals * m).sum(dim=-1)
-    depth = (c * b).sum() / (c * c).sum()
-    info['candidate_valid'] = True
-    info['reason'] = 'accepted'
+    live_normals = live_rotation[torch.arange(len(chosen), device=m0.device), :, chosen_axes]
+    live_c = (live_normals * ray_v).sum(dim=-1)
+    live_b = (live_normals * centers_camera[chosen]).sum(dim=-1)
+    depth = (live_c * live_b).sum() / (live_c * live_c).sum()
+    info['candidate_valid'], info['reason'] = True, 'accepted'
     return depth, info

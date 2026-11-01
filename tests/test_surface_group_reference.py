@@ -70,19 +70,34 @@ class SurfaceGroupReferenceTest(unittest.TestCase):
         self.assertIs(many, old)
         self.assertEqual(info['reason'], 'overflow')
 
-    def test_bridge_exposes_ambiguous_complete_link(self):
+    def test_contiguous_complete_link_does_not_backfill(self):
         m, q, s, a, v, old = self.inputs()
         m = torch.tensor([[0., 0., 1.], [0., 0., 1.005], [0., 0., 1.010]], dtype=torch.float64)
         q = q[:1].repeat(3, 1)
         s = s[:1].repeat(3, 1)
         a = torch.full((3,), .8, dtype=torch.float64)
         depth, info = one_ray_reference(m, q, s, a, v, 400., 400., old)
-        self.assertEqual(info['edges'], [[0, 1], [1, 2]])
-        self.assertTrue(info['order_ambiguous'])
-        self.assertEqual(info['p3_witness'], [0, 1, 2])
+        self.assertEqual(info['edges'], [[0, 1]])
         self.assertEqual(info['groups'], [[0, 1], [2]])
         self.assertTrue(info['candidate_valid'])
         self.assertAlmostEqual(depth.item(), 1.0025)
+
+    def test_invalid_member_excluded_and_front_group_footprint(self):
+        m, q, s, a, v, old = self.inputs()
+        m3 = torch.cat([m, m[:1].detach().new_tensor([[0., 0., -.1]])], dim=0)
+        q3 = torch.cat([q, q[:1]], dim=0)
+        s3 = torch.cat([s, s[:1]], dim=0)
+        a3 = torch.cat([a, a[:1]], dim=0)
+        z, info = one_ray_reference(m3, q3, s3, a3, v, 1000., 1000., old)
+        self.assertTrue(info['candidate_valid'])
+        self.assertEqual(info['invalid_count'], 1)
+        self.assertEqual(info['invalid_reasons'], {'2': 'nonpositive_intersection'})
+        self.assertAlmostEqual(z.item(), 1.)
+        m_far = m.detach().clone()
+        m_far[:, 0] += .1
+        z, info = one_ray_reference(m_far, q, s, a, v, 1000., 1000., old)
+        self.assertIs(z, old)
+        self.assertEqual(info['reason'], 'outside_group_footprint')
 
 
 if __name__ == '__main__':
