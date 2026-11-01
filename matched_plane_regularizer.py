@@ -79,6 +79,9 @@ class FrozenPlaneRegularizer:
         self.device=torch.device(device)
         def tensor(x,dtype=torch.float64):return torch.as_tensor(np.asarray(x),dtype=dtype,device=self.device)
         self.ids=tensor([r[0] for r in rows],torch.long)
+        # torch.device('cuda') is an unindexed allocator request; a tensor
+        # actually lands on cuda:0 (or the current CUDA device).
+        self.device=self.ids.device
         self.axes=tensor([r[1] for r in rows],torch.long)
         self.mass=tensor([r[2] for r in rows])
         self.rays=tensor(np.stack([r[3] for r in rows]))

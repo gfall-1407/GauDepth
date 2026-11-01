@@ -5,6 +5,7 @@ import argparse
 import gc
 import hashlib
 import importlib
+import importlib.machinery
 import json
 import math
 import os
@@ -12,6 +13,7 @@ from pathlib import Path
 import random
 import shutil
 import subprocess
+import sys
 import time
 
 import numpy as np
@@ -32,34 +34,60 @@ START_VIRTUAL = 7001
 UPDATES = 1000
 SAVED_UPDATES = (0, 500, 1000)
 MAX_ACTIVE_SECONDS = 90*60
-EXTENSION_MODULES=("diff_gaussian_rasterization._C","warp_patch_ncc._C",
-                   "simple_knn._C","fused_ssim._C")
+EXTENSION_PACKAGES=("diff_gaussian_rasterization","warp_patch_ncc",
+                    "simple_knn","fused_ssim")
+EXTENSION_SOURCE_DIRS=("submodules/diff-gaussian-rasterization",
+                       "submodules/warp-patch-ncc","submodules/simple-knn")
+EXTENSION_SOURCE_SUFFIXES={".cu",".cpp",".cc",".cuh",".h",".hpp",".py",".inl"}
+
+
+def extension_sources():
+    root=Path(__file__).parent
+    found={}
+    for directory in EXTENSION_SOURCE_DIRS:
+        base=root/directory
+        if not base.is_dir():raise ValueError("extension_source_directory_missing:"+directory)
+        items=[p for p in base.rglob("*") if p.is_file() and p.suffix in EXTENSION_SOURCE_SUFFIXES]
+        if not items:raise ValueError("extension_source_directory_empty:"+directory)
+        for path in items:
+            found[path.relative_to(root).as_posix()]=sha256(path)
+    return dict(sorted(found.items()))
+
+
+def loaded_extension_modules():
+    for package in EXTENSION_PACKAGES:importlib.import_module(package)
+    found={}
+    for name,module in tuple(sys.modules.items()):
+        if not any(name==p or name.startswith(p+".") for p in EXTENSION_PACKAGES):continue
+        file=getattr(module,"__file__",None)
+        if file and any(file.endswith(s) for s in importlib.machinery.EXTENSION_SUFFIXES):
+            path=Path(file).resolve()
+            found[name]=dict(path=str(path),sha256=sha256(path))
+    for package in EXTENSION_PACKAGES:
+        if not any(n==package or n.startswith(package+".") for n in found):
+            raise ValueError("compiled_extension_not_loaded:"+package)
+    return dict(sorted(found.items()))
 
 
 def verify_build_identity(expected_head,build_manifest_path):
     current=subprocess.check_output(["git","rev-parse","HEAD"],cwd=Path(__file__).parent,text=True).strip()
     if current!=expected_head:raise ValueError("reviewed_git_head_mismatch")
     build=json.loads(Path(build_manifest_path).read_text(encoding="utf-8"))
-    if build.get("reviewed_head")!=expected_head or set(build.get("modules",{}))!=set(EXTENSION_MODULES):
+    if build.get("reviewed_head")!=expected_head:
         raise ValueError("extension_manifest_identity_mismatch")
-    actual={}
-    for name in EXTENSION_MODULES:
-        module=importlib.import_module(name)
-        binary=Path(module.__file__).resolve()
-        if not binary.is_file() or sha256(binary)!=build["modules"][name]["sha256"]:
-            raise ValueError("extension_binary_sha_mismatch:"+name)
-        actual[name]=dict(path=str(binary),sha256=sha256(binary))
-    sources=build.get("sources",{})
-    required=("submodules/diff-gaussian-rasterization/cuda_rasterizer/render_forward.cu",
-              "submodules/diff-gaussian-rasterization/cuda_rasterizer/render_backward.cu",
-              "submodules/warp-patch-ncc/cuda_warp_patch_ncc/warp_patch_ncc_impl.cu")
-    if not all(name in sources for name in required):
+    actual=loaded_extension_modules()
+    if build.get("modules")!=actual:raise ValueError("extension_binary_identity_mismatch")
+    sources=extension_sources()
+    if build.get("sources")!=sources:
         raise ValueError("extension_source_manifest_incomplete")
-    for name,expected in sources.items():
-        path=(Path(__file__).parent/name).resolve()
-        if not path.is_file() or sha256(path)!=expected:
-            raise ValueError("extension_source_sha_mismatch:"+name)
-    return dict(reviewed_head=current,modules=actual,sources=sources)
+    provenance=build.get("external_build_provenance",{}).get("fused_ssim")
+    if not isinstance(provenance,dict) or not provenance.get("build_source") or not provenance.get("build_evidence_path") or not provenance.get("build_evidence_sha256"):
+        raise ValueError("fused_ssim_build_provenance_unverified")
+    evidence=Path(provenance["build_evidence_path"]).resolve()
+    if not evidence.is_file() or sha256(evidence)!=provenance["build_evidence_sha256"]:
+        raise ValueError("fused_ssim_build_evidence_mismatch")
+    return dict(reviewed_head=current,modules=actual,sources=sources,
+                external_build_provenance=build["external_build_provenance"])
 
 
 def require_empty_output(path):
@@ -105,6 +133,64 @@ def snapshot_hash(gaussians):
         h.update(value.detach().contiguous().cpu().numpy().tobytes())
     h.update(str(gaussians.active_sh_degree).encode())
     return h.hexdigest()
+
+
+FROZEN_OPT=dict(iterations=30000,position_lr_init=.00016,position_lr_final=.0000016,
+    position_lr_delay_mult=.01,position_lr_max_steps=30000,feature_lr=.0025,
+    opacity_lr=.05,scaling_lr=.005,rotation_lr=.001,
+    appearance_embeddings_lr=.001,appearance_network_lr=.001,pgsr_appearance_lr=.001,
+    gs_appearance_lr_init=.01,gs_appearance_lr_final=.001,gs_appearance_lr_delay_steps=0,
+    gs_appearance_lr_delay_mult=0.,percent_dense=.01,lambda_dssim=.2,
+    lambda_depth_normal=.05,densification_interval=100,opacity_reset_interval=3000,
+    densify_from_iter=500,densify_until_iter=15000,regularization_from_iter=7000,
+    densify_grad_threshold=.0002,lambda_multi_view_geo=.02,lambda_multi_view_ncc=.3,
+    multi_view_patch_size=3,multi_view_pixel_noise_th=1.)
+FROZEN_DATASET=dict(sh_degree=3,images="images",dataset="",resolution=2,
+    white_background=False,data_device="cuda",eval=False,use_decoupled_appearance=3,
+    disable_filter3D=False,kernel_size=0.,depth_ratio=0.,multi_view_num=8,
+    multi_view_max_angle=30,multi_view_min_dis=.01,multi_view_max_dis=1.5)
+FROZEN_PIPE=dict(convert_SHs_python=False,compute_cov3D_python=False,debug=False)
+
+
+def verify_frozen_configuration(dataset,opt,pipe):
+    for label,actual,frozen in (("optimization",vars(opt),FROZEN_OPT),
+            ("dataset",vars(dataset),FROZEN_DATASET),("pipeline",vars(pipe),FROZEN_PIPE)):
+        checked={k:v for k,v in actual.items() if k in frozen}
+        if checked!=frozen or (set(actual)-set(frozen))-(
+                {"source_path","model_path"} if label=="dataset" else set()):
+            raise ValueError("frozen_"+label+"_configuration_changed")
+    return dict(optimization=dict(vars(opt)),dataset=dict(vars(dataset)),pipeline=dict(vars(pipe)))
+
+
+def initial_opacity_boundary(gaussians):
+    raw=gaussians._opacity.detach()
+    allowed=torch.isposinf(raw)
+    if not bool((torch.isfinite(raw)|allowed).all()):raise ValueError("invalid_initial_raw_opacity")
+    for name in ("_xyz","_scaling","_rotation","_features_dc","_features_rest"):
+        if not bool(torch.isfinite(getattr(gaussians,name)).all()):
+            raise ValueError("invalid_initial_raw_"+name)
+    verify_activated_parameters(gaussians)
+    return allowed.clone()
+
+
+def verify_activated_parameters(gaussians):
+    for name in ("get_opacity","get_opacity_with_3D_filter",
+                 "get_scaling","get_scaling_with_3D_filter"):
+        if not bool(torch.isfinite(getattr(gaussians,name)).all()):
+            raise ValueError("nonfinite_activated_"+name)
+
+
+def verify_updated_parameters(gaussians,allowed_opacity_inf_mask,iteration):
+    for group in gaussians.optimizer.param_groups:
+        for param in group["params"]:
+            if group["name"]=="opacity":
+                if param.shape!=allowed_opacity_inf_mask.shape or not bool(
+                        (torch.isposinf(param)==allowed_opacity_inf_mask).all()) or not bool(
+                        (torch.isfinite(param)|allowed_opacity_inf_mask).all()):
+                    raise ValueError(f"nonfinite_or_changed_opacity_boundary_after_{iteration}")
+            elif not bool(torch.isfinite(param).all()):
+                raise ValueError(f"nonfinite_parameter_{group['name']}_after_{iteration}")
+    verify_activated_parameters(gaussians)
 
 
 def initial_optimizer_hash(gaussians):
@@ -159,19 +245,32 @@ def save_boundary(scene,gaussians,arm_dir,update_count,filter_hash):
     if checkpoint.exists():raise ValueError("checkpoint_exists")
     torch.save(dict(model=gaussians.capture(),filter_3D=gaussians.filter_3D,
                     iteration=iteration,completed_updates=update_count),checkpoint)
-    return dict(iteration=iteration,completed_updates=update_count,
+    report=dict(iteration=iteration,completed_updates=update_count,
         ply=str(Path(arm_dir)/"point_cloud"/f"iteration_{iteration}"/"point_cloud.ply"),
         checkpoint=str(checkpoint))
+    if not Path(report["ply"]).is_file() or not checkpoint.is_file():
+        raise ValueError("boundary_artifact_missing")
+    (Path(arm_dir)/f"complete_{iteration}.json").write_text(
+        json.dumps(report,sort_keys=True)+"\n",encoding="utf-8")
+    return report
 
 
 def save_failure_state(scene,gaussians,arm_dir,completed):
     """Best-effort separate partial state; never label it a 500/1000 result."""
-    if completed in SAVED_UPDATES:return None
     iteration=7000+completed
-    scene.save(iteration)
+    marker=Path(arm_dir)/f"complete_{iteration}.json"
+    if completed in SAVED_UPDATES and marker.is_file():
+        report=json.loads(marker.read_text(encoding="utf-8"))
+        if (report.get("completed_updates")==completed and
+                all(Path(report[k]).is_file() for k in ("ply","checkpoint"))):
+            return None
+    partial=Path(arm_dir)/"partial"/f"iteration_{iteration}"/"point_cloud.ply"
+    partial.parent.mkdir(parents=True,exist_ok=False)
+    gaussians.save_ply(str(partial))
     checkpoint=Path(arm_dir)/f"partial_{iteration}.pth"
     torch.save(dict(model=gaussians.capture(),filter_3D=gaussians.filter_3D,
-                    iteration=iteration,completed_updates=completed,partial=True),checkpoint)
+                    iteration=iteration,completed_updates=completed,partial=True,
+                    partial_ply=str(partial)),checkpoint)
     return str(checkpoint)
 
 
@@ -202,7 +301,7 @@ def initialize_arm(parser_args,model_args,opt,arm_dir,input_ply):
     return scene,gaussians,cameras
 
 
-def manifest_for_run(args,input_hash,camera_sig,schedule,initial_hash,optimizer_hash,filter_hash,rgb0,R0,lam):
+def manifest_for_run(args,input_hash,camera_sig,schedule,initial_hash,optimizer_hash,filter_hash,rgb0,R0,lam,configuration,opacity_boundary):
     schedule_json=json.dumps([list(x) for x in schedule],separators=(",",":"))
     return dict(protocol="local_plane_matched_1000_v1",source_main="8474727dd1c1f4fee77a3dc02a6cbc0b38075f21",
         frozen_reference_commit="6ce1b1b739247f5dbfb3eb68fc0a318fa0ba580d",
@@ -218,11 +317,16 @@ def manifest_for_run(args,input_hash,camera_sig,schedule,initial_hash,optimizer_
         saved_updates=list(SAVED_UPDATES),densify=False,prune=False,opacity_reset=False,
         filter_recompute=False,new_adam=True,init_rgb0049=rgb0,init_R=R0,
         lambda_rule="0.01*init_rgb0049/init_R",lambda_value=lam,
-        loss_weights=dict(dssim=.2,depth_normal=.05,multi_view_ncc=.3,multi_view_geo=.02),
+        frozen_host_configuration=configuration,
+        initial_positive_inf_opacity_count=int(opacity_boundary.sum()),
+        initial_positive_inf_opacity_mask_sha256=hashlib.sha256(
+            opacity_boundary.contiguous().cpu().numpy().tobytes()).hexdigest(),
         scientific_scope="fixed_32_windows_1836_ids_1.28_percent_local_conditional_continuation")
 
 
-def train_arm(label,scene,gaussians,cameras,schedule,reg,lam,pipe,dataset,opt,arm_dir,deadline,filter_hash):
+def train_arm(label,scene,gaussians,cameras,schedule,reg,lam,pipe,dataset,opt,arm_dir,deadline,filter_hash,allowed_opacity_inf_mask=None):
+    if allowed_opacity_inf_mask is None:
+        allowed_opacity_inf_mask=torch.isposinf(gaussians._opacity.detach())
     bg=torch.tensor([1.,1.,1.] if dataset.white_background else [0.,0.,0.],device="cuda")
     patchmatch=PatchMatch(opt.multi_view_patch_size,opt.multi_view_pixel_noise_th,
         kernel_size=dataset.kernel_size,pipe=pipe,debug=True,model_path=str(arm_dir))
@@ -254,10 +358,7 @@ def train_arm(label,scene,gaussians,cameras,schedule,reg,lam,pipe,dataset,opt,ar
             completed=update
             gaussians._matched_completed_updates=completed
             with torch.no_grad():
-                for group in gaussians.optimizer.param_groups:
-                    for param in group["params"]:
-                        if not bool(torch.isfinite(param).all()):
-                            raise ValueError(f"{label}:nonfinite_parameter_{group['name']}_after_{iteration}")
+                verify_updated_parameters(gaussians,allowed_opacity_inf_mask,iteration)
                 if label=="B":
                     reg(gaussians._xyz,gaussians._rotation)
             if update==1 or update%100==0:
@@ -310,22 +411,16 @@ def run(args,parser,lp,op,pp):
         raise ValueError("insufficient_output_disk_free_space")
     if not Path(args.source_path).is_dir():raise ValueError("DTU_source_missing")
     if not torch.cuda.is_available():raise ValueError("CUDA_required_for_host_run")
-    root.mkdir()
     dataset=lp.extract(args);opt=op.extract(args);pipe=pp.extract(args)
-    if (opt.iterations!=30000 or opt.lambda_dssim!=.2 or opt.lambda_depth_normal!=.05 or
-            opt.lambda_multi_view_ncc!=.3 or opt.lambda_multi_view_geo!=.02 or
-            opt.regularization_from_iter!=7000 or opt.position_lr_max_steps!=30000 or
-            opt.multi_view_patch_size!=3 or opt.multi_view_pixel_noise_th!=1.0 or
-            dataset.sh_degree!=3 or dataset.kernel_size!=0.0 or dataset.eval or
-            dataset.disable_filter3D or dataset.white_background or
-            pipe.convert_SHs_python or pipe.compute_cov3D_python):
-        raise ValueError("host_hyperparameters_changed")
+    configuration=verify_frozen_configuration(dataset,opt,pipe)
+    root.mkdir()
     reg=FrozenPlaneRegularizer(args.capture,args.frozen_results,
         Path(args.source_path)/"sparse"/"0",device="cuda")
     scene_A,gaussians_A,cameras_A=initialize_arm(args,dataset,opt,root/"A",input_ply)
     camera_sig=camera_signature(cameras_A)
     schedule=fixed_schedule(cameras_A)
     initial_hash=snapshot_hash(gaussians_A)
+    opacity_boundary=initial_opacity_boundary(gaussians_A)
     optimizer_hash=initial_optimizer_hash(gaussians_A)
     filter_hash=snapshot_filter_hash(gaussians_A)
     R0=float(reg(gaussians_A._xyz,gaussians_A._rotation).detach())
@@ -337,7 +432,7 @@ def run(args,parser,lp,op,pp):
         pkg=render(ref,gaussians_A,pipe,bg,dataset.kernel_size,require_depth=True)
         rgb0=float(host_rgb_loss(gaussians_A,ref,pkg["render"],opt))
     lam=lambda_from_initial(rgb0,R0)
-    manifest=manifest_for_run(args,EXPECTED_PLY_SHA,camera_sig,schedule,initial_hash,optimizer_hash,filter_hash,rgb0,R0,lam)
+    manifest=manifest_for_run(args,EXPECTED_PLY_SHA,camera_sig,schedule,initial_hash,optimizer_hash,filter_hash,rgb0,R0,lam,configuration,opacity_boundary)
     manifest["extension_identity"]=build_identity
     manifest["initial_output_free_bytes"]=initial_free_bytes
     (root/"manifest.json").write_text(json.dumps(manifest,indent=2)+"\n",encoding="utf-8")
@@ -352,11 +447,13 @@ def run(args,parser,lp,op,pp):
             if (camera_signature(cameras)!=camera_sig or snapshot_hash(gaussians)!=initial_hash or
                     initial_optimizer_hash(gaussians)!=optimizer_hash or snapshot_filter_hash(gaussians)!=filter_hash):
                 raise ValueError("matched_initial_state_failed")
+            if not bool(torch.equal(initial_opacity_boundary(gaussians),opacity_boundary)):
+                raise ValueError("matched_opacity_boundary_failed")
             if not math.isclose(float(reg(gaussians._xyz,gaussians._rotation).detach()),R0,rel_tol=0,abs_tol=1e-8):
                 raise ValueError("matched_initial_R_failed")
         try:
             reports[label]=train_arm(label,scene,gaussians,cameras,schedule,reg,lam,pipe,dataset,opt,
-                                      root/label,deadline,filter_hash)
+                                      root/label,deadline,filter_hash,opacity_boundary)
         except Exception as exc:
             completed=getattr(gaussians,"_matched_completed_updates",0)
             partial=None

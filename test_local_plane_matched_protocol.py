@@ -1,5 +1,6 @@
 """CPU/mock gates only; never represent a host CUDA training run."""
 import ast
+import hashlib
 import io
 import json
 from pathlib import Path
@@ -37,6 +38,7 @@ class FakeTorch:
         kwargs.pop("device",None)
         return torch.tensor(value,**kwargs)
     isfinite=staticmethod(torch.isfinite)
+    isposinf=staticmethod(torch.isposinf)
     no_grad=staticmethod(torch.no_grad)
 
 
@@ -45,6 +47,7 @@ class MockGaussians:
         self.parameter=torch.nn.Parameter(torch.tensor(1.))
         self._xyz=self.parameter
         self._rotation=self.parameter
+        self._opacity=torch.nn.Parameter(torch.zeros((1,1)))
         self.optimizer=torch.optim.Adam([{"params":[self.parameter],"lr":.001,"name":"xyz"}])
         self.virtual=[];self.sh_calls=0
     def update_learning_rate(self,i):self.virtual.append(i)
@@ -97,7 +100,8 @@ class Controls(unittest.TestCase):
             def open(self,*args,**kwargs):return io.StringIO()
         train=load_pure("train_arm",dict(torch=FakeTorch,PatchMatch=lambda *a,**k:object(),
             save_boundary=boundary,host_step_loss=host,UPDATES=1000,
-            time=time,Path=MockPath,json=json))
+            time=time,Path=MockPath,json=json,
+            verify_updated_parameters=lambda *args:None))
         cameras=[Camera("a",[1]),Camera("b",[0])]
         schedule=[(0,1)]*1000
         class Dataset:white_background=False;kernel_size=0.
@@ -158,6 +162,114 @@ class Controls(unittest.TestCase):
         self.assertTrue(bool(torch.isfinite(quat.grad).all()))
         self.assertGreater(int(torch.count_nonzero(xyz.grad)),0)
         self.assertEqual(int(torch.count_nonzero(xyz.grad[~torch.isin(torch.arange(142892),reg.ids)])),0)
+
+    def test_cuda_device_resolution(self):
+        self.assertEqual(torch.device("cpu"),torch.empty(1,device="cpu").device)
+        if torch.cuda.is_available():
+            requested=torch.device("cuda")
+            actual=torch.empty(1,device=requested).device
+            self.assertEqual(actual,torch.device("cuda",torch.cuda.current_device()))
+            self.assertNotEqual(requested,actual)
+
+    def test_frozen_configuration_rejects_cli_drift(self):
+        tree=ast.parse(SCRIPT.read_text(encoding="utf-8"))
+        names=("FROZEN_OPT","FROZEN_DATASET","FROZEN_PIPE")
+        assignments=[n for n in tree.body if isinstance(n,ast.Assign) and
+                     any(isinstance(t,ast.Name) and t.id in names for t in n.targets)]
+        scope={}
+        exec(compile(ast.Module(body=assignments,type_ignores=[]),str(SCRIPT),"exec"),scope)
+        verify=load_pure("verify_frozen_configuration",scope)
+        class Settings:
+            def __init__(self,items):self.__dict__.update(items)
+        opt=Settings(scope["FROZEN_OPT"]);data=Settings(scope["FROZEN_DATASET"])
+        data.source_path="source";data.model_path="output"
+        pipe=Settings(scope["FROZEN_PIPE"])
+        self.assertEqual(verify(data,opt,pipe)["optimization"]["rotation_lr"],.001)
+        opt.rotation_lr=.002
+        with self.assertRaises(ValueError):verify(data,opt,pipe)
+        opt.rotation_lr=.001;data.multi_view_num=4
+        with self.assertRaises(ValueError):verify(data,opt,pipe)
+
+    def test_positive_inf_opacity_boundary_and_adam(self):
+        activated=load_pure("verify_activated_parameters",{"torch":torch})
+        initial=load_pure("initial_opacity_boundary",{"torch":torch,
+            "verify_activated_parameters":activated})
+        updated=load_pure("verify_updated_parameters",{"torch":torch,
+            "verify_activated_parameters":activated})
+        class G:
+            _opacity=torch.nn.Parameter(torch.tensor([[float("inf")],[0.]]))
+            _xyz=torch.nn.Parameter(torch.ones((2,3)))
+            _scaling=torch.nn.Parameter(torch.zeros((2,3)))
+            _rotation=torch.nn.Parameter(torch.ones((2,4)))
+            _features_dc=torch.zeros(2,1)
+            _features_rest=torch.zeros(2,1)
+            optimizer=torch.optim.Adam([{"params":[_opacity],"lr":.05,"name":"opacity"}])
+            @property
+            def get_opacity(self):return torch.sigmoid(self._opacity)
+            @property
+            def get_opacity_with_3D_filter(self):
+                square=self.get_scaling.square()
+                coef=torch.sqrt(square.prod(dim=1)/(square+.1).prod(dim=1))
+                return self.get_opacity*coef[:,None]
+            @property
+            def get_scaling(self):return torch.exp(self._scaling)
+            @property
+            def get_scaling_with_3D_filter(self):return torch.sqrt(self.get_scaling.square()+.1)
+        g=G();allowed=initial(g)
+        self.assertEqual(float(g.get_opacity[0,0]),1.)
+        g.get_opacity.sum().backward()
+        self.assertTrue(bool(torch.isfinite(g._opacity.grad).all()))
+        self.assertEqual(float(g._opacity.grad[0,0]),0.)
+        g.optimizer.step();updated(g,allowed,7001)
+        self.assertTrue(bool(torch.isposinf(g._opacity[0,0])))
+        with torch.no_grad():g._opacity[1,0]=float("inf")
+        with self.assertRaises(ValueError):updated(g,allowed,7002)
+
+    def test_extension_source_inventory_covers_sample_wrapper_and_glm(self):
+        tree=ast.parse(SCRIPT.read_text(encoding="utf-8"))
+        names=("EXTENSION_SOURCE_DIRS","EXTENSION_SOURCE_SUFFIXES")
+        assignments=[n for n in tree.body if isinstance(n,ast.Assign) and
+                     any(isinstance(t,ast.Name) and t.id in names for t in n.targets)]
+        scope={"Path":Path,"__file__":str(SCRIPT),"sha256":lambda p:hashlib.sha256(p.read_bytes()).hexdigest()}
+        exec(compile(ast.Module(body=assignments,type_ignores=[]),str(SCRIPT),"exec"),scope)
+        inventory=load_pure("extension_sources",scope)
+        if not any((SCRIPT.parent/"submodules/simple-knn").glob("*.cu")):
+            with self.assertRaisesRegex(ValueError,"extension_source_directory_empty"):
+                inventory()
+            return  # Local submodule is absent; deployment must populate and verify it.
+        sources=inventory()
+        self.assertTrue(any(p.endswith("sample_forward.cu") for p in sources))
+        self.assertTrue(any(p.endswith("ext.cpp") for p in sources))
+        self.assertTrue(any("third_party/glm/" in p for p in sources))
+
+    def test_boundary_failed_before_save_is_partial(self):
+        files={};directories=set()
+        class P:
+            def __init__(self,value):self.value=str(value)
+            def __truediv__(self,key):return P(self.value+"/"+str(key))
+            def __str__(self):return self.value
+            @property
+            def parent(self):return P(self.value.rsplit("/",1)[0])
+            def mkdir(self,parents=False,exist_ok=False):directories.add(self.value)
+            def is_file(self):return self.value in files
+            def read_text(self,encoding=None):return files[self.value]
+        class SavingTorch:
+            @staticmethod
+            def save(value,path):files[str(path)]=value
+        save=load_pure("save_failure_state",{"Path":P,"json":json,"torch":SavingTorch,
+            "SAVED_UPDATES":(0,500,1000)})
+        class G:
+            filter_3D=torch.ones(1)
+            def capture(self):return {"state":1}
+            def save_ply(self,path):files[path]=b"partial"
+        result=save(None,G(),"arm",500)
+        self.assertEqual(result,"arm/partial_7500.pth")
+        self.assertIn("arm/partial/iteration_7500/point_cloud.ply",files)
+        self.assertTrue(files[result]["partial"])
+        files["arm/complete_8000.json"]=json.dumps(dict(completed_updates=1000,
+            ply="arm/point_cloud/iteration_8000/point_cloud.ply",checkpoint="arm/chkpnt8000.pth"))
+        # A stale marker cannot turn a failed 1000th update into a complete result.
+        self.assertEqual(save(None,G(),"arm",1000),"arm/partial_8000.pth")
 
 
 if __name__=="__main__":unittest.main()
