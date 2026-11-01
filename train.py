@@ -12,11 +12,13 @@
 from argparse import ArgumentParser, Namespace
 import os
 from random import randint, sample
+import random
 import sys
 from typing import Sequence, TypedDict
 import uuid
 
 import torch
+import numpy as np
 from tqdm import tqdm
 
 try:
@@ -42,6 +44,8 @@ from utils.loss_utils import (
     L1_loss_appearance,
     PatchMatch,
 )
+from training_depth_plugin import (ABLog, add_step_metrics, file_digest,
+                                   parameter_digest, parameter_metrics, route_depth)
 
 
 def training(
@@ -53,15 +57,27 @@ def training(
     checkpoint_iterations,
     checkpoint,
     debug_from,
+    depth_route='baseline',
+    depth_target='expected',
+    ab_run_id=None,
+    ab_seed=0,
+    ab_log_interval=100,
+    warm_start_ply=None,
+    warm_start_iteration=None,
 ):
     first_iter = 0
     tb_writer = prepare_output_and_logger(dataset)
     gaussians = GaussianModel(dataset.sh_degree)
     scene = Scene(dataset, gaussians)
+    if warm_start_ply:
+        gaussians.load_ply(warm_start_ply)
+        first_iter = warm_start_iteration
     gaussians.training_setup(opt)
     if checkpoint:
         (model_params, first_iter) = torch.load(checkpoint)
         gaussians.restore(model_params, opt)
+    if ab_run_id and first_iter < opt.regularization_from_iter:
+        raise ValueError('A/B short run must start at or after regularization_from_iter')
     bg_color = [1, 1, 1] if dataset.white_background else [0, 0, 0]
     background = torch.tensor(bg_color, dtype=torch.float32, device="cuda")
     kernel_size = dataset.kernel_size
@@ -74,6 +90,28 @@ def training(
         gaussians.reset_3D_filter()
     else:
         gaussians.compute_3D_filter(cameras=trainCameras)
+
+    ab_rng = None
+    ab_log = None
+    if ab_run_id:
+        # The camera draws are isolated from candidate code's global RNG use.
+        ab_rng = random.Random(ab_seed)
+        random.seed(ab_seed)
+        np.random.seed(ab_seed)
+        torch.manual_seed(ab_seed)
+        torch.cuda.manual_seed_all(ab_seed)
+        ab_log = ABLog(dataset.model_path, ab_run_id, ab_log_interval)
+        ab_log.write(dict(event='start', run_id=ab_run_id, seed=ab_seed,
+                          initial_iteration=first_iter, parameter_sha256=parameter_digest(gaussians),
+                          warm_start_ply_sha256=file_digest(warm_start_ply) if warm_start_ply else None,
+                          checkpoint_sha256=file_digest(checkpoint) if checkpoint else None,
+                          optimizer_state='fresh_from_ply' if warm_start_ply else 'restored_checkpoint',
+                          depth_route=depth_route, depth_target=depth_target,
+                          depth_ratio=dataset.depth_ratio,
+                          regularization_from_iter=opt.regularization_from_iter,
+                          lambda_depth_normal=opt.lambda_depth_normal,
+                          lambda_multi_view_ncc=opt.lambda_multi_view_ncc,
+                          lambda_multi_view_geo=opt.lambda_multi_view_geo))
 
     if opt.lambda_multi_view_ncc > 0 or opt.lambda_multi_view_geo > 0:
         patchmatch = PatchMatch(
@@ -133,7 +171,8 @@ def training(
         # Pick a random Camera
         if not viewpoint_stack:
             viewpoint_stack = scene.getTrainCameras().copy()
-        viewpoint_cam: Camera = viewpoint_stack.pop(randint(0, len(viewpoint_stack) - 1))
+        viewpoint_cam: Camera = viewpoint_stack.pop(
+            randint(0, len(viewpoint_stack) - 1) if ab_rng is None else ab_rng.randrange(len(viewpoint_stack)))
 
         # Render
         if (iteration - 1) == debug_from:
@@ -148,6 +187,7 @@ def training(
             kernel_size,
             require_depth=reg_kick_on,
         )
+        render_pkg = route_depth(render_pkg, depth_route, depth_target)
         rendered_image: torch.Tensor
         rendered_image, viewspace_point_tensor, visibility_filter, radii = (
             render_pkg["render"],
@@ -178,7 +218,8 @@ def training(
 
         # patch match loss
         if reg_kick_on and opt.lambda_multi_view_ncc > 0:
-            nearest_cam = None if len(viewpoint_cam.nearest_id) == 0 else scene.getTrainCameras()[sample(viewpoint_cam.nearest_id, 1)[0]]
+            nearest_cam = None if len(viewpoint_cam.nearest_id) == 0 else scene.getTrainCameras()[
+                sample(viewpoint_cam.nearest_id, 1)[0] if ab_rng is None else ab_rng.choice(viewpoint_cam.nearest_id)]
             ncc_loss, geo_loss = patchmatch(gaussians, render_pkg, viewpoint_cam, nearest_cam, iteration, depth_normal)
         else:
             ncc_loss = torch.tensor([0], dtype=torch.float32, device="cuda")
@@ -255,10 +296,25 @@ def training(
                     # don't update in the end of training
                     gaussians.compute_3D_filter(cameras=trainCameras)
 
+            # Opt-in A/B trace: all camera choices; bounded parameter samples.
+            log_metrics = ab_log is not None and iteration % ab_log.interval == 0
+            metrics, before = parameter_metrics(gaussians.optimizer) if log_metrics else (None, None)
+            step_applied = iteration < opt.iterations
             # Optimizer step
             if iteration < opt.iterations:
                 gaussians.optimizer.step()
                 gaussians.optimizer.zero_grad(set_to_none=True)
+            if ab_log is not None:
+                ab_log.write(dict(event='iteration', iteration=iteration,
+                                  camera=viewpoint_cam.image_name,
+                                  nearest_camera=nearest_cam.image_name if reg_kick_on and opt.lambda_multi_view_ncc > 0 and nearest_cam is not None else None,
+                                  regularization_active=reg_kick_on,
+                                  loss=float(loss.item()), rgb_loss=float(rgb_loss.item()),
+                                  depth_normal_loss=float(depth_normal_loss.item()),
+                                  ncc_loss=float(ncc_loss.item()), geo_loss=float(geo_loss.item()),
+                                  step_applied=step_applied,
+                                  parameters=add_step_metrics(metrics, before, gaussians.optimizer, step_applied)
+                                  if log_metrics else None))
 
             if iteration in checkpoint_iterations:
                 print("\n[ITER {}] Saving Checkpoint".format(iteration))
@@ -266,6 +322,9 @@ def training(
                     (gaussians.capture(), iteration),
                     scene.model_path + "/chkpnt" + str(iteration) + ".pth",
                 )
+
+    if ab_log is not None:
+        ab_log.close()
 
 
 def prepare_output_and_logger(args):
@@ -383,7 +442,26 @@ if __name__ == "__main__":
     parser.add_argument("--quiet", action="store_true")
     parser.add_argument("--checkpoint_iterations", nargs="+", type=int, default=[15000])
     parser.add_argument("--start_checkpoint", type=str, default=None)
+    parser.add_argument('--depth_route', choices=['baseline', 'identity', 'candidate'], default='baseline')
+    parser.add_argument('--depth_target', choices=['expected', 'median', 'both'], default='expected')
+    parser.add_argument('--ab_run_id', type=str, default=None)
+    parser.add_argument('--ab_seed', type=int, default=0)
+    parser.add_argument('--ab_log_interval', type=int, default=100)
+    parser.add_argument('--warm_start_ply', type=str, default=None)
+    parser.add_argument('--warm_start_iteration', type=int, default=None)
     args = parser.parse_args(sys.argv[1:])
+    if args.depth_route == 'candidate':
+        parser.error('candidate readout is not implemented; baseline and identity only')
+    if args.warm_start_ply and args.start_checkpoint:
+        parser.error('warm_start_ply and start_checkpoint are mutually exclusive')
+    if bool(args.warm_start_ply) != (args.warm_start_iteration is not None):
+        parser.error('warm_start_ply requires warm_start_iteration, and vice versa')
+    if args.warm_start_iteration is not None and not 0 <= args.warm_start_iteration < args.iterations:
+        parser.error('warm_start_iteration must precede iterations')
+    if args.ab_run_id and not (args.start_checkpoint or args.warm_start_ply):
+        parser.error('A/B trace requires the same checkpoint or PLY warm start in both arms')
+    if args.ab_run_id and args.ab_log_interval < 1:
+        parser.error('ab_log_interval must be positive')
     args.save_iterations.append(args.iterations)
 
     print("Optimizing " + args.model_path)
@@ -403,6 +481,13 @@ if __name__ == "__main__":
         checkpoint_iterations=args.checkpoint_iterations,
         checkpoint=args.start_checkpoint,
         debug_from=args.debug_from,
+        depth_route=args.depth_route,
+        depth_target=args.depth_target,
+        ab_run_id=args.ab_run_id,
+        ab_seed=args.ab_seed,
+        ab_log_interval=args.ab_log_interval,
+        warm_start_ply=args.warm_start_ply,
+        warm_start_iteration=args.warm_start_iteration,
     )
 
     # All done
