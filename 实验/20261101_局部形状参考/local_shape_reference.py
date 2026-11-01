@@ -99,7 +99,8 @@ def field(gs, x, orient=(0., 0., 1.)):
     return dict(F=dot(normal, score), gradF=grad_f, curvature=dot(normal, mv(hess, normal)),
                 normal=normal, surface_normal=unit(grad_f) if norm(grad_f)>1e-12 else None,
                 eigenvalues=vals, log_density=peak+math.log(total), pi=pi, score=score,
-                items=items, vecs=vecs)
+                items=items, vecs=vecs,
+                residual_scale=math.sqrt(sum(w*sum(it['p']['Q'][k][k] for k in range(3)) for w,it in zip(pi,items))))
 
 
 def parameter_jvp(state, index, kind, axis):
@@ -109,6 +110,9 @@ def parameter_jvp(state, index, kind, axis):
     if kind == 'center': dmu[axis] = 1.0
     elif kind == 'log_amplitude': dloga = 1.0
     elif kind == 'log_scale':
+        ordered=sorted(g['scale'])
+        if min((ordered[k+1]-ordered[k])/ordered[k+1] for k in (0,1))<=1e-10:
+            raise ValueError('log-scale derivative undefined at scale-order tie')
         raxis = [row[axis] for row in g['rotation']]
         dq = mscale(-2/g['scale'][axis]**2, outer(raxis, raxis))
         ratio2 = (g['scale'][p['lo']]/g['scale'][p['mid']])**2
@@ -145,27 +149,41 @@ def shifted(gs, i, kind, axis, step):
     return out
 
 
-def root_in_bracket(gs, ray, left, right, origin=(0., 0., 0.)):
-    def f(z): return field(gs, add(origin, mul(z, ray)), ray)['F']
+def root_in_bracket(gs, ray, left, right, origin=(0., 0., 0.), normal_anchor=None):
+    # Keep one eigenline orientation chart inside a local bracket. Per-point
+    # camera-facing flips may create a discontinuity even when no root exists.
+    anchor=normal_anchor or field(gs,add(origin,mul(left,ray)),ray)['normal']
+    def state(z): return field(gs,add(origin,mul(z,ray)),anchor)
+    def f(z): return state(z)['F']
+    def checked(z):
+        st=state(z)
+        if abs(st['F'])/st['residual_scale']>1e-8:
+            raise ValueError('non-root sign jump or ill-conditioned bracket')
+        return z
     fl, fr = f(left), f(right)
-    if fl == 0: return left
-    if fr == 0: return right
+    if fl == 0: return checked(left)
+    if fr == 0: return checked(right)
     if fl*fr > 0: raise ValueError('root is not bracketed')
     for _ in range(55):
         mid = (left+right)/2; fm = f(mid)
-        if fm == 0: return mid
+        if fm == 0: return checked(mid)
         if fl*fm < 0: right = mid
         else: left, fl = mid, fm
-    return (left+right)/2
+    return checked((left+right)/2)
 
 
 def root_branches(gs, ray, bounds, cells=256, origin=(0., 0., 0.)):
     """Finite diagnostic only: sign-changing roots, no first-hit selection."""
     zs = [bounds[0]+(bounds[1]-bounds[0])*i/cells for i in range(cells+1)]
-    fs = [field(gs, add(origin, mul(z, ray)), ray)['F'] for z in zs]; roots = []
+    states = [field(gs, add(origin, mul(z, ray)), ray) for z in zs]; roots = []
     for i in range(cells):
-        if fs[i] == 0 or fs[i]*fs[i+1] < 0 or fs[i+1] == 0:
-            z = root_in_bracket(gs, ray, zs[i], zs[i+1], origin=origin)
+        fl=states[i]['F']; fr=states[i+1]['F']
+        if dot(states[i]['normal'],states[i+1]['normal'])<0: fr=-fr
+        if fl == 0 or fl*fr < 0 or fr == 0:
+            try:
+                z = root_in_bracket(gs,ray,zs[i],zs[i+1],origin=origin,normal_anchor=states[i]['normal'])
+            except ValueError:
+                continue
             if not roots or abs(z-roots[-1]['z'])>1e-7:
                 st = field(gs, add(origin, mul(z, ray)), ray); fz = dot(st['gradF'], ray)
                 surface_normal=st['surface_normal']
@@ -175,7 +193,8 @@ def root_branches(gs, ray, bounds, cells=256, origin=(0., 0., 0.)):
                                   stable=st['curvature']<0 and abs(fz)>1e-10,
                                   log_density=st['log_density'],guide_normal=st['normal'],
                                   surface_normal=surface_normal,eigen_gap=st['eigenvalues'][0]-st['eigenvalues'][1],
-                                  effective_support=1/sum(w*w for w in st['pi'])))
+                                  effective_support=1/sum(w*w for w in st['pi']),
+                                  normalized_residual=abs(st['F'])/st['residual_scale']))
     return roots
 
 
@@ -189,6 +208,14 @@ def controlled_cases():
                       amplitude=.2+.11*i, rotation=rotation) for i,(t,v) in enumerate([(-.5,-.2),(-.3,.3),(.1,-.1),(.4,.25),(.6,-.35)])]
     roots = root_branches(plane, ray, (1.1, 2.2)); expected = dot(n, anchor)/dot(n, ray)
     assert len(roots)==1 and abs(roots[0]['z']-expected)<1e-9 and roots[0]['stable']
+    plane_state=field(plane,mul(expected,ray),ray); plane_fz=dot(plane_state['gradF'],ray)
+    precision=[w/g['scale'][2]**2 for w,g in zip(plane_state['pi'],plane)]; normal_updates=[]; amplitude_updates=[]
+    for i in range(len(plane)):
+        actual=-sum(n[k]*parameter_jvp(plane_state,i,'center',k) for k in range(3))/plane_fz
+        predicted=precision[i]/sum(precision)/dot(n,ray)
+        assert actual>0 and abs(actual-predicted)<1e-12
+        normal_updates.append(actual); amplitude_updates.append(-parameter_jvp(plane_state,i,'log_amplitude',0)/plane_fz)
+    assert abs(sum(normal_updates)*dot(n,ray)-1)<1e-12 and max(abs(v) for v in amplitude_updates)<1e-12
     def layers(a): return [gaussian([0., 0., 2.+sign*a], [.5,.4,.1], .5) for sign in (-1.,1.)]
     resolved = root_branches(layers(.15), [0.,0.,1.], (1.6,2.4))
     unresolved = root_branches(layers(.05), [0.,0.,1.], (1.6,2.4))
@@ -211,6 +238,19 @@ def controlled_cases():
     except ValueError: isotropic_rejected = True
     else: isotropic_rejected = False
     assert isotropic_rejected
+    tied=[gaussian([0,0,2.],[.1,.1,.5]),gaussian([.1,0,2.],[.5,.4,.1])]
+    tied_state=field(tied,[0,0,2.])
+    try: parameter_jvp(tied_state,0,'log_scale',0)
+    except ValueError: scale_tie_derivative_rejected=True
+    else: scale_tie_derivative_rejected=False
+    assert scale_tie_derivative_rejected
+    grazing=[]
+    for zc,nz in ((1.8,.6),(2.2,-.6)):
+        r=transpose([[nz,0.,-.8],[0.,1.,0.],[.8,0.,nz]])
+        grazing.append(gaussian([.02,0.,zc],[.5,.4,.1],rotation=r))
+    grazing_roots=root_branches(grazing,[0.,0.,1.],(1.6,2.4))
+    assert all(r['normalized_residual']<1e-8 for r in grazing_roots)
+    assert all(abs(r['z']-2.)>1e-3 for r in grazing_roots)
     curved = [gaussian([-.25,0.,1.96],[.5,.35,.1],.6), gaussian([.3,.05,2.08],[.55,.4,.13],.8)]
     curved = shifted(curved,0,'rotation',1,.25); curved = shifted(curved,1,'rotation',1,-.3)
     ray2 = [.08,.02,1.]; branch = (1.8,2.25); z = root_in_bracket(curved,ray2,*branch)
@@ -238,7 +278,8 @@ def controlled_cases():
         g['mu']=add(mv(transform,g['mu']),translation); g['rotation']=mm(transform,g['rotation'])
     transformed_root=root_in_bracket(transformed,mv(transform,ray2),*branch,origin=translation)
     assert abs(transformed_root-z)<1e-10
-    return dict(single_plane=dict(true_camera_z=expected,roots=roots),
+    return dict(single_plane=dict(true_camera_z=expected,roots=roots,normal_center_derivatives=normal_updates,
+                                  maximum_amplitude_derivative= max(abs(v) for v in amplitude_updates)),
                 resolved_double_layer=dict(sigma=.1,separation=.3,roots=resolved),
                 unresolved_double_layer=dict(sigma=.1,separation=.1,roots=unresolved,verdict='stable root lies on neither input plane'),
                 unequal_double_layer=dict(amplitude_ratio=.01,sigma=.1,
@@ -247,6 +288,8 @@ def controlled_cases():
                 low_amplitude=dict(multiplier=1e-9,roots=low_roots,verdict='root has no absolute opacity confidence'),
                 weak_front_floater=dict(amplitude=.005,roots=floater_roots,verdict='local geometry alone cannot select visible branch'),
                 isotropic_rejected=isotropic_rejected,
+                scale_tie_derivative_rejected=scale_tie_derivative_rejected,
+                grazing_sign_flip_regression=dict(roots=grazing_roots,spurious_midpoint_rejected=True),
                 varying_normal=dict(root=z,guide_surface_normal_angle_degrees=angle(state['normal'],state['gradF']),
                                     rigid_transform_root_error=abs(transformed_root-z),
                                     spatial_derivative_relative_error=norm(sub(grad_fd,state['gradF']))/norm(grad_fd),

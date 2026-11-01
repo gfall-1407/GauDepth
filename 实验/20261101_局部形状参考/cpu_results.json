@@ -1,6 +1,6 @@
 {
   "definition": "normal-guided Gaussian log-density stationary branches",
-  "source_sha256": "6a6e3af3f07b1a94ae31d9c5a689ede7ac7e2e9ed52ae0057204a0f8624299e6",
+  "source_sha256": "051f7c2955f7ae9385b64c456576437b56a7cb708baa68b4c11192bda2c305c6",
   "python_version": "3.13.5 | packaged by Anaconda, Inc. | (main, Jun 12 2025, 16:37:03) [MSC v.1929 64 bit (AMD64)]",
   "host_baseline_commit": "8474727dd1c1f4fee77a3dc02a6cbc0b38075f21",
   "visibility_selection": "not implemented; separate research interface",
@@ -26,9 +26,18 @@
             -0.8000000000000002
           ],
           "eigen_gap": 0.9686610245449457,
-          "effective_support": 3.2709424900472914
+          "effective_support": 3.2709424900472914,
+          "normalized_residual": 5.085226841835582e-16
         }
-      ]
+      ],
+      "normal_center_derivatives": [
+        0.021092696020237705,
+        0.10148228050624694,
+        0.23815139846331815,
+        0.4085224664242893,
+        0.25115932185121387
+      ],
+      "maximum_amplitude_derivative": 1.6249064130477665e-17
     },
     "resolved_double_layer": {
       "sigma": 0.1,
@@ -51,7 +60,8 @@
             -1.0
           ],
           "eigen_gap": 0.9375000000000001,
-          "effective_support": 1.0248043091661039
+          "effective_support": 1.0248043091661039,
+          "normalized_residual": 1.5754593397061744e-15
         },
         {
           "z": 2.0,
@@ -70,7 +80,8 @@
             -1.0
           ],
           "eigen_gap": 0.9375,
-          "effective_support": 2.0
+          "effective_support": 2.0,
+          "normalized_residual": 0.0
         },
         {
           "z": 2.1463243738609687,
@@ -89,7 +100,8 @@
             -1.0
           ],
           "eigen_gap": 0.9375000000000001,
-          "effective_support": 1.0248043091661039
+          "effective_support": 1.0248043091661039,
+          "normalized_residual": 1.5754593397061744e-15
         }
       ]
     },
@@ -114,7 +126,8 @@
             -1.0
           ],
           "eigen_gap": 0.9375,
-          "effective_support": 2.0
+          "effective_support": 2.0,
+          "normalized_residual": 7.61295788314393e-16
         }
       ],
       "verdict": "stable root lies on neither input plane"
@@ -140,7 +153,8 @@
             -0.9999999999999999
           ],
           "eigen_gap": 0.9375,
-          "effective_support": 1.0002224023746247
+          "effective_support": 1.0002224023746247,
+          "normalized_residual": 4.096260367939901e-15
         }
       ],
       "separation_5sigma_roots": [
@@ -161,7 +175,8 @@
             -1.0
           ],
           "eigen_gap": 0.9374999999999999,
-          "effective_support": 1.0007523704925825
+          "effective_support": 1.0007523704925825,
+          "normalized_residual": 1.6583956430338278e-15
         },
         {
           "z": 1.8887608264499267,
@@ -180,7 +195,8 @@
             -1.0
           ],
           "eigen_gap": 0.9375,
-          "effective_support": 1.669467950813103
+          "effective_support": 1.669467950813103,
+          "normalized_residual": 5.752012622819859e-15
         },
         {
           "z": 2.2499999813667175,
@@ -199,7 +215,8 @@
             -1.0
           ],
           "eigen_gap": 0.9375,
-          "effective_support": 1.0000000745331328
+          "effective_support": 1.0000000745331328,
+          "normalized_residual": 5.086932799375465e-16
         }
       ],
       "verdict": "weak branch lost at 3sigma, present at 5sigma; 2sigma threshold only applies to symmetric case"
@@ -224,7 +241,8 @@
             -0.8000000000000002
           ],
           "eigen_gap": 0.9686610245449458,
-          "effective_support": 3.2709424900472928
+          "effective_support": 3.2709424900472928,
+          "normalized_residual": 5.08522684183558e-16
         }
       ],
       "verdict": "root has no absolute opacity confidence"
@@ -249,7 +267,8 @@
             -1.0
           ],
           "eigen_gap": 0.9822222222222222,
-          "effective_support": 1.0
+          "effective_support": 1.0,
+          "normalized_residual": 6.849025670245618e-20
         },
         {
           "z": 1.1592593206689723,
@@ -268,7 +287,8 @@
             -1.0
           ],
           "eigen_gap": 0.9452971894010358,
-          "effective_support": 1.4042978735698766
+          "effective_support": 1.4042978735698766,
+          "normalized_residual": 1.2731740607366684e-13
         },
         {
           "z": 2.0,
@@ -287,12 +307,59 @@
             -1.0
           ],
           "eigen_gap": 0.9375,
-          "effective_support": 1.0
+          "effective_support": 1.0,
+          "normalized_residual": 0.0
         }
       ],
       "verdict": "local geometry alone cannot select visible branch"
     },
     "isotropic_rejected": true,
+    "scale_tie_derivative_rejected": true,
+    "grazing_sign_flip_regression": {
+      "roots": [
+        {
+          "z": 1.8192027243248328,
+          "curvature": -90.6934988534716,
+          "Fz": -60.16010984207471,
+          "stable": true,
+          "log_density": 0.0798456949327713,
+          "guide_normal": [
+            0.8146620430557694,
+            0.0,
+            0.5799359926786746
+          ],
+          "surface_normal": [
+            -0.7499851090579556,
+            0.0,
+            -0.6614547121242138
+          ],
+          "eigen_gap": 0.8018976992043337,
+          "effective_support": 1.1704071905227444,
+          "normalized_residual": 1.1736643403180226e-15
+        },
+        {
+          "z": 2.1807972756751672,
+          "curvature": -90.6934988534716,
+          "Fz": -60.160109842074704,
+          "stable": true,
+          "log_density": 0.07984569493277155,
+          "guide_normal": [
+            -0.8146620430557694,
+            0.0,
+            0.5799359926786746
+          ],
+          "surface_normal": [
+            0.7499851090579557,
+            0.0,
+            -0.6614547121242138
+          ],
+          "eigen_gap": 0.8018976992043333,
+          "effective_support": 1.170407190522745,
+          "normalized_residual": 8.458842092382145e-17
+        }
+      ],
+      "spurious_midpoint_rejected": true
+    },
     "varying_normal": {
       "root": 1.983064328959116,
       "guide_surface_normal_angle_degrees": 24.558227103609237,
