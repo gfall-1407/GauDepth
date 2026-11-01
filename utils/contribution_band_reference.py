@@ -46,21 +46,14 @@ def band_depth_and_grad(alpha, depth, lower=0.25, upper=0.75):
     result = scale * sum(o * d for o, d in zip(overlaps, depth))
     depth_grad = [scale * o for o in overlaps]
 
-    # Write D as scale * sum_i H(P_i) * (d_i - d_{i+1}), where
-    # H(p)=clip(p-lower, 0, upper-lower). P_last=1 is constant.
-    # Thus g_k=dD/dw_k=(scale/A)*(sum_{i>=k} v_i - B),
-    # v_i=1_(lower<P_i<upper)*(d_i-d_{i+1}), B=sum_i v_i*P_i.
-    v = [
-        (depth[i] - depth[i + 1]) if lower < normalized_prefix[i] < upper else 0.0
-        for i in range(len(alpha) - 1)
-    ]
-    b = sum(x * p for x, p in zip(v, normalized_prefix))
-    weight_grad = [0.0] * len(alpha)
-    suffix = 0.0
-    for k in range(len(alpha) - 1, -1, -1):
-        if k < len(v):
-            suffix += v[k]
-        weight_grad[k] = scale * (suffix - b) / total
+    # First prefix strictly exceeding a boundary owns that boundary. At an
+    # exact prefix equality this specifies the right-side subgradient.
+    low = next(i for i, p in enumerate(normalized_prefix) if p > lower + 1e-12)
+    high = next(i for i, p in enumerate(normalized_prefix) if p > upper + 1e-12)
+    clipped = [depth[low] if i <= low else depth[high] if i >= high else depth[i]
+               for i in range(len(alpha))]
+    clipped_mean = lower * depth[low] + (upper - lower) * result + (1 - upper) * depth[high]
+    weight_grad = [scale * (d - clipped_mean) / total for d in clipped]
 
     # dw_i/dalpha_k = T_k for i=k, -w_i/(1-alpha_k) for i>k.
     alpha_grad = [0.0] * len(alpha)

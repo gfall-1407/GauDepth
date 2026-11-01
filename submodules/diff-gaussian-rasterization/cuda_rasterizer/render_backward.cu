@@ -688,6 +688,8 @@ __global__ void __launch_bounds__(BLOCK_X* BLOCK_Y)
         const float4* __restrict__ normals,
         const float* __restrict__ alphas,
         const float* __restrict__ accum_depth,
+        const float4* __restrict__ band_stats,
+        const bool band_depth,
         const float* __restrict__ normal_length,
         const uint32_t* __restrict__ n_contrib,
         const float* __restrict__ dL_dpixels,
@@ -747,6 +749,8 @@ __global__ void __launch_bounds__(BLOCK_X* BLOCK_Y)
     float dL_dpixel[C];
     float dL_dfinalT;
     [[maybe_unused]] float accum_t_rec = 0;
+    [[maybe_unused]] float band_tail = 0.f;
+    [[maybe_unused]] float4 band = {0.f, 0.f, 0.f, 0.f};
     [[maybe_unused]] float dL_dpixel_t;
     [[maybe_unused]] float dL_dpixel_mt;
     [[maybe_unused]] float accum_normal_rec[3] = {0};
@@ -765,9 +769,14 @@ __global__ void __launch_bounds__(BLOCK_X* BLOCK_Y)
         if constexpr (GEOMETRY) {
             float dL_dpixel_depth_w = dL_dpixel_depths[pix_id];
             float pixel_accum_depth = accum_depth[pix_id];
-            float inv_w             = 1 / w_final;
-            dL_dfinalT += dL_dpixel_depth_w * (pixel_accum_depth * inv_w) * inv_w;
-            dL_dpixel_t  = dL_dpixel_depth_w * inv_w * rln;
+            band = band_depth ? band_stats[pix_id] : band;
+            float inv_w = 1 / w_final;
+            if (!(band_depth && band.w > 0.f)) {
+                dL_dfinalT += dL_dpixel_depth_w * (pixel_accum_depth * inv_w) * inv_w;
+                dL_dpixel_t = dL_dpixel_depth_w * inv_w * rln;
+            } else {
+                dL_dpixel_t = 0.f;
+            }
             dL_dpixel_mt = dL_dpixel_mdepths[pix_id] * rln;
 
             glm::vec3 dL_dpixel_normaln = glm::vec3(dL_dpixel_normals[pix_id],
@@ -777,10 +786,10 @@ __global__ void __launch_bounds__(BLOCK_X* BLOCK_Y)
                                                     normalmap[H * W + pix_id],
                                                     normalmap[2 * H * W + pix_id]);
             float normal_len            = normal_length[pix_id];
-            const float small           = static_cast<float>(normal_len < NORMALIZE_EPS);
-            const float large           = 1.0f - small;
-            const float denom           = small * NORMALIZE_EPS + large * normal_len;
-            const glm::vec3 proj        = glm::dot(dL_dpixel_normaln, normaln) * normaln * large;
+            const float is_small        = static_cast<float>(normal_len < NORMALIZE_EPS);
+            const float is_large        = 1.0f - is_small;
+            const float denom           = is_small * NORMALIZE_EPS + is_large * normal_len;
+            const glm::vec3 proj        = glm::dot(dL_dpixel_normaln, normaln) * normaln * is_large;
             const glm::vec3 numerator   = dL_dpixel_normaln - proj;
 #pragma unroll
             for (int ch = 0; ch < 3; ch++)
@@ -888,8 +897,21 @@ __global__ void __launch_bounds__(BLOCK_X* BLOCK_Y)
                     float t     = ray_plane.x * d.x + ray_plane.y * d.y + ray_plane.z;
                     accum_t_rec = last_alpha * last_t + (1.f - last_alpha) * accum_t_rec;
                     last_t      = t;
-                    dL_dopa += (t - accum_t_rec) * dL_dpixel_t;
-                    dL_dt = blending_weight * dL_dpixel_t;
+                    if (band_depth && band.w > 0.f) {
+                        float pprev = (1.f - T) / w_final;
+                        float pi = (1.f - T * (1.f - alpha)) / w_final;
+                        float li = fmaxf(0.f, fminf(pi, .75f) - fmaxf(pprev, .25f));
+                        float di = t * rln;
+                        float clipped_di = pprev <= .250001f ? band.y : (pi > .750001f ? band.z : di);
+                        float gw = (2.f * clipped_di - .5f * (band.y + band.z) - band.x) / w_final;
+                        float band_grad = dL_dpixel_depths[pix_id];
+                        dL_dopa += band_grad * (gw - band_tail / (T * (1.f - alpha)));
+                        band_tail += blending_weight * gw;
+                        dL_dt = band_grad * 2.f * li * rln;
+                    } else {
+                        dL_dopa += (t - accum_t_rec) * dL_dpixel_t;
+                        dL_dt = blending_weight * dL_dpixel_t;
+                    }
                     dL_dt += contributor == max_contributor - 1 ? dL_dpixel_mt : 0.f;
                     dL_dray_planes_local.x = dL_dt * d.x;
                     dL_dray_planes_local.y = dL_dt * d.y;
@@ -1055,6 +1077,8 @@ void BACKWARD::render(
     const float4* normals,
     const float* alphas,
     const float* accum_depth,
+    const float4* band_stats,
+    bool band_depth,
     const float* normal_length,
     const uint32_t* n_contrib,
     const float* dL_dpixels,
@@ -1074,7 +1098,7 @@ void BACKWARD::render(
 #define RENDER_CUDA_CALL(template_depth)                                    \
     renderCUDA<NUM_CHANNELS, template_depth><<<grid, block>>>(              \
         ranges, point_list, W, H, bg_color, means2D, conic_opacity, colors, \
-        ray_planes, normals, alphas, accum_depth, normal_length,            \
+        ray_planes, normals, alphas, accum_depth, band_stats, band_depth, normal_length, \
         n_contrib, dL_dpixels, dL_dpixel_depth, dL_dpixel_mdepth,           \
         dL_dalphas, dL_dpixel_normals, normalmap,                           \
         focal_x, focal_y, dL_dmean2D, dL_dconic2D, dL_dcolors,              \

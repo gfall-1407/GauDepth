@@ -59,7 +59,10 @@ void sampleDepth(
     float* accum_depth,
     float* final_T,
     float3* output,
-    bool* inside);
+    bool* inside,
+    bool band_depth,
+    float4* band_stats,
+    int PN);
 } // namespace FORWARD
 
 #endif

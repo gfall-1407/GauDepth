@@ -208,6 +208,7 @@ CudaRasterizer::PointState CudaRasterizer::PointState::fromChunk(char*& chunk, s
     obtain(chunk, geom.n_contrib, P, 128);
     obtain(chunk, geom.accum_depth, P, 128);
     obtain(chunk, geom.final_T, P, 128);
+    obtain(chunk, geom.band_stats, P, 128);
     cub::DeviceScan::InclusiveSum(nullptr, geom.scan_size, geom.tiles_touched, geom.tiles_touched, P);
     obtain(chunk, geom.scanning_space, geom.scan_size, 128);
     obtain(chunk, geom.point_offsets, P, 128);
@@ -227,6 +228,7 @@ CudaRasterizer::ImageState CudaRasterizer::ImageState::fromChunk(char*& chunk, s
     obtain(chunk, img.n_contrib, N * 2, 128);
     obtain(chunk, img.ranges, N, 128);
     obtain(chunk, img.accum_depth, N, 128);
+    obtain(chunk, img.band_stats, N, 128);
     obtain(chunk, img.normal_length, N, 128);
     return img;
 }
@@ -276,6 +278,7 @@ int CudaRasterizer::Rasterizer::forward(
     float* out_normal,
     int* radii,
     bool require_depth,
+    bool band_depth,
     bool debug) {
     const float focal_y = height / (2.0f * tan_fovy);
     const float focal_x = width / (2.0f * tan_fovx);
@@ -398,7 +401,9 @@ int CudaRasterizer::Rasterizer::forward(
                    out_mdepth,
                    imgState.accum_depth,
                    imgState.normal_length,
-                   require_depth),
+                   require_depth,
+                   band_depth,
+                   imgState.band_stats),
                debug);
     return num_rendered;
 }
@@ -444,6 +449,7 @@ void CudaRasterizer::Rasterizer::backward(
     float* dL_dscale,
     float* dL_drot,
     bool require_depth,
+    bool band_depth,
     bool debug) {
     GeometryState geomState   = GeometryState::fromChunk(geom_buffer, P);
     BinningState binningState = BinningState::fromChunk(binning_buffer, R);
@@ -481,6 +487,8 @@ void CudaRasterizer::Rasterizer::backward(
                    geomState.normals,
                    alphas,
                    imgState.accum_depth,
+                   imgState.band_stats,
+                   band_depth,
                    imgState.normal_length,
                    imgState.n_contrib,
                    dL_dpix,
@@ -789,6 +797,7 @@ int2 CudaRasterizer::Rasterizer::sampleDepth(
     const bool prefiltered,
     float* output,
     bool* inside,
+    bool band_depth,
     bool debug) {
     const float focal_y = height / (2.0f * tan_fovy);
     const float focal_x = width / (2.0f * tan_fovx);
@@ -968,7 +977,10 @@ int2 CudaRasterizer::Rasterizer::sampleDepth(
                    pointState.accum_depth,
                    pointState.final_T,
                    (float3*)output,
-                   inside),
+                   inside,
+                   band_depth,
+                   pointState.band_stats,
+                   PN),
                debug)
 
     return {num_rendered, num_evaluation};
@@ -1005,6 +1017,7 @@ void CudaRasterizer::Rasterizer::sample_depth_backward(
     float* dL_dscale,
     float* dL_drot,
     float* dL_dpoint,
+    bool band_depth,
     bool debug) {
     GeometryState geomState         = GeometryState::fromChunk(geom_buffer, P);
     BinningState binningState       = BinningState::fromChunk(binning_buffer, R);
@@ -1043,6 +1056,8 @@ void CudaRasterizer::Rasterizer::sample_depth_backward(
                    pointState.n_contrib,
                    pointState.accum_depth,
                    pointState.final_T,
+                   pointState.band_stats,
+                   band_depth,
                    (float3*)dL_doutput,
                    (float3*)dL_dmean2D,
                    geomBwdState.conic_opacity,

@@ -369,6 +369,53 @@ void FORWARD::integrate(
         inside);
 }
 
+__global__ void sampleBandDepthCUDA(
+    int PN, int W, int H, float focal_x, float focal_y,
+    const uint2* ranges, const uint32_t* gaussian_list,
+    const float2* points2D, const float2* gaussians2D,
+    const float4* conic_opacity, const float4* ray_planes,
+    const uint32_t* n_contrib, const float* final_T,
+    const bool* inside, float3* output, float4* band_stats) {
+    int pid = blockIdx.x * blockDim.x + threadIdx.x;
+    if (pid >= PN) return;
+    band_stats[pid] = make_float4(0.f, 0.f, 0.f, 0.f);
+    if (!inside[pid] || n_contrib[pid] == 0) return;
+    float2 xy = points2D[pid];
+    int tx = int(xy.x) / BLOCK_X, ty = int(xy.y) / BLOCK_Y;
+    if (tx < 0 || ty < 0 || tx >= (W + BLOCK_X - 1) / BLOCK_X || ty >= (H + BLOCK_Y - 1) / BLOCK_Y) return;
+    uint2 range = ranges[ty * ((W + BLOCK_X - 1) / BLOCK_X) + tx];
+    float A = 1.f - final_T[pid];
+    if (!(A > 1e-7f) || !isfinite(A)) return;
+    float2 pixnf = {(xy.x - float(W - 1) / 2.f) / focal_x,
+                    (xy.y - float(H - 1) / 2.f) / focal_y};
+    float rln = rnorm3df(pixnf.x, pixnf.y, 1.f);
+    float T = 1.f, sum = 0.f, low = 0.f, high = 0.f;
+    bool has_low = false, has_high = false;
+    for (uint32_t entry = range.x; entry < range.y && entry - range.x < n_contrib[pid]; ++entry) {
+        int id = gaussian_list[entry];
+        float2 delta = {gaussians2D[id].x - xy.x, gaussians2D[id].y - xy.y};
+        float4 con_o = conic_opacity[id];
+        float power = -0.5f * (con_o.x * delta.x * delta.x + con_o.z * delta.y * delta.y)
+                      - con_o.y * delta.x * delta.y;
+        if (power > 0.f) continue;
+        float alpha = fminf(.99f, con_o.w * expf(power));
+        if (alpha < 1.f / 255.f) continue;
+        float before = (1.f - T) / A;
+        float weight = T * alpha;
+        float after = (1.f - T + weight) / A;
+        float4 plane = ray_planes[id];
+        float di = (plane.x * delta.x + plane.y * delta.y + plane.z) * rln;
+        float li = fmaxf(0.f, fminf(after, .75f) - fmaxf(before, .25f));
+        sum += 2.f * li * di;
+        if (!has_low && before <= .250001f && after > .250001f) { low = di; has_low = true; }
+        if (!has_high && before <= .750001f && after > .750001f) { high = di; has_high = true; }
+        T *= 1.f - alpha;
+    }
+    if (!has_low || !has_high || !isfinite(sum)) return;
+    band_stats[pid] = make_float4(sum, low, high, 1.f);
+    output[pid] = {pixnf.x * sum, pixnf.y * sum, sum};
+}
+
 void FORWARD::sampleDepth(
     const dim3 grid, dim3 block,
     const uint2* gaussian_ranges,
@@ -385,7 +432,10 @@ void FORWARD::sampleDepth(
     float* accum_depth,
     float* final_T,
     float3* output,
-    bool* inside) {
+    bool* inside,
+    bool band_depth,
+    float4* band_stats,
+    int PN) {
     sampleDepthCUDA<SAMPLE_BATCH_SIZE><<<grid, block>>>(
         gaussian_ranges,
         point_ranges,
@@ -402,4 +452,9 @@ void FORWARD::sampleDepth(
         final_T,
         output,
         inside);
+    if (band_depth)
+        sampleBandDepthCUDA<<<(PN + 255) / 256, 256>>>(
+            PN, W, H, focal_x, focal_y, gaussian_ranges, gaussian_list,
+            points2D, gaussians2D, conic_opacity, ray_planes, n_contrib,
+            final_T, inside, output, band_stats);
 }

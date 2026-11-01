@@ -81,6 +81,7 @@ class _RasterizeGaussians(torch.autograd.Function):
             raster_settings.campos,
             raster_settings.prefiltered,
             raster_settings.require_depth,
+            raster_settings.band_depth,
             raster_settings.debug,
         )
 
@@ -144,6 +145,7 @@ class _RasterizeGaussians(torch.autograd.Function):
             imgBuffer,
             alpha,
             raster_settings.require_depth,
+            raster_settings.band_depth,
             raster_settings.debug,
         )
 
@@ -193,6 +195,7 @@ class GaussianRasterizationSettings(NamedTuple):
     prefiltered: bool
     require_depth: bool
     debug: bool
+    band_depth: bool = False
 
 
 class GaussianRasterizer(nn.Module):
@@ -374,6 +377,7 @@ class _SampleDepth(torch.autograd.Function):
             raster_settings.image_width,
             raster_settings.campos,
             raster_settings.prefiltered,
+            raster_settings.band_depth,
             raster_settings.debug,
         )
 
@@ -437,6 +441,7 @@ class _SampleDepth(torch.autograd.Function):
             num_rendered,
             num_points,
             raster_settings.prefiltered,
+            raster_settings.band_depth,
             raster_settings.debug,
         )
 

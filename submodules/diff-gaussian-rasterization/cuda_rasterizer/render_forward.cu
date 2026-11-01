@@ -554,6 +554,57 @@ __global__ void __launch_bounds__(BLOCK_X* BLOCK_Y)
 }
 
 // the Bool inputs can be replaced by an enumeration variable for different functions.
+// Fixed accepted-order central half of normalized contribution. This extra
+// pass replays exactly the hard accepted prefix used by the ordinary renderer.
+// The rasterizer's existing RGB, alpha, median and normal outputs are intact.
+__global__ void bandDepthCUDA(
+    const uint2* ranges, const uint32_t* point_list,
+    int W, int H, const float2* means2D, const float4* conic_opacity,
+    const float4* ray_planes, float focal_x, float focal_y,
+    const uint32_t* n_contrib, const float* out_alpha,
+    float* out_depth, float4* band_stats) {
+    int pix_id = blockIdx.x * blockDim.x + threadIdx.x;
+    if (pix_id >= W * H)
+        return;
+    int x = pix_id % W, y = pix_id / W;
+    int tile_x = x / BLOCK_X, tile_y = y / BLOCK_Y;
+    uint2 range = ranges[tile_y * ((W + BLOCK_X - 1) / BLOCK_X) + tile_x];
+    uint32_t last = n_contrib[pix_id];
+    float A = out_alpha[pix_id];
+    band_stats[pix_id] = make_float4(0.f, 0.f, 0.f, 0.f);
+    if (last == 0 || !(A > 1e-7f) || !isfinite(A))
+        return; // original expected-depth fallback
+
+    float T = 1.f, sum = 0.f, low = 0.f, high = 0.f;
+    bool has_low = false, has_high = false;
+    float rln = rnorm3df((x - float(W - 1) / 2.f) / focal_x,
+                         (y - float(H - 1) / 2.f) / focal_y, 1.f);
+    for (uint32_t entry = range.x; entry < range.y && entry - range.x < last; ++entry) {
+        int id = point_list[entry];
+        float2 delta = {means2D[id].x - float(x), means2D[id].y - float(y)};
+        float4 con_o = conic_opacity[id];
+        float power = -0.5f * (con_o.x * delta.x * delta.x + con_o.z * delta.y * delta.y)
+                      - con_o.y * delta.x * delta.y;
+        if (power > 0.f) continue;
+        float alpha = fminf(.99f, con_o.w * expf(power));
+        if (alpha < 1.f / 255.f) continue;
+        float before = (1.f - T) / A;
+        float weight = T * alpha;
+        float after = (1.f - T + weight) / A;
+        float4 plane = ray_planes[id];
+        float di = (plane.x * delta.x + plane.y * delta.y + plane.z) * rln;
+        float li = fmaxf(0.f, fminf(after, .75f) - fmaxf(before, .25f));
+        sum += 2.f * li * di;
+        if (!has_low && before <= .250001f && after > .250001f) { low = di; has_low = true; }
+        if (!has_high && before <= .750001f && after > .750001f) { high = di; has_high = true; }
+        T *= 1.f - alpha;
+    }
+    if (!has_low || !has_high || !isfinite(sum))
+        return;
+    band_stats[pix_id] = make_float4(sum, low, high, 1.f);
+    out_depth[pix_id] = sum;
+}
+
 void FORWARD::render(
     const dim3 grid, dim3 block,
     const uint2* ranges,
@@ -575,7 +626,9 @@ void FORWARD::render(
     float* out_mdepth,
     float* accum_depth,
     float* normal_length,
-    bool require_depth) {
+    bool require_depth,
+    bool band_depth,
+    float4* band_stats) {
 #define RENDER_CUDA_CALL(template_depth)                             \
     renderCUDA<NUM_CHANNELS, template_depth><<<grid, block>>>(       \
         ranges, point_list, W, H,                                    \
@@ -587,6 +640,11 @@ void FORWARD::render(
         RENDER_CUDA_CALL(true);
     else
         RENDER_CUDA_CALL(false);
+
+    if (require_depth && band_depth)
+        bandDepthCUDA<<<(W * H + 255) / 256, 256>>>(
+            ranges, point_list, W, H, means2D, conic_opacity, ray_planes,
+            focal_x, focal_y, n_contrib, out_alpha, out_depth, band_stats);
 
 #undef RENDER_CUDA_CALL
 }

@@ -144,7 +144,7 @@ class PatchMatch:
             )
             nearest_to_view_R = nearest_cam.R.transpose(1, 0) @ viewpoint_cam.world_view_transform[:3, :3]
 
-        depth_reshape = render_pkg["expected_depth"].squeeze().unsqueeze(-1)
+        depth_reshape = render_pkg["selected_depth"].squeeze().unsqueeze(-1)
         pts = torch.cat([depth_reshape * ix[None, :, None], depth_reshape * iy[:, None, None], depth_reshape], dim=-1)
         R = viewpoint_cam.R
         T = viewpoint_cam.T
@@ -219,7 +219,7 @@ class PatchMatch:
             ref_to_neareast_r = nearest_cam.world_view_transform[:3, :3].transpose(-1, -2) @ viewpoint_cam.world_view_transform[:3, :3]
             ref_to_neareast_t = -ref_to_neareast_r @ viewpoint_cam.world_view_transform[3, :3] + nearest_cam.world_view_transform[3, :3]
 
-        depth_select = torch.index_select(render_pkg["expected_depth"].view(-1), dim=0, index=valid_indices)
+        depth_select = torch.index_select(render_pkg["selected_depth"].view(-1), dim=0, index=valid_indices)
         normal_select = torch.index_select(render_pkg["normal"].view(3, -1), dim=1, index=valid_indices).transpose(1, 0)
 
         cc, valid_mask = warp_patch_ncc.warp_patch_ncc(

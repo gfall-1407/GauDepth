@@ -68,6 +68,18 @@ class ContributionBandReferenceTest(unittest.TestCase):
         self.assertGreater(value, 1)
         self.assertLess(value, 2)
 
+    def test_exact_boundary_right_side_subgradient(self):
+        alpha = [.2, .5, .5]
+        depth = [1., 3., 6.]
+        value, _, grad_alpha = band_depth_and_grad(alpha, depth)
+        self.assertAlmostEqual(value, 3)
+        self.assertAlmostEqual(grad_alpha[2], 2.25)
+        step = 1e-6
+        right = alpha.copy()
+        right[2] += step
+        numerical_right = (band_depth_and_grad(right, depth)[0] - value) / step
+        self.assertAlmostEqual(numerical_right, 2.25, delta=1e-4)
+
     def test_invalid_total(self):
         with self.assertRaises(ValueError):
             band_depth_and_grad([0, 0], [1, 2])

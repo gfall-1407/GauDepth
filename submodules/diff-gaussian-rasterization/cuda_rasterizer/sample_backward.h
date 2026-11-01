@@ -37,6 +37,8 @@ void sampleDepth(
     const uint32_t* n_contrib,
     const float* accum_depth,
     const float* final_T,
+    const float4* band_stats,
+    bool band_depth,
     const float3* dL_doutput,
     float3* dL_dgaussians2D,
     float4* dL_dconic2D,

@@ -58,6 +58,7 @@ RasterizeGaussiansCUDA(
     const torch::Tensor& campos,
     const bool prefiltered,
     const bool require_depth,
+    const bool band_depth,
     const bool debug) {
     if (means3D.ndimension() != 2 || means3D.size(1) != 3) {
         AT_ERROR("means3D must have dimensions (num_points, 3)");
@@ -122,6 +123,7 @@ RasterizeGaussiansCUDA(
             out_normal.contiguous().data_ptr<float>(),
             radii.contiguous().data_ptr<int>(),
             require_depth,
+            band_depth,
             debug);
     }
     return std::make_tuple(rendered, out_color, out_alpha, out_normal, out_depth, out_mdepth, radii, geomBuffer, binningBuffer, imgBuffer);
@@ -158,6 +160,7 @@ RasterizeGaussiansBackwardCUDA(
     const torch::Tensor& imageBuffer,
     const torch::Tensor& alphas,
     const bool require_depth,
+    const bool band_depth,
     const bool debug) {
     const int P = means3D.size(0);
     const int H = dL_dout_color.size(1);
@@ -222,6 +225,7 @@ RasterizeGaussiansBackwardCUDA(
             dL_dscales.contiguous().data_ptr<float>(),
             dL_drotations.contiguous().data_ptr<float>(),
             require_depth,
+            band_depth,
             debug);
     }
 
@@ -369,6 +373,7 @@ SampleRasterizedDepthCUDA(
     const int image_width,
     const torch::Tensor& campos,
     const bool prefiltered,
+    const bool band_depth,
     const bool debug) {
     if (means3D.ndimension() != 2 || means3D.size(1) != 3) {
         AT_ERROR("means3D must have dimensions (num_points, 3)");
@@ -431,6 +436,7 @@ SampleRasterizedDepthCUDA(
             prefiltered,
             output.contiguous().data_ptr<float>(),
             inside.contiguous().data_ptr<bool>(),
+            band_depth,
             debug);
         rendered     = n.x;
         valid_points = n.y;
@@ -463,6 +469,7 @@ SampleRasterizedDepthBackwardCUDA(
     const torch::Tensor& tileBuffer,
     int R, int RN,
     const bool prefiltered,
+    const bool band_depth,
     const bool debug) {
     const int PN = points3D.numel() / 3;
     const int P  = means3D.size(0);
@@ -513,6 +520,7 @@ SampleRasterizedDepthBackwardCUDA(
             dL_dscales.contiguous().data_ptr<float>(),
             dL_drotations.contiguous().data_ptr<float>(),
             dL_dpoint3D.contiguous().data_ptr<float>(),
+            band_depth,
             debug);
     }
     return std::make_tuple(dL_dopacity, dL_dmeans3D, dL_dcov3D, dL_dscales, dL_drotations, dL_dpoint3D);

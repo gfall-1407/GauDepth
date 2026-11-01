@@ -90,6 +90,8 @@ __global__ void __launch_bounds__(BLOCK_X* BLOCK_Y)
         const uint32_t* __restrict__ n_contrib,
         const float* __restrict__ accum_depth,
         const float* __restrict__ final_T,
+        const float4* __restrict__ band_stats,
+        const bool band_depth,
         const float3* __restrict__ dL_doutputs,
         float3* __restrict__ dL_dgaussians2D,
         float4* __restrict__ dL_dconic2D,
@@ -129,6 +131,9 @@ __global__ void __launch_bounds__(BLOCK_X* BLOCK_Y)
         float last_alpha[SAMPLES_PRE_ROUND]          = {0};
         float last_t[SAMPLES_PRE_ROUND]              = {0};
         float accum_t_rec[SAMPLES_PRE_ROUND]         = {0};
+        float band_tail[SAMPLES_PRE_ROUND] = {0};
+        float band_upstream[SAMPLES_PRE_ROUND] = {0};
+        float4 band[SAMPLES_PRE_ROUND];
 
         int toDo             = range.y - range.x;
         uint32_t contributor = toDo;
@@ -148,17 +153,19 @@ __global__ void __launch_bounds__(BLOCK_X* BLOCK_Y)
                 point_xy[p]         = points2D[pid];
                 T_final[p]          = final_T[pid];
                 T[p]                = T_final[p];
+                band[p] = band_depth ? band_stats[pid] : make_float4(0.f, 0.f, 0.f, 0.f);
 
                 float2 pixnf      = {(point_xy[p].x - static_cast<float>(W - 1) / 2.f) / focal_x,
                                      (point_xy[p].y - static_cast<float>(H - 1) / 2.f) / focal_y};
                 const float rln   = rnorm3df(pixnf.x, pixnf.y, 1.f);
                 const float rln2  = 1.f / (pixnf.x * pixnf.x + pixnf.y * pixnf.y + 1.f);
-                const float depth = final_depth * rln / fmaxf(1.f - T_final[p], 1e-7f);
+                const float depth = band[p].w > 0.f ? band[p].x : final_depth * rln / fmaxf(1.f - T_final[p], 1e-7f);
                 // output[point_idx[p]]        = {pixnf.x * depth, pixnf.y * depth, depth};
 
                 float dL_ddepth            = dL_doutput.x * pixnf.x + dL_doutput.y * pixnf.y + dL_doutput.z;
-                dL_dfinalT_times_finalT[p] = final_depth * rln / fmaxf((1.f - T_final[p]) * (1.f - T_final[p]), 1e-7f) * dL_ddepth * T_final[p];
-                dL_dDepth[p]               = rln / fmaxf(1.f - T_final[p], 1e-7f) * dL_ddepth;
+                band_upstream[p] = dL_ddepth;
+                dL_dfinalT_times_finalT[p] = band[p].w > 0.f ? 0.f : final_depth * rln / fmaxf((1.f - T_final[p]) * (1.f - T_final[p]), 1e-7f) * dL_ddepth * T_final[p];
+                dL_dDepth[p] = band[p].w > 0.f ? 0.f : rln / fmaxf(1.f - T_final[p], 1e-7f) * dL_ddepth;
                 float aux                  = (dL_doutput.x * pixnf.x + dL_doutput.y * pixnf.y + dL_doutput.z) * rln2;
                 float2 dL_dpixnf           = {(dL_doutput.x - aux * pixnf.x) * depth,
                                               (dL_doutput.y - aux * pixnf.y) * depth};
@@ -227,10 +234,24 @@ __global__ void __launch_bounds__(BLOCK_X* BLOCK_Y)
                         accum_t_rec[p] = last_alpha[p] * last_t[p] + (1.f - last_alpha[p]) * accum_t_rec[p];
                         last_t[p]      = t;
                         last_alpha[p]  = alpha;
-                        float dL_dopa  = (t - accum_t_rec[p]) * dL_dDepth[p];
-                        dL_dopa *= T[p];
+                        float dL_dopa = (t - accum_t_rec[p]) * dL_dDepth[p] * T[p];
                         dL_dopa += -dL_dfinalT_times_finalT[p] / (1.f - alpha);
-                        const float dL_dt = blending_weight * dL_dDepth[p];
+                        float dL_dt = blending_weight * dL_dDepth[p];
+                        if (band[p].w > 0.f) {
+                            float A = 1.f - T_final[p];
+                            float pprev = (1.f - T[p]) / A;
+                            float pi = (1.f - T[p] * (1.f - alpha)) / A;
+                            float li = fmaxf(0.f, fminf(pi, .75f) - fmaxf(pprev, .25f));
+                            float2 pixnf = {(point_xy[p].x - float(W - 1) / 2.f) / focal_x,
+                                             (point_xy[p].y - float(H - 1) / 2.f) / focal_y};
+                            float rln = rnorm3df(pixnf.x, pixnf.y, 1.f);
+                            float di = t * rln;
+                            float clipped_di = pprev <= .250001f ? band[p].y : (pi > .750001f ? band[p].z : di);
+                            float gw = (2.f * clipped_di - .5f * (band[p].y + band[p].z) - band[p].x) / A;
+                            dL_dopa += band_upstream[p] * (T[p] * gw - band_tail[p] / (1.f - alpha));
+                            band_tail[p] += blending_weight * gw;
+                            dL_dt = band_upstream[p] * 2.f * li * rln;
+                        }
                         dL_dt_local += dL_dt;
                         dL_dray_planes_local.x += dL_dt * d.x;
                         dL_dray_planes_local.y += dL_dt * d.y;
@@ -326,6 +347,8 @@ void BACKWARD::sampleDepth(
     const uint32_t* n_contrib,
     const float* accum_depth,
     const float* final_T,
+    const float4* band_stats,
+    bool band_depth,
     const float3* dL_doutput,
     float3* dL_dgaussians2D,
     float4* dL_dconic2D,
@@ -345,6 +368,8 @@ void BACKWARD::sampleDepth(
         n_contrib,
         accum_depth,
         final_T,
+        band_stats,
+        band_depth,
         dL_doutput,
         dL_dgaussians2D,
         dL_dconic2D,

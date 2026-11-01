@@ -74,11 +74,12 @@ class ModelParams(ParamGroup):
         return g
 
 class PipelineParams(ParamGroup):
-    def __init__(self, parser):
+    def __init__(self, parser, sentinel=False):
         self.convert_SHs_python = False
         self.compute_cov3D_python = False
         self.debug = False
-        super().__init__(parser, "Pipeline Parameters")
+        self.depth_estimator = "baseline"  # baseline or contribution_band
+        super().__init__(parser, "Pipeline Parameters", sentinel)
 
 class OptimizationParams(ParamGroup):
     def __init__(self, parser):

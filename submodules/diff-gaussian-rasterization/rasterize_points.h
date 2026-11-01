@@ -37,6 +37,7 @@ RasterizeGaussiansCUDA(
     const torch::Tensor& campos,
     const bool prefiltered,
     const bool require_depth,
+    const bool band_depth,
     const bool debug);
 
 std::tuple<torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor>
@@ -70,6 +71,7 @@ RasterizeGaussiansBackwardCUDA(
     const torch::Tensor& imageBuffer,
     const torch::Tensor& alpha,
     const bool require_depth,
+    const bool band_depth,
     const bool debug);
 
 torch::Tensor markVisible(
@@ -121,6 +123,7 @@ SampleRasterizedDepthCUDA(
     const int image_width,
     const torch::Tensor& campos,
     const bool prefiltered,
+    const bool band_depth,
     const bool debug);
 
 std::tuple<torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor>
@@ -148,4 +151,5 @@ SampleRasterizedDepthBackwardCUDA(
     const torch::Tensor& imageBuffer,
     int R, int RN,
     const bool prefiltered,
+    const bool band_depth,
     const bool debug);

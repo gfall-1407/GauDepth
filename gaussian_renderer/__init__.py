@@ -32,6 +32,9 @@ def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, 
     except:
         pass
 
+    depth_estimator = getattr(pipe, "depth_estimator", None) or "baseline"
+    if depth_estimator not in ("baseline", "contribution_band"):
+        raise ValueError(f"Unknown depth_estimator: {depth_estimator}")
     raster_settings = GaussianRasterizationSettings(
         image_height=int(viewpoint_camera.image_height),
         image_width=int(viewpoint_camera.image_width),
@@ -46,7 +49,8 @@ def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, 
         campos=viewpoint_camera.camera_center,
         prefiltered=False,
         require_depth = require_depth,
-        debug=pipe.debug
+        debug=pipe.debug,
+        band_depth=depth_estimator == "contribution_band",
     )
 
     rasterizer = GaussianRasterizer(raster_settings=raster_settings)
@@ -84,6 +88,7 @@ def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, 
     return {"render": rendered_image,
             "mask": rendered_alpha,
             "expected_depth": rendered_expected_depth,
+            "selected_depth": rendered_expected_depth,
             "median_depth": rendered_median_depth,
             "viewspace_points": means2D,
             "visibility_filter" : radii > 0,
@@ -190,6 +195,9 @@ def sample_depth(points3D, viewpoint_camera, pc : GaussianModel, pipe : torch.Te
     tanfovy = math.tan(viewpoint_camera.FoVy * 0.5)
 
         
+    depth_estimator = getattr(pipe, "depth_estimator", None) or "baseline"
+    if depth_estimator not in ("baseline", "contribution_band"):
+        raise ValueError(f"Unknown depth_estimator: {depth_estimator}")
     raster_settings = GaussianRasterizationSettings(
         image_height=int(viewpoint_camera.image_height),
         image_width=int(viewpoint_camera.image_width),
@@ -205,6 +213,7 @@ def sample_depth(points3D, viewpoint_camera, pc : GaussianModel, pipe : torch.Te
         prefiltered=False,
         debug=pipe.debug,
         require_depth = True,
+        band_depth=depth_estimator == "contribution_band",
     )
 
     rasterizer = GaussianRasterizer(raster_settings=raster_settings)

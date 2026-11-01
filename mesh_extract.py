@@ -41,7 +41,9 @@ def extract_mesh(dataset, pipe, iteration, num_cluster=1):
     gaussians = GaussianModel(dataset.sh_degree)
     scene = Scene(dataset, gaussians, load_iteration=iteration, shuffle=False)
     kernel_size = dataset.kernel_size
-    depth_name = "expected_depth" if dataset.depth_ratio < 0.5 else "median_depth"
+    depth_estimator = getattr(pipe, "depth_estimator", None) or "baseline"
+    depth_name = "selected_depth" if depth_estimator == "contribution_band" else ("expected_depth" if dataset.depth_ratio < 0.5 else "median_depth")
+    print(f"Mesh depth estimator: {depth_estimator}; tensor: {depth_name}")
 
     bg_color = [1, 1, 1]
     background = torch.tensor(bg_color, dtype=torch.float32, device="cuda")
@@ -93,7 +95,7 @@ def extract_mesh(dataset, pipe, iteration, num_cluster=1):
 if __name__ == "__main__":
     parser = ArgumentParser(description="Testing script parameters")
     model = ModelParams(parser, sentinel=True)
-    pipeline = PipelineParams(parser)
+    pipeline = PipelineParams(parser, sentinel=True)
     parser.add_argument("--iteration", default=-1, type=int)
     parser.add_argument("--num_cluster", default=1, type=int)
     parser.add_argument("--quiet", action="store_true")
