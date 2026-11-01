@@ -120,7 +120,7 @@ def L1_loss_appearance(image, gt_image, gaussians, view_idx):
 
 
 class PatchMatch:
-    def __init__(self, patch_size, pixel_noise_th, kernel_size, pipe, debug=True, model_path=None):
+    def __init__(self, patch_size, pixel_noise_th, kernel_size, pipe, debug=True, model_path=None, depth_source="expected"):
         self.patch_size = patch_size
         self.total_patch_size = (patch_size * 2 + 1) ** 2
         self.pixel_noise_th = pixel_noise_th
@@ -128,6 +128,7 @@ class PatchMatch:
         self.pipe = pipe
         self.debug = debug
         self.model_path = model_path
+        self.depth_source = depth_source
         if debug:
             os.makedirs(os.path.join(model_path, "debug"), exist_ok=True)
 
@@ -144,7 +145,8 @@ class PatchMatch:
             )
             nearest_to_view_R = nearest_cam.R.transpose(1, 0) @ viewpoint_cam.world_view_transform[:3, :3]
 
-        depth_reshape = render_pkg["expected_depth"].squeeze().unsqueeze(-1)
+        depth_name = "median_depth" if self.depth_source == "median_full" else "expected_depth"
+        depth_reshape = render_pkg[depth_name].squeeze().unsqueeze(-1)
         pts = torch.cat([depth_reshape * ix[None, :, None], depth_reshape * iy[:, None, None], depth_reshape], dim=-1)
         R = viewpoint_cam.R
         T = viewpoint_cam.T
@@ -155,6 +157,7 @@ class PatchMatch:
             gaussians,
             self.pipe,
             self.kernel_size,
+            depth_source=self.depth_source,
         )
 
         pts_in_nearest_cam = sampled_pkg["sampled_depth"]
@@ -198,7 +201,7 @@ class PatchMatch:
                 depth_normal_show = (((depth_normal + 1.0) * 0.5).permute(1, 2, 0).clamp(0, 1) * 255).detach().cpu().numpy().astype(np.uint8)
             d_mask_show = (weights.float() * 255).detach().cpu().numpy().astype(np.uint8)
             d_mask_show_color = cv2.applyColorMap(d_mask_show, cv2.COLORMAP_JET)
-            depth = render_pkg["expected_depth"].squeeze().detach().cpu().numpy()
+            depth = render_pkg[depth_name].squeeze().detach().cpu().numpy()
             depth_i = (depth - depth.min()) / (depth.max() - depth.min() + 1e-20)
             depth_i = (depth_i * 255).clip(0, 255).astype(np.uint8)
             depth_color = cv2.applyColorMap(depth_i, cv2.COLORMAP_JET)
@@ -219,7 +222,7 @@ class PatchMatch:
             ref_to_neareast_r = nearest_cam.world_view_transform[:3, :3].transpose(-1, -2) @ viewpoint_cam.world_view_transform[:3, :3]
             ref_to_neareast_t = -ref_to_neareast_r @ viewpoint_cam.world_view_transform[3, :3] + nearest_cam.world_view_transform[3, :3]
 
-        depth_select = torch.index_select(render_pkg["expected_depth"].view(-1), dim=0, index=valid_indices)
+        depth_select = torch.index_select(render_pkg[depth_name].view(-1), dim=0, index=valid_indices)
         normal_select = torch.index_select(render_pkg["normal"].view(3, -1), dim=1, index=valid_indices).transpose(1, 0)
 
         cc, valid_mask = warp_patch_ncc.warp_patch_ncc(

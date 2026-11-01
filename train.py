@@ -61,6 +61,7 @@ def training(
     debug_from,
     depth_route='baseline',
     depth_target='expected',
+    ab_depth_source='expected',
     ab_run_id=None,
     ab_seed=0,
     ab_log_interval=100,
@@ -112,7 +113,7 @@ def training(
                           checkpoint_sha256=file_digest(checkpoint) if checkpoint else None,
                           optimizer_state='fresh_from_ply' if warm_start_ply else 'restored_checkpoint',
                           depth_route=depth_route, depth_target=depth_target,
-                          depth_ratio=dataset.depth_ratio,
+                          depth_ratio=dataset.depth_ratio, ab_depth_source=ab_depth_source,
                           regularization_from_iter=opt.regularization_from_iter,
                           lambda_depth_normal=opt.lambda_depth_normal,
                           lambda_multi_view_ncc=opt.lambda_multi_view_ncc,
@@ -126,6 +127,7 @@ def training(
             pipe=pipe,
             debug=True,
             model_path=dataset.model_path,
+            depth_source=ab_depth_source,
         )
 
     viewpoint_stack = None
@@ -208,7 +210,11 @@ def training(
             rendered_expected_depth: torch.Tensor = render_pkg["expected_depth"]
             rendered_median_depth: torch.Tensor = render_pkg["median_depth"]
             rendered_normal: torch.Tensor = render_pkg["normal"]
-            if 0.0 < dataset.depth_ratio < 1.0:
+            if ab_depth_source == 'median_full':
+                depth_normal = depth_to_normal(viewpoint_cam, rendered_median_depth)
+                normal_error_map = 1 - torch.linalg.vecdot(rendered_normal, depth_normal, dim=0)
+                depth_normal_loss = normal_error_map.mean()
+            elif 0.0 < dataset.depth_ratio < 1.0:
                 depth_normal = depth_double_to_normal(viewpoint_cam, rendered_expected_depth, rendered_median_depth)
                 normal_error_map = 1 - torch.linalg.vecdot(rendered_normal.unsqueeze(0), depth_normal, dim=1)
                 depth_normal_loss = (1 - dataset.depth_ratio) * normal_error_map[0].mean() + dataset.depth_ratio * normal_error_map[1].mean()
@@ -455,6 +461,8 @@ if __name__ == "__main__":
     parser.add_argument('--warm_start_ply', type=str, default=None)
     parser.add_argument('--warm_start_iteration', type=int, default=None)
     args = parser.parse_args(sys.argv[1:])
+    if args.ab_depth_source not in ('expected', 'median_full'):
+        parser.error('ab_depth_source must be expected or median_full')
     if args.depth_route == 'candidate':
         parser.error('candidate readout is not implemented; baseline and identity only')
     if args.warm_start_ply and args.start_checkpoint:
@@ -488,6 +496,7 @@ if __name__ == "__main__":
         debug_from=args.debug_from,
         depth_route=args.depth_route,
         depth_target=args.depth_target,
+        ab_depth_source=args.ab_depth_source,
         ab_run_id=args.ab_run_id,
         ab_seed=args.ab_seed,
         ab_log_interval=args.ab_log_interval,

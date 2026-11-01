@@ -61,6 +61,7 @@ class ModelParams(ParamGroup):
         
         # self.depth_ratio = 0.6
         self.depth_ratio = 0.0
+        self.ab_depth_source = "expected"
         
         self.multi_view_num = 8
         self.multi_view_max_angle = 30
