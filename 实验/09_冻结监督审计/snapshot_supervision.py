@@ -37,6 +37,18 @@ def digest(path):
     return h.hexdigest()
 
 
+def scaled_filter_focals(intrinsics, resolution):
+    width = round(intrinsics.width / resolution)
+    height = round(intrinsics.height / resolution)
+    if intrinsics.model == 'SIMPLE_PINHOLE':
+        fx = fy = float(intrinsics.params[0])
+    elif intrinsics.model == 'PINHOLE':
+        fx, fy = map(float, intrinsics.params[:2])
+    else:
+        raise ValueError('unsupported COLMAP intrinsics for filter camera')
+    return width, height, fx * width / intrinsics.width, fy * height / intrinsics.height
+
+
 def selected_cameras(dataset, names):
     sparse = Path(dataset.source_path) / 'sparse' / '0'
     binary = all((sparse / name).is_file() for name in ('images.bin', 'cameras.bin'))
@@ -57,13 +69,13 @@ def selected_cameras(dataset, names):
     filter_cameras = []
     for value in extr.values():
         intrinsics = intr[value.camera_id]
-        resized_width = round(intrinsics.width / dataset.resolution)
-        resized_height = round(intrinsics.height / dataset.resolution)
-        focal = float(intrinsics.params[0]) * resized_width / intrinsics.width
+        resized_width, resized_height, fx, fy = scaled_filter_focals(
+            intrinsics, dataset.resolution)
         filter_cameras.append(SimpleNamespace(
             R=torch.tensor(qvec2rotmat(value.qvec).T, dtype=torch.float32, device='cuda'),
             T=torch.tensor(value.tvec, dtype=torch.float32, device='cuda'),
-            image_width=resized_width, image_height=resized_height, Fx=focal))
+            image_width=resized_width, image_height=resized_height,
+            Fx=fx, Fy=fy))
     return ({info.image_name: camera for info, camera in zip(infos, cameras)},
             camera_files, infos, filter_cameras)
 
@@ -78,7 +90,15 @@ def numeric(value):
     if value is None:
         return None
     number = float(value.detach().item())
-    return number if math.isfinite(number) else 'nonfinite'
+    if not math.isfinite(number):
+        raise ValueError('nonfinite audit scalar')
+    return number
+
+
+def require_finite(value, label):
+    if not bool(torch.isfinite(value).all()):
+        raise ValueError('nonfinite audit ' + label)
+    return value
 
 
 def gradient(loss, parameters):
@@ -86,6 +106,9 @@ def gradient(loss, parameters):
         return None
     values = torch.autograd.grad(loss, tuple(parameters.values()), retain_graph=True,
                                  allow_unused=True)
+    for value in values:
+        if value is not None:
+            require_finite(value, 'gradient')
     return {key: (None if grad is None else grad.detach().cpu().float().reshape(-1))
             for key, grad in zip(parameters, values)}
 
@@ -94,24 +117,40 @@ def gradient_summary(grads):
     if grads is None:
         return None
     return {key: (None if value is None else
-                  dict(rms=(float(torch.linalg.vector_norm(value) / math.sqrt(value.numel()))
-                            if bool(torch.isfinite(value).all()) else None),
-                       finite=bool(torch.isfinite(value).all()), elements=value.numel()))
+                  dict(rms=numeric(require_finite(torch.linalg.vector_norm(
+                      require_finite(value, 'gradient summary')) / math.sqrt(value.numel()),
+                      'gradient norm')), finite=True, elements=value.numel()))
             for key, value in grads.items()}
 
 
 def cosine(left, right):
     if left is None or right is None:
         return None
+    require_finite(left, 'cosine input')
+    require_finite(right, 'cosine input')
     dot = float(torch.dot(left, right))
     norm = float(torch.linalg.vector_norm(left) * torch.linalg.vector_norm(right))
-    return None if norm == 0 or not math.isfinite(norm) else dot / norm
+    if not math.isfinite(dot) or not math.isfinite(norm):
+        raise ValueError('nonfinite audit cosine')
+    if norm == 0:
+        return None
+    value = dot / norm
+    if not math.isfinite(value):
+        raise ValueError('nonfinite audit cosine')
+    return value
 
 
 def assert_native_pm_parity(geo_loss, ncc_loss, audit):
     pm = audit['pm_mask']
     geo = masked_mean(audit['weights'] * audit['pixel_noise'], pm)
-    ncc = masked_mean(audit['weights'] * audit['ncc_raw'], audit['ncc_mask'])
+    ncc = masked_mean(None if audit['ncc_raw'] is None else
+                      audit['weights'] * audit['ncc_raw'], audit['ncc_mask'])
+    require_finite(geo_loss, 'native geometric loss')
+    require_finite(ncc_loss, 'native NCC loss')
+    if geo is not None:
+        require_finite(geo, 'instrumented geometric loss')
+    if ncc is not None:
+        require_finite(ncc, 'instrumented NCC loss')
     if geo is not None and not torch.allclose(geo.reshape(()), geo_loss.reshape(()), atol=1e-6, rtol=1e-5):
         raise AssertionError('instrumented geometric loss differs from native PM')
     if ncc is not None and not torch.allclose(ncc.reshape(()), ncc_loss.reshape(()), atol=1e-6, rtol=1e-5):
@@ -202,6 +241,7 @@ def main():
             assert_native_pm_parity(geo_loss, ncc_loss, audit)
             normal_map = depth_to_normal(reference, pkg['selected_depth'])
             normal_error = 1-torch.linalg.vecdot(pkg['normal'], normal_map, dim=0).reshape(-1)
+            require_finite(normal_error, 'normal loss map')
             return pkg, audit, normal_error, geo_loss, ncc_loss
 
     frozen = {}

@@ -145,6 +145,8 @@ class PatchMatch:
             nearest_to_view_R = nearest_cam.R.transpose(1, 0) @ viewpoint_cam.world_view_transform[:3, :3]
 
         depth_reshape = render_pkg["selected_depth"].squeeze().unsqueeze(-1)
+        if audit is not None and not bool(torch.isfinite(depth_reshape).all()):
+            raise ValueError('nonfinite audit selected depth')
         pts = torch.cat([depth_reshape * ix[None, :, None], depth_reshape * iy[:, None, None], depth_reshape], dim=-1)
         R = viewpoint_cam.R
         T = viewpoint_cam.T
@@ -158,6 +160,8 @@ class PatchMatch:
         )
 
         pts_in_nearest_cam = sampled_pkg["sampled_depth"]
+        if audit is not None and not bool(torch.isfinite(pts_in_nearest_cam).all()):
+            raise ValueError('nonfinite audit sampled depth')
         d_mask = sampled_pkg["inside"]
         if audit is not None:
             audit['inside_mask'] = d_mask.reshape(-1).detach().clone()
@@ -181,6 +185,8 @@ class PatchMatch:
         pixels = torch.stack([ix, iy], dim=-1)
         pixel_f = pixels.type(torch.float32).requires_grad_(False)
         pixel_noise = torch.pairwise_distance(pts_projections, pixel_f)
+        if audit is not None and not bool(torch.isfinite(pixel_noise).all()):
+            raise ValueError('nonfinite audit pixel noise')
 
         with torch.no_grad():
             d_mask = torch.logical_and(d_mask, pixel_noise < self.pixel_noise_th)
@@ -233,6 +239,9 @@ class PatchMatch:
 
         depth_select = torch.index_select(render_pkg["selected_depth"].view(-1), dim=0, index=valid_indices)
         normal_select = torch.index_select(render_pkg["normal"].view(3, -1), dim=1, index=valid_indices).transpose(1, 0)
+        if audit is not None and (not bool(torch.isfinite(depth_select).all()) or
+                                  not bool(torch.isfinite(normal_select).all())):
+            raise ValueError('nonfinite audit NCC input')
 
         cc, valid_mask = warp_patch_ncc.warp_patch_ncc(
             depth_select,
@@ -252,6 +261,8 @@ class PatchMatch:
             nearest_cam.Cy,
             False,
         )
+        if audit is not None and not bool(torch.isfinite(cc).all()):
+            raise ValueError('nonfinite audit NCC output')
         ncc = torch.clamp(1 - cc, 0.0, 2.0)
         ncc_mask = (ncc < 0.9) & valid_mask
 
