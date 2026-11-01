@@ -1,4 +1,5 @@
 import os
+import json
 from argparse import ArgumentParser
 
 import numpy as np
@@ -8,6 +9,7 @@ import torch
 
 from arguments import ModelParams, PipelineParams, get_combined_args
 from gaussian_renderer import render
+from training_depth_plugin import mesh_depth_channel, route_depth
 from scene import GaussianModel, Scene
 from utils.general_utils import safe_state
 
@@ -37,11 +39,15 @@ def post_process_mesh(mesh, cluster_to_keep=1):
     return mesh_0
 
 
-def extract_mesh(dataset, pipe, iteration, num_cluster=1):
+def extract_mesh(dataset, pipe, iteration, num_cluster=1,
+                 depth_route='baseline', depth_target='expected',
+                 candidate_selection='first'):
     gaussians = GaussianModel(dataset.sh_degree)
     scene = Scene(dataset, gaussians, load_iteration=iteration, shuffle=False)
     kernel_size = dataset.kernel_size
-    depth_name = "expected_depth" if dataset.depth_ratio < 0.5 else "median_depth"
+    depth_name = mesh_depth_channel(dataset.depth_ratio, depth_route, depth_target)
+    print(f'Mesh depth: route={depth_route}, target={depth_target}, '
+          f'selection={candidate_selection}, channel={depth_name}')
 
     bg_color = [1, 1, 1]
     background = torch.tensor(bg_color, dtype=torch.float32, device="cuda")
@@ -51,7 +57,11 @@ def extract_mesh(dataset, pipe, iteration, num_cluster=1):
     color_list = []
     for viewpoint_cam in viewpoint_cam_list:
         # Rendering offscreen from that camera
-        render_pkg = render(viewpoint_cam, gaussians, pipe, background, kernel_size)
+        render_pkg = render(viewpoint_cam, gaussians, pipe, background, kernel_size,
+                            depth_support=depth_route == 'candidate',
+                            depth_selection=candidate_selection)
+        if depth_route != 'baseline':
+            render_pkg = route_depth(render_pkg, depth_route, depth_target)
         rendered_img = torch.clamp(render_pkg["render"], min=0, max=1.0).cpu().numpy().transpose(1, 2, 0)
         color_list.append(np.ascontiguousarray(rendered_img))
         depth = render_pkg[depth_name].clone()
@@ -87,6 +97,11 @@ def extract_mesh(dataset, pipe, iteration, num_cluster=1):
     o3d.io.write_triangle_mesh(os.path.join(dataset.model_path, "recon.ply"), mesh.to_legacy())
     mesh = post_process_mesh(mesh.to_legacy(), num_cluster)
     o3d.io.write_triangle_mesh(os.path.join(dataset.model_path, "recon_post.ply"), mesh)
+    if depth_route == 'candidate':
+        with open(os.path.join(dataset.model_path, 'mesh_readout.json'), 'w', encoding='utf-8') as stream:
+            json.dump(dict(depth_route=depth_route, depth_target=depth_target,
+                           candidate_selection=candidate_selection, depth_channel=depth_name,
+                           iteration=scene.loaded_iter), stream, indent=2)
     print("done!")
 
 
@@ -97,9 +112,16 @@ if __name__ == "__main__":
     parser.add_argument("--iteration", default=-1, type=int)
     parser.add_argument("--num_cluster", default=1, type=int)
     parser.add_argument("--quiet", action="store_true")
+    # Defaults of None let get_combined_args retain the A/B training cfg_args.
+    parser.add_argument('--depth_route', choices=['baseline', 'identity', 'candidate'], default=None)
+    parser.add_argument('--depth_target', choices=['expected', 'median', 'both'], default=None)
+    parser.add_argument('--candidate_selection', choices=['first', 'first_qualified'], default=None)
     args = get_combined_args(parser)
     
     # Initialize system state (RNG)
     safe_state(args.quiet)
     with torch.no_grad():
-        extract_mesh(model.extract(args), pipeline.extract(args), args.iteration, args.num_cluster)
+        extract_mesh(model.extract(args), pipeline.extract(args), args.iteration, args.num_cluster,
+                     getattr(args, 'depth_route', None) or 'baseline',
+                     getattr(args, 'depth_target', None) or 'expected',
+                     getattr(args, 'candidate_selection', None) or 'first')

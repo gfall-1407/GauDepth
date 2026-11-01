@@ -10,10 +10,17 @@ import torch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from surface_group_batch import compose_sample_points, grouped_depth_from_support, native_sample_xy
 from surface_group_reference import one_ray_reference
-from training_depth_plugin import route_depth, summarize_candidate_audit
+from training_depth_plugin import mesh_depth_channel, route_depth, summarize_candidate_audit
 
 
 class BatchDepthTest(unittest.TestCase):
+    def test_mesh_requires_candidate_channel_to_match_training_target(self):
+        self.assertEqual(mesh_depth_channel(0., 'candidate', 'expected'), 'expected_depth')
+        self.assertEqual(mesh_depth_channel(.6, 'candidate', 'median'), 'median_depth')
+        self.assertEqual(mesh_depth_channel(0., 'baseline', 'median'), 'expected_depth')
+        with self.assertRaisesRegex(ValueError, 'does not match'):
+            mesh_depth_channel(0., 'candidate', 'median')
+
     def test_first_qualified_selects_later_group_and_exposes_thin_foreground_risk(self):
         xyz = torch.tensor([[0., 0., 1.], [-.01, 0., 1.02], [.01, 0., 1.02]],
                            requires_grad=True)
