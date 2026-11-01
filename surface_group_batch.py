@@ -134,6 +134,7 @@ def _chunk_cuda(centers, rotations, scales, xy, ids, alpha, count, overflow,
         xy.detach().contiguous(), ids.detach().contiguous(), alpha.detach().contiguous(),
         count.detach().contiguous(), overflow.detach().contiguous(),
         float(fx), float(fy), float(cx), float(cy))
+    ints = ints.long()  # Match Torch reductions and chosen-group index dtype.
     selected = slots >= 0
     safe_slots = slots.clamp_min(0).long()
     safe_ids = ids.gather(1, safe_slots).long().clamp(0, centers.shape[0]-1)
