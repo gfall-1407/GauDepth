@@ -19,4 +19,5 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
   m.def("mark_visible", &markVisible);
   m.def("sample_rasterized_depth", &SampleRasterizedDepthCUDA);
   m.def("sample_rasterized_depth_backward", &SampleRasterizedDepthBackwardCUDA);
+  m.def("accepted_gaussians", &AcceptedGaussiansCUDA);
 }

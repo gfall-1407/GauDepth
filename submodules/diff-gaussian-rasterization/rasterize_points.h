@@ -15,6 +15,12 @@
 #include <torch/extension.h>
 #include <tuple>
 
+// Read-only membership query over buffers returned by this rasterizer's forward pass.
+std::tuple<torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor>
+AcceptedGaussiansCUDA(const torch::Tensor& xy, const torch::Tensor& geom_buffer,
+                      const torch::Tensor& binning_buffer, const torch::Tensor& range_buffer,
+                      int P, int R, int W, int H, int K, bool sampled);
+
 std::tuple<int, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor>
 RasterizeGaussiansCUDA(
     const torch::Tensor& background,
