@@ -6,6 +6,7 @@ import gc
 import hashlib
 import importlib
 import importlib.machinery
+import inspect
 import json
 import math
 import os
@@ -26,7 +27,7 @@ from matched_plane_regularizer import (EXPECTED_PLY_BYTES, EXPECTED_PLY_ROWS,
 from scene import GaussianModel, Scene
 from utils.graphics_utils import depth_to_normal
 from utils.image_utils import psnr
-from utils.loss_utils import L1_loss_appearance, PatchMatch, l1_loss, ssim
+from utils.loss_utils import L1_loss_appearance, PatchMatch, l1_loss, ssim, fused_ssim
 from local_plane_training_cpu import sha256
 
 
@@ -34,17 +35,15 @@ START_VIRTUAL = 7001
 UPDATES = 1000
 SAVED_UPDATES = (0, 500, 1000)
 MAX_ACTIVE_SECONDS = 90*60
-EXTENSION_PACKAGES=("diff_gaussian_rasterization","warp_patch_ncc",
-                    "simple_knn","fused_ssim")
-EXTENSION_SOURCE_DIRS=("submodules/diff-gaussian-rasterization",
-                       "submodules/warp-patch-ncc","submodules/simple-knn")
+OWN_EXTENSION_SOURCE_DIRS=("submodules/diff-gaussian-rasterization",
+                           "submodules/warp-patch-ncc")
 EXTENSION_SOURCE_SUFFIXES={".cu",".cpp",".cc",".cuh",".h",".hpp",".py",".inl"}
 
 
 def extension_sources():
     root=Path(__file__).parent
     found={}
-    for directory in EXTENSION_SOURCE_DIRS:
+    for directory in OWN_EXTENSION_SOURCE_DIRS:
         base=root/directory
         if not base.is_dir():raise ValueError("extension_source_directory_missing:"+directory)
         items=[p for p in base.rglob("*") if p.is_file() and p.suffix in EXTENSION_SOURCE_SUFFIXES]
@@ -61,19 +60,66 @@ def extension_sources():
     return dict(sorted(found.items()))
 
 
-def loaded_extension_modules():
-    for package in EXTENSION_PACKAGES:importlib.import_module(package)
-    found={}
-    for name,module in tuple(sys.modules.items()):
-        if not any(name==p or name.startswith(p+".") for p in EXTENSION_PACKAGES):continue
-        file=getattr(module,"__file__",None)
-        if file and any(file.endswith(s) for s in importlib.machinery.EXTENSION_SUFFIXES):
-            path=Path(file).resolve()
-            found[name]=dict(path=str(path),sha256=sha256(path))
-    for package in EXTENSION_PACKAGES:
-        if not any(n==package or n.startswith(package+".") for n in found):
-            raise ValueError("compiled_extension_not_loaded:"+package)
+def native_binary_record(module):
+    path=getattr(module,"__file__",None)
+    if not path or not any(path.endswith(s) for s in importlib.machinery.EXTENSION_SUFFIXES):
+        raise ValueError("bound_backend_is_not_native:"+str(getattr(module,"__name__",module)))
+    binary=Path(path).resolve()
+    if not binary.is_file():raise ValueError("bound_backend_binary_missing:"+str(binary))
+    return dict(module=module.__name__,path=str(binary),sha256=sha256(binary))
+
+
+def native_modules_referenced_by_wrapper(wrapper):
+    """Follow only names actually referenced by this callable and its autograd class."""
+    found={};seen=set()
+    def walk(value,root=False):
+        if id(value) in seen:return
+        seen.add(id(value))
+        if inspect.ismodule(value):
+            path=getattr(value,"__file__",None)
+            if path and any(path.endswith(s) for s in importlib.machinery.EXTENSION_SUFFIXES):
+                found[value.__name__]=value
+            return
+        module_name=getattr(value,"__module__","")
+        if module_name in sys.modules:
+            module=sys.modules[module_name]
+            path=getattr(module,"__file__",None)
+            if path and any(path.endswith(s) for s in importlib.machinery.EXTENSION_SUFFIXES):
+                found[module_name]=module
+                return
+        if not root and not module_name.startswith("fused_ssim"):
+            return
+        if inspect.isclass(value):
+            for name in ("forward","backward"):
+                member=getattr(value,name,None)
+                if member is not None:walk(member)
+            return
+        code=getattr(value,"__code__",None)
+        if code is not None:
+            scope=getattr(value,"__globals__",{})
+            for name in code.co_names:
+                if name in scope:walk(scope[name])
+    walk(wrapper,root=True)
     return dict(sorted(found.items()))
+
+
+def loaded_extension_bindings():
+    raster=importlib.import_module("diff_gaussian_rasterization")
+    warp=importlib.import_module("warp_patch_ncc")
+    knn=importlib.import_module("scene.gaussian_model").distCUDA2
+    def direct(wrapper,module):
+        if module is None:raise ValueError("wrapper_backend_binding_missing:"+wrapper)
+        return dict(wrapper=wrapper,backends=[native_binary_record(module)])
+    knn_name=getattr(knn,"__module__",None)
+    knn_module=sys.modules.get(knn_name)
+    fused=native_modules_referenced_by_wrapper(fused_ssim)
+    if not fused:raise ValueError("fused_ssim_wrapper_has_no_native_backend")
+    return dict(
+        rasterizer=direct("diff_gaussian_rasterization._C",getattr(raster,"_C",None)),
+        warp=direct("warp_patch_ncc._C",getattr(warp,"_C",None)),
+        simple_knn=direct("scene.gaussian_model.distCUDA2",knn_module),
+        fused_ssim=dict(wrapper="utils.loss_utils.fused_ssim",
+                        backends=[native_binary_record(module) for module in fused.values()]))
 
 
 def verify_build_identity(expected_head,build_manifest_path):
@@ -82,19 +128,45 @@ def verify_build_identity(expected_head,build_manifest_path):
     build=json.loads(Path(build_manifest_path).read_text(encoding="utf-8"))
     if build.get("reviewed_head")!=expected_head:
         raise ValueError("extension_manifest_identity_mismatch")
-    actual=loaded_extension_modules()
-    if build.get("modules")!=actual:raise ValueError("extension_binary_identity_mismatch")
+    actual=loaded_extension_bindings()
+    if build.get("bindings")!=actual:raise ValueError("extension_binary_identity_mismatch")
+    environment=dict(python=sys.version,torch=torch.__version__,
+                     torch_cuda=str(torch.version.cuda))
+    if build.get("environment")!=environment:
+        raise ValueError("extension_environment_identity_mismatch")
     sources=extension_sources()
     if build.get("sources")!=sources:
         raise ValueError("extension_source_manifest_incomplete")
-    provenance=build.get("external_build_provenance",{}).get("fused_ssim")
-    if not isinstance(provenance,dict) or not provenance.get("build_source") or not provenance.get("build_evidence_path") or not provenance.get("build_evidence_sha256"):
-        raise ValueError("fused_ssim_build_provenance_unverified")
-    evidence=Path(provenance["build_evidence_path"]).resolve()
-    if not evidence.is_file() or sha256(evidence)!=provenance["build_evidence_sha256"]:
-        raise ValueError("fused_ssim_build_evidence_mismatch")
-    return dict(reviewed_head=current,modules=actual,sources=sources,
-                external_build_provenance=build["external_build_provenance"])
+    own=build.get("own_build_provenance",{})
+    if set(own)!={"rasterizer","warp"}:raise ValueError("own_build_provenance_missing")
+    glm_head=subprocess.check_output(["git","rev-parse","HEAD"],
+        cwd=Path(__file__).parent/"submodules/diff-gaussian-rasterization/third_party/glm",
+        text=True).strip()
+    if own["rasterizer"].get("glm_head")!=glm_head:
+        raise ValueError("glm_source_head_mismatch")
+    for name,directory in zip(("rasterizer","warp"),OWN_EXTENSION_SOURCE_DIRS):
+        record=own[name]
+        source_head=subprocess.check_output(["git","rev-parse","HEAD"],
+            cwd=Path(__file__).parent/directory,text=True).strip()
+        if record.get("source_head")!=source_head or not record.get("build_command") or not record.get("build_evidence_path"):
+            raise ValueError("own_build_source_unverified:"+name)
+        evidence=Path(record["build_evidence_path"]).resolve()
+        if not evidence.is_file() or sha256(evidence)!=record.get("build_evidence_sha256"):
+            raise ValueError("own_build_evidence_mismatch:"+name)
+    history=build.get("historical_provenance",{})
+    if set(history)!={"fused_ssim","simple_knn"}:
+        raise ValueError("historical_extension_provenance_missing")
+    for name in ("fused_ssim","simple_knn"):
+        record=history[name]
+        if record=="unverified":continue
+        if not isinstance(record,dict) or not record.get("build_source") or not record.get("evidence_path") or not record.get("evidence_sha256"):
+            raise ValueError("historical_extension_provenance_invalid:"+name)
+        evidence=Path(record["evidence_path"]).resolve()
+        if not evidence.is_file() or sha256(evidence)!=record["evidence_sha256"]:
+            raise ValueError("historical_extension_evidence_mismatch:"+name)
+    return dict(reviewed_head=current,bindings=actual,sources=sources,
+                environment=environment,own_build_provenance=own,
+                historical_provenance=history)
 
 
 def require_empty_output(path):

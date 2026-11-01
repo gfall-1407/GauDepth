@@ -5,8 +5,10 @@ import io
 import json
 from pathlib import Path
 import random
+import sys
 import tempfile
 import time
+import types
 import unittest
 
 import numpy as np
@@ -227,20 +229,93 @@ class Controls(unittest.TestCase):
 
     def test_extension_source_inventory_covers_sample_wrapper_and_glm(self):
         tree=ast.parse(SCRIPT.read_text(encoding="utf-8"))
-        names=("EXTENSION_SOURCE_DIRS","EXTENSION_SOURCE_SUFFIXES")
+        names=("OWN_EXTENSION_SOURCE_DIRS","EXTENSION_SOURCE_SUFFIXES")
         assignments=[n for n in tree.body if isinstance(n,ast.Assign) and
                      any(isinstance(t,ast.Name) and t.id in names for t in n.targets)]
         scope={"Path":Path,"__file__":str(SCRIPT),"sha256":lambda p:hashlib.sha256(p.read_bytes()).hexdigest()}
         exec(compile(ast.Module(body=assignments,type_ignores=[]),str(SCRIPT),"exec"),scope)
         inventory=load_pure("extension_sources",scope)
-        if not any((SCRIPT.parent/"submodules/simple-knn").glob("*.cu")):
-            with self.assertRaisesRegex(ValueError,"extension_source_directory_empty"):
+        if not any((SCRIPT.parent/"submodules/diff-gaussian-rasterization/third_party/glm").glob("**/*.hpp")):
+            with self.assertRaisesRegex(ValueError,"extension_sample_wrapper_or_glm_source_missing"):
                 inventory()
             return  # Local submodule is absent; deployment must populate and verify it.
         sources=inventory()
         self.assertTrue(any(p.endswith("sample_forward.cu") for p in sources))
         self.assertTrue(any(p.endswith("ext.cpp") for p in sources))
         self.assertTrue(any("third_party/glm/" in p for p in sources))
+
+    def test_wrapper_binding_accepts_top_level_backend_and_ignores_unrelated(self):
+        backend=types.ModuleType("fused_ssim_cuda")
+        backend.__file__="C:/fake/fused_ssim_cuda.pyd"
+        unrelated=types.ModuleType("unrelated_cuda")
+        unrelated.__file__="C:/fake/unrelated_cuda.pyd"
+        scope={"__name__":"fused_ssim","fused_ssim_cuda":backend}
+        exec("class FusedAutograd:\n"
+             "    @staticmethod\n"
+             "    def forward(): return fused_ssim_cuda.forward()\n"
+             "    @staticmethod\n"
+             "    def backward(): return fused_ssim_cuda.backward()\n"
+             "def wrapper(): return FusedAutograd.forward()\n",scope)
+        resolver=load_pure("native_modules_referenced_by_wrapper",dict(
+            inspect=__import__("inspect"),sys=sys,
+            importlib=__import__("importlib")))
+        before={k:sys.modules.get(k) for k in ("fused_ssim_cuda","unrelated_cuda")}
+        try:
+            sys.modules["fused_ssim_cuda"]=backend
+            sys.modules["unrelated_cuda"]=unrelated
+            self.assertEqual(list(resolver(scope["wrapper"])),["fused_ssim_cuda"])
+            del scope["fused_ssim_cuda"]
+            self.assertEqual(resolver(scope["wrapper"]),{})
+        finally:
+            for key,value in before.items():
+                if value is None:sys.modules.pop(key,None)
+                else:sys.modules[key]=value
+
+    def test_binary_manifest_mismatch_is_rejected(self):
+        # The same package name cannot pass with a different compiled hash.
+        class ManifestPath:
+            def read_text(self,encoding=None):return "ignored"
+        verify=load_pure("verify_build_identity",dict(__file__=str(SCRIPT),
+            Path=lambda value:ManifestPath() if isinstance(value,ManifestPath) else Path(value),
+            subprocess=types.SimpleNamespace(check_output=lambda *a,**k:"reviewed\n"),
+            json=types.SimpleNamespace(loads=lambda text:{"reviewed_head":"reviewed",
+                "bindings":{"fused_ssim":{"backends":[{"sha256":"wrong"}]}}}),
+            loaded_extension_bindings=lambda:{"fused_ssim":{"backends":[{"sha256":"actual"}]}}))
+        with self.assertRaisesRegex(ValueError,"extension_binary_identity_mismatch"):
+            verify("reviewed",ManifestPath())
+
+    def test_unverified_historical_packages_still_require_binding_and_environment(self):
+        bindings={name:{"wrapper":name,"backends":[{"module":name+"_cuda",
+            "path":"C:/fake/"+name+".pyd","sha256":"binary"}]}
+            for name in ("rasterizer","warp","simple_knn","fused_ssim")}
+        manifest=dict(reviewed_head="reviewed",bindings=bindings,sources={"file.cu":"source"},
+            environment=dict(python=sys.version,torch=torch.__version__,
+                             torch_cuda=str(torch.version.cuda)),
+            own_build_provenance={name:dict(source_head="reviewed",build_command="build",
+                build_evidence_path="evidence",build_evidence_sha256="evidence-sha")
+                for name in ("rasterizer","warp")},
+            historical_provenance=dict(fused_ssim="unverified",simple_knn="unverified"))
+        manifest["own_build_provenance"]["rasterizer"]["glm_head"]="reviewed"
+        class P:
+            def __init__(self,value):self.value=str(value)
+            @property
+            def parent(self):return self
+            def __truediv__(self,other):return self
+            def read_text(self,encoding=None):return "manifest"
+            def resolve(self):return self
+            def is_file(self):return True
+        def check_output(*args,**kwargs):return "reviewed\n"
+        verify=load_pure("verify_build_identity",dict(__file__=str(SCRIPT),Path=P,
+            subprocess=types.SimpleNamespace(check_output=check_output),
+            json=types.SimpleNamespace(loads=lambda text:manifest),
+            loaded_extension_bindings=lambda:bindings,extension_sources=lambda:{"file.cu":"source"},
+            OWN_EXTENSION_SOURCE_DIRS=("raster","warp"),sha256=lambda path:"evidence-sha",
+            sys=sys,torch=torch))
+        self.assertEqual(verify("reviewed","manifest")["historical_provenance"],
+                         manifest["historical_provenance"])
+        manifest["environment"]["torch"]="wrong"
+        with self.assertRaisesRegex(ValueError,"extension_environment_identity_mismatch"):
+            verify("reviewed","manifest")
 
     def test_boundary_failed_before_save_is_partial(self):
         files={};directories=set()
