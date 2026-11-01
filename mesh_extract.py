@@ -97,11 +97,10 @@ def extract_mesh(dataset, pipe, iteration, num_cluster=1,
     o3d.io.write_triangle_mesh(os.path.join(dataset.model_path, "recon.ply"), mesh.to_legacy())
     mesh = post_process_mesh(mesh.to_legacy(), num_cluster)
     o3d.io.write_triangle_mesh(os.path.join(dataset.model_path, "recon_post.ply"), mesh)
-    if depth_route == 'candidate':
-        with open(os.path.join(dataset.model_path, 'mesh_readout.json'), 'w', encoding='utf-8') as stream:
-            json.dump(dict(depth_route=depth_route, depth_target=depth_target,
-                           candidate_selection=candidate_selection, depth_channel=depth_name,
-                           iteration=scene.loaded_iter), stream, indent=2)
+    with open(os.path.join(dataset.model_path, 'mesh_readout.json'), 'w', encoding='utf-8') as stream:
+        json.dump(dict(depth_route=depth_route, depth_target=depth_target,
+                       candidate_selection=candidate_selection, depth_channel=depth_name,
+                       iteration=scene.loaded_iter), stream, indent=2)
     print("done!")
 
 

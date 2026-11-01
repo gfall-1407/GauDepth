@@ -11,6 +11,14 @@ DEPTH_KEYS = ('expected_depth', 'median_depth')
 PARAMETER_NAMES = ('xyz', 'scaling', 'rotation')
 
 
+def record_depth_route_on_dataset(dataset, depth_route, depth_target, candidate_selection):
+    """Include opt-in readout fields in the actual cfg_args written from dataset."""
+    dataset.depth_route = depth_route
+    dataset.depth_target = depth_target
+    dataset.candidate_selection = candidate_selection
+    return dataset
+
+
 def mesh_depth_channel(depth_ratio, depth_route, depth_target):
     """Reject a candidate mesh that would silently read an unchanged channel."""
     channel = 'expected_depth' if depth_ratio < .5 else 'median_depth'

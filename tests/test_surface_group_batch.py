@@ -1,6 +1,8 @@
 import sys
 import unittest
 import importlib.util
+import shutil
+from argparse import ArgumentParser, Namespace
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -10,10 +12,32 @@ import torch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from surface_group_batch import compose_sample_points, grouped_depth_from_support, native_sample_xy
 from surface_group_reference import one_ray_reference
-from training_depth_plugin import mesh_depth_channel, route_depth, summarize_candidate_audit
+from training_depth_plugin import (mesh_depth_channel, record_depth_route_on_dataset,
+                                   route_depth, summarize_candidate_audit)
 
 
 class BatchDepthTest(unittest.TestCase):
+    def test_saved_cfg_args_reloads_candidate_mesh_route(self):
+        from arguments import ModelParams, get_combined_args
+        path = Path(__file__).resolve().parents[1] / 'output_depth_plugin' / 'cfg_route_fixture'
+        path.mkdir(parents=True, exist_ok=False)
+        try:
+            dataset = SimpleNamespace(model_path=str(path), depth_ratio=0.)
+            record_depth_route_on_dataset(dataset, 'candidate', 'expected', 'first_qualified')
+            (path / 'cfg_args').write_text(str(Namespace(**vars(dataset))), encoding='utf-8')
+            parser = ArgumentParser()
+            ModelParams(parser, sentinel=True)
+            parser.add_argument('--depth_route', default=None)
+            parser.add_argument('--depth_target', default=None)
+            parser.add_argument('--candidate_selection', default=None)
+            with patch.object(sys, 'argv', ['mesh_extract.py', '-m', str(path)]):
+                loaded = get_combined_args(parser)
+            self.assertEqual((loaded.depth_route, loaded.depth_target,
+                              loaded.candidate_selection),
+                             ('candidate', 'expected', 'first_qualified'))
+        finally:
+            shutil.rmtree(path)
+
     def test_mesh_requires_candidate_channel_to_match_training_target(self):
         self.assertEqual(mesh_depth_channel(0., 'candidate', 'expected'), 'expected_depth')
         self.assertEqual(mesh_depth_channel(.6, 'candidate', 'median'), 'median_depth')
