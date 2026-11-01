@@ -11,6 +11,24 @@ DEPTH_KEYS = ('expected_depth', 'median_depth')
 PARAMETER_NAMES = ('xyz', 'scaling', 'rotation')
 
 
+def validate_ab_output_dir(model_path):
+    """Reject an occupied A/B destination before train creates any files."""
+    if not model_path:
+        raise ValueError('A/B run requires an explicit new model_path')
+    output_path = Path(model_path)
+    if output_path.exists() and (not output_path.is_dir() or any(output_path.iterdir())):
+        raise FileExistsError(f'A/B model_path must be absent or empty: {output_path}')
+
+
+def reset_warm_start_radii(gaussians):
+    """Scene's initialization size may differ from the loaded PLY size."""
+    gaussians.max_radii2D = torch.zeros_like(gaussians.get_xyz[:, 0])
+
+
+def should_log_parameters(iteration, first_iteration, interval):
+    return iteration == first_iteration or iteration % interval == 0
+
+
 def fixed_group_short_axis_ls_z(centers_camera, normals_camera, ray_v, members):
     """Differentiable camera-z LS for an externally fixed member group.
 

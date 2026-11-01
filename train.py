@@ -45,7 +45,9 @@ from utils.loss_utils import (
     PatchMatch,
 )
 from training_depth_plugin import (ABLog, add_step_metrics, file_digest,
-                                   parameter_digest, parameter_metrics, route_depth)
+                                   parameter_digest, parameter_metrics, route_depth,
+                                   reset_warm_start_radii, should_log_parameters,
+                                   validate_ab_output_dir)
 
 
 def training(
@@ -65,12 +67,15 @@ def training(
     warm_start_ply=None,
     warm_start_iteration=None,
 ):
+    if ab_run_id:
+        validate_ab_output_dir(dataset.model_path)
     first_iter = 0
     tb_writer = prepare_output_and_logger(dataset)
     gaussians = GaussianModel(dataset.sh_degree)
     scene = Scene(dataset, gaussians)
     if warm_start_ply:
         gaussians.load_ply(warm_start_ply)
+        reset_warm_start_radii(gaussians)
         first_iter = warm_start_iteration
     gaussians.training_setup(opt)
     if checkpoint:
@@ -297,7 +302,7 @@ def training(
                     gaussians.compute_3D_filter(cameras=trainCameras)
 
             # Opt-in A/B trace: all camera choices; bounded parameter samples.
-            log_metrics = ab_log is not None and iteration % ab_log.interval == 0
+            log_metrics = ab_log is not None and should_log_parameters(iteration, first_iter, ab_log.interval)
             metrics, before = parameter_metrics(gaussians.optimizer) if log_metrics else (None, None)
             step_applied = iteration < opt.iterations
             # Optimizer step

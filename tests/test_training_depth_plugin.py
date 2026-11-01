@@ -1,15 +1,39 @@
 import sys
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import patch
 
 import torch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from training_depth_plugin import (add_step_metrics, fixed_group_short_axis_ls_z,
-                                   parameter_metrics, route_depth)
+                                   parameter_metrics, reset_warm_start_radii,
+                                   route_depth, should_log_parameters,
+                                   validate_ab_output_dir)
 
 
 class DepthPluginWiringTest(unittest.TestCase):
+    def test_ab_destination_preflight_and_warm_start_shape(self):
+        with patch('training_depth_plugin.Path') as mock_path:
+            target = mock_path.return_value
+            target.exists.return_value = True
+            target.is_dir.return_value = True
+            target.iterdir.return_value = iter([object()])
+            with self.assertRaises(FileExistsError):
+                validate_ab_output_dir('occupied_output')
+            target.iterdir.return_value = iter([])
+            validate_ab_output_dir('empty_output')
+            target.exists.return_value = False
+            validate_ab_output_dir('new_output')
+        model = SimpleNamespace(get_xyz=torch.zeros((5, 3)), max_radii2D=torch.ones(2))
+        reset_warm_start_radii(model)
+        self.assertEqual(tuple(model.max_radii2D.shape), (5,))
+        self.assertTrue(torch.equal(model.max_radii2D, torch.zeros(5)))
+        self.assertTrue(should_log_parameters(7001, 7001, 100))
+        self.assertFalse(should_log_parameters(7002, 7001, 100))
+        self.assertTrue(should_log_parameters(7100, 7001, 100))
+
     def test_disabled_is_same_object_and_gradient(self):
         x = torch.tensor([[[2., 3.]]], requires_grad=True)
         pkg = {'expected_depth': x, 'median_depth': x * 2, 'render': x + 1}
