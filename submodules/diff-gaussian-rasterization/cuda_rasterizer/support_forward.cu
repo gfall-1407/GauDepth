@@ -9,7 +9,7 @@
 
 namespace {
 __global__ void acceptedCUDA(
-    const float2* xy, int Q, int K, int W, int H,
+    const float2* xy, int Q, int K, int W, int H, bool sampled,
     const uint2* ranges, const uint32_t* sorted_ids,
     const float2* means2D, const float4* conic_opacity,
     int* ids, float* alphas, int* counts, bool* overflow) {
@@ -18,9 +18,15 @@ __global__ void acceptedCUDA(
     const float2 pix = xy[q];
     if (!isfinite(pix.x) || !isfinite(pix.y) || pix.x < 0.f || pix.y < 0.f ||
         pix.x > W - 1 || pix.y > H - 1) return;
-    const int tile_x = static_cast<int>(pix.x) / BLOCK_X;
-    const int tile_y = static_cast<int>(pix.y) / BLOCK_Y;
     const int tiles_w = (W + BLOCK_X - 1) / BLOCK_X;
+    const int tiles_h = (H + BLOCK_Y - 1) / BLOCK_Y;
+    // sampleDepth bins projected points with (p + 0.5)/BLOCK; render uses p/BLOCK.
+    const int tile_x = sampled
+        ? min(tiles_w - 1, max(0, static_cast<int>((pix.x + 0.5f) / BLOCK_X)))
+        : static_cast<int>(pix.x) / BLOCK_X;
+    const int tile_y = sampled
+        ? min(tiles_h - 1, max(0, static_cast<int>((pix.y + 0.5f) / BLOCK_Y)))
+        : static_cast<int>(pix.y) / BLOCK_Y;
     const uint2 range = ranges[tile_y * tiles_w + tile_x];
     float T = 1.f;
     int count = 0;
@@ -105,7 +111,7 @@ AcceptedGaussiansCUDA(
         : CudaRasterizer::ImageState::fromChunk(r, static_cast<size_t>(W) * H).ranges;
     {
         acceptedCUDA<<<(Q + 127) / 128, 128, 0, stream.stream()>>>(
-            reinterpret_cast<const float2*>(xy.data_ptr<float>()), Q, K, W, H,
+            reinterpret_cast<const float2*>(xy.data_ptr<float>()), Q, K, W, H, sampled,
             ranges, bin.point_list, geom.means2D, geom.conic_opacity,
             ids.data_ptr<int>(), alpha.data_ptr<float>(), count.data_ptr<int>(),
             overflow.data_ptr<bool>());

@@ -15,8 +15,12 @@ parameters by `ids` to construct a differentiable depth. `pixel_grid_xy(H,W,devi
 returns the full raster grid in row-major order. Fractional coordinates are
 evaluated as provided, without pixel rounding. Invalid/out-of-image queries
 return zero count and padded IDs.
+For tile lookup, render uses `int(x)/BLOCK_X`; `sample_depth` uses the native
+point-binning rule `int((x+0.5)/BLOCK_X)` with clamping. The conic/alpha
+calculation always uses the original fractional coordinate.
 Queries require CUDA's default stream because the existing native forward
 launches there; non-default streams are rejected before that forward runs.
+The query coordinate tensor, Gaussian means, and current CUDA device must match.
 
 The query reads the native sorted tile list and per-Gaussian conic/opacity from
 the same forward pass. It applies the original `power > 0`, `alpha < 1/255`, and
@@ -25,7 +29,8 @@ not transmittance-weighted contribution. The full-grid storage cost is
 `8*H*W*K` bytes for IDs and alpha alone; use query chunks if needed.
 
 Local static checks: `python -m py_compile diff_gaussian_rasterization/__init__.py`
-and `git diff --check`. The predicates in `support_forward.cu` should be
+and `python -m unittest discover -s tests -p test_support_tile_contract.py`,
+plus `git diff --check`. The predicates in `support_forward.cu` should be
 compared with both `render_forward.cu` and `sample_forward.cu`; CUDA build,
 GPU membership equality, and gradient checks require a matching PyTorch/CUDA
 environment and have not been run in the Windows source workspace.
