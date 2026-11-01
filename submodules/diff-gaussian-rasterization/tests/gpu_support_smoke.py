@@ -204,16 +204,20 @@ def main():
     host_means = means.cpu().tolist()
     host_scales = scales.cpu().tolist()
     host_opacity = opacity[:, 0].cpu().tolist()
+    complete_sample = sample(raster, points, means, scales, rotations, opacity, xy[4:7], k=320)
+    full_sid, full_sa, full_sc, full_so = complete_sample[2:]
     for i in (4, 5, 6):
+        j = i - 4
         coordinate = xy[i].cpu().tolist()
         expected_ids, expected_alpha = oracle_sample(
             coordinate, sorted_ids, ranges, host_means, host_scales, host_opacity)
         assert sc[i].item() == len(expected_ids), (i, sc[i].item(), len(expected_ids))
-        assert sid[i, :len(expected_ids)].cpu().tolist() == expected_ids, i
-        torch.testing.assert_close(sa[i, :len(expected_ids)].cpu(),
+        assert full_sc[j].item() == len(expected_ids) and not full_so[j].item(), i
+        assert full_sid[j, :len(expected_ids)].cpu().tolist() == expected_ids, i
+        torch.testing.assert_close(full_sa[j, :len(expected_ids)].cpu(),
                                    torch.tensor(expected_alpha), rtol=2e-3, atol=5e-5)
     assert sc[5].item() == rc[5].item() + 1  # Native +0.5 sample tile admits ID 304.
-    assert 304 in sid[5, :sc[5]].cpu().tolist() and 304 not in rid[5, :rc[5]].cpu().tolist()
+    assert 304 in full_sid[1, :full_sc[1]].cpu().tolist() and 304 not in rid[5, :rc[5]].cpu().tolist()
     torch.cuda.synchronize()
     print("PASS: bounded CUDA smoke and synthetic CPU oracle; real-scene native parity remains untested")
 
