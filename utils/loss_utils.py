@@ -134,7 +134,7 @@ class PatchMatch:
         if debug:
             os.makedirs(os.path.join(model_path, "debug"), exist_ok=True)
 
-    def __call__(self, gaussians: GaussianModel, render_pkg: dict, viewpoint_cam: Camera, nearest_cam: Camera, iteration=0, depth_normal=None, depth_support=False):
+    def __call__(self, gaussians: GaussianModel, render_pkg: dict, viewpoint_cam: Camera, nearest_cam: Camera, iteration=0, depth_normal=None, depth_support=False, depth_selection='first'):
         self.last_candidate_audit = None
         self.last_candidate_elapsed_ms = None
         self.last_candidate_peak_allocated_mb = None
@@ -162,6 +162,7 @@ class PatchMatch:
             self.pipe,
             self.kernel_size,
             depth_support=depth_support,
+            depth_selection=depth_selection,
         )
         if depth_support:
             self.last_candidate_audit = sampled_pkg['candidate_audit']

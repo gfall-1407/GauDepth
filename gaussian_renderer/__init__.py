@@ -17,7 +17,7 @@ from scene.gaussian_model import GaussianModel
 from utils.sh_utils import eval_sh
 
 
-def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, kernel_size, scaling_modifier = 1.0, require_depth : bool = True, depth_support=False):
+def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, kernel_size, scaling_modifier = 1.0, require_depth : bool = True, depth_support=False, depth_selection='first'):
     """
     Render the scene. 
     
@@ -92,7 +92,7 @@ def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, 
         ids, native_alpha, count, overflow = raster_outputs[6:]
         candidate_flat, candidate_audit = grouped_depth_from_support(
             pc, viewpoint_camera, support_xy, ids, native_alpha, count, overflow,
-            rendered_expected_depth.reshape(-1))
+            rendered_expected_depth.reshape(-1), selection=depth_selection)
         candidate_depth = candidate_flat.reshape_as(rendered_expected_depth)
         torch.cuda.synchronize(means3D.device)
         candidate_elapsed_ms = (time.perf_counter() - candidate_start) * 1000
@@ -209,7 +209,7 @@ def integrate(points3D, viewpoint_camera, pc : GaussianModel, pipe, bg_color : t
             "inside": inside}
 
 
-def sample_depth(points3D, viewpoint_camera, pc : GaussianModel, pipe : torch.Tensor, kernel_size : float, scaling_modifier = 1.0, depth_support=False):
+def sample_depth(points3D, viewpoint_camera, pc : GaussianModel, pipe : torch.Tensor, kernel_size : float, scaling_modifier = 1.0, depth_support=False, depth_selection='first'):
 
     # Set up rasterization configuration
     tanfovx = math.tan(viewpoint_camera.FoVx * 0.5)
@@ -272,7 +272,7 @@ def sample_depth(points3D, viewpoint_camera, pc : GaussianModel, pipe : torch.Te
         ids, native_alpha, count, overflow = sampled_outputs[2:]
         candidate_z, candidate_audit = grouped_depth_from_support(
             pc, viewpoint_camera, support_xy, ids, native_alpha, count, overflow,
-            depth[..., 2].reshape(-1))
+            depth[..., 2].reshape(-1), selection=depth_selection)
         depth = compose_sample_points(candidate_z, support_xy, candidate_audit['candidate'],
                                       depth, viewpoint_camera)
         torch.cuda.synchronize(means3D.device)

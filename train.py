@@ -61,6 +61,7 @@ def training(
     debug_from,
     depth_route='baseline',
     depth_target='expected',
+    candidate_selection='first',
     ab_run_id=None,
     ab_seed=0,
     ab_log_interval=100,
@@ -112,6 +113,7 @@ def training(
                           checkpoint_sha256=file_digest(checkpoint) if checkpoint else None,
                           optimizer_state='fresh_from_ply' if warm_start_ply else 'restored_checkpoint',
                           depth_route=depth_route, depth_target=depth_target,
+                          candidate_selection=candidate_selection,
                           depth_ratio=dataset.depth_ratio,
                           regularization_from_iter=opt.regularization_from_iter,
                           lambda_depth_normal=opt.lambda_depth_normal,
@@ -192,6 +194,7 @@ def training(
             kernel_size,
             require_depth=reg_kick_on,
             depth_support=reg_kick_on and depth_route == 'candidate',
+            depth_selection=candidate_selection,
         )
         render_pkg = route_depth(render_pkg, depth_route, depth_target) if reg_kick_on else render_pkg
         rendered_image: torch.Tensor
@@ -227,7 +230,8 @@ def training(
             nearest_cam = None if len(viewpoint_cam.nearest_id) == 0 else scene.getTrainCameras()[
                 sample(viewpoint_cam.nearest_id, 1)[0] if ab_rng is None else ab_rng.choice(viewpoint_cam.nearest_id)]
             ncc_loss, geo_loss = patchmatch(gaussians, render_pkg, viewpoint_cam, nearest_cam, iteration,
-                                           depth_normal, depth_support=depth_route == 'candidate' and depth_target in ('expected', 'both'))
+                                           depth_normal, depth_support=depth_route == 'candidate' and depth_target in ('expected', 'both'),
+                                           depth_selection=candidate_selection)
         else:
             ncc_loss = torch.tensor([0], dtype=torch.float32, device="cuda")
             geo_loss = torch.tensor([0], dtype=torch.float32, device="cuda")
@@ -463,6 +467,7 @@ if __name__ == "__main__":
     parser.add_argument("--start_checkpoint", type=str, default=None)
     parser.add_argument('--depth_route', choices=['baseline', 'identity', 'candidate'], default='baseline')
     parser.add_argument('--depth_target', choices=['expected', 'median', 'both'], default='expected')
+    parser.add_argument('--candidate_selection', choices=['first', 'first_qualified'], default='first')
     parser.add_argument('--ab_run_id', type=str, default=None)
     parser.add_argument('--ab_seed', type=int, default=0)
     parser.add_argument('--ab_log_interval', type=int, default=100)
@@ -502,6 +507,7 @@ if __name__ == "__main__":
         debug_from=args.debug_from,
         depth_route=args.depth_route,
         depth_target=args.depth_target,
+        candidate_selection=args.candidate_selection,
         ab_run_id=args.ab_run_id,
         ab_seed=args.ab_seed,
         ab_log_interval=args.ab_log_interval,

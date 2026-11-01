@@ -94,8 +94,29 @@ def summarize_candidate_audit(audit, elapsed_ms, peak_allocated_mb=None):
     distinct = first_ge2 & ~audit['insufficient_distinct']
     alpha_pass = distinct & ~audit['low_alpha']
     footprint_pass = alpha_pass & ~audit['footprint_fail']
+    from_later = audit['candidate'] & (audit['chosen_group_index'] > 0)
+    later_count = int(from_later.sum().item())
+    later_examples = []
+    for index in torch.nonzero(from_later).reshape(-1)[:4].tolist():
+        later_examples.append(dict(query_index=int(index),
+                                   chosen_group_index=int(audit['chosen_group_index'][index].item()),
+                                   skipped_prefix_groups=int(audit['skipped_prefix_groups'][index].item()),
+                                   skipped_prefix_members=int(audit['skipped_prefix_members'][index].item()),
+                                   skipped_prefix_alpha=float(audit['skipped_prefix_alpha'][index].item()),
+                                   skipped_tau_min=float(audit['skipped_tau_min'][index].item()),
+                                   skipped_tau_max=float(audit['skipped_tau_max'][index].item())))
     return dict(queries=int(audit['candidate'].numel()),
                 selected=int(audit['candidate'].sum().item()),
+                selected_from_later=later_count,
+                later_examples=later_examples,
+                skipped_prefix_groups_total=int(audit['skipped_prefix_groups'].sum().item()),
+                skipped_prefix_members_total=int(audit['skipped_prefix_members'].sum().item()),
+                skipped_prefix_alpha_mean=(float(audit['skipped_prefix_alpha'][from_later].mean().item())
+                                           if later_count else None),
+                skipped_tau_min=(float(audit['skipped_tau_min'][from_later].min().item())
+                                 if later_count else None),
+                skipped_tau_max=(float(audit['skipped_tau_max'][from_later].max().item())
+                                 if later_count else None),
                 accepted_ge2=int((audit['accepted_count'] >= 2).sum().item()),
                 valid_ge2=int((audit['valid_count'] >= 2).sum().item()),
                 first_singleton=int((audit['first_group_size'] == 1).sum().item()),

@@ -14,6 +14,61 @@ from training_depth_plugin import route_depth, summarize_candidate_audit
 
 
 class BatchDepthTest(unittest.TestCase):
+    def test_first_qualified_selects_later_group_and_exposes_thin_foreground_risk(self):
+        xyz = torch.tensor([[0., 0., 1.], [-.01, 0., 1.02], [.01, 0., 1.02]],
+                           requires_grad=True)
+        quaternion = torch.tensor([[1., 0., 0., 0.]] * 3, requires_grad=True)
+        pc = SimpleNamespace(get_xyz=xyz, _rotation=quaternion,
+                             get_scaling=torch.tensor([[.04, .04, .01]] * 3))
+        camera = SimpleNamespace(world_view_transform=torch.eye(4),
+                                 Fx=1000., Fy=1000., Cx=0., Cy=0.)
+        xy = torch.zeros((1, 2), requires_grad=True)
+        native = torch.tensor([1.3], requires_grad=True)
+        common = (pc, camera, xy, torch.tensor([[0, 1, 2]], dtype=torch.int32),
+                  torch.tensor([[.8, .4, .4]]), torch.tensor([3]),
+                  torch.tensor([False]), native)
+        old, old_audit = grouped_depth_from_support(*common)
+        new, audit = grouped_depth_from_support(*common, selection='first_qualified')
+        self.assertFalse(old_audit['candidate'][0])
+        torch.testing.assert_close(old, native)
+        self.assertTrue(audit['candidate'][0])
+        self.assertEqual(audit['chosen_group_index'].tolist(), [1])
+        self.assertEqual(audit['skipped_prefix_groups'].tolist(), [1])
+        self.assertEqual(audit['skipped_prefix_members'].tolist(), [1])
+        self.assertAlmostEqual(float(audit['skipped_prefix_alpha'][0]), .8)
+        self.assertAlmostEqual(float(new[0]), 1.02, places=5)
+        # This foreground is a real synthetic surface at z=1.0. Passing the
+        # later group is a readout, not evidence that it is first visible.
+        direct_grad = torch.autograd.grad(new.sum(), xyz, retain_graph=True)[0]
+        detached_surrogate = new.detach() + native - native.detach()
+        detached_grad = torch.autograd.grad(detached_surrogate.sum(), xyz,
+                                           retain_graph=True, allow_unused=True)[0]
+        self.assertGreater(float(direct_grad.abs().sum()), 0.)
+        self.assertIsNone(detached_grad)
+        new.sum().backward()
+        self.assertEqual(float(xyz.grad[0].abs().sum()), 0.)
+        self.assertGreater(float(xyz.grad[1:].abs().sum()), 0.)
+        self.assertEqual(float(native.grad.abs().sum()), 0.)
+        self.assertTrue(torch.isfinite(quaternion.grad).all())
+        self.assertTrue(torch.isfinite(xy.grad).all())
+
+    def test_first_qualified_keeps_first_and_overflow_fallback(self):
+        xyz = torch.tensor([[-.01, 0., 1.], [.01, 0., 1.]], requires_grad=True)
+        pc = SimpleNamespace(get_xyz=xyz,
+                             _rotation=torch.tensor([[1., 0., 0., 0.]] * 2),
+                             get_scaling=torch.tensor([[.04, .04, .01]] * 2))
+        camera = SimpleNamespace(world_view_transform=torch.eye(4),
+                                 Fx=1000., Fy=1000., Cx=0., Cy=0.)
+        common = (pc, camera, torch.zeros((2, 2)),
+                  torch.tensor([[0, 1], [0, 1]], dtype=torch.int32),
+                  torch.tensor([[.4, .4], [.4, .4]]), torch.tensor([2, 3]),
+                  torch.tensor([False, True]), torch.tensor([1.3, 1.3]))
+        old, _ = grouped_depth_from_support(*common)
+        new, audit = grouped_depth_from_support(*common, selection='first_qualified')
+        torch.testing.assert_close(old, new)
+        self.assertEqual(audit['candidate'].tolist(), [True, False])
+        self.assertEqual(audit['chosen_group_index'].tolist(), [0, -1])
+
     def test_full_sample_depth_wrapper_fallback_backprop(self):
         from utils.graphics_utils import getProjectionMatrix
         import types

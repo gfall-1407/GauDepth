@@ -48,14 +48,15 @@ def compose_sample_points(candidate_z, query_xy, candidate_mask, native_points, 
 
 
 def grouped_depth_from_support(pc, camera, xy, ids, alpha, count, overflow,
-                               native_z, chunk_size=256):
+                               native_z, chunk_size=256, selection='first'):
     """Return camera-z [Q] and per-query audit masks from renderer support.
 
     xy is continuous pixel coordinates [Q,2], native_z [Q], ids/alpha [Q,K].
     This never sends per-query tensors to CPU. K must be <=128; overflow falls
     back per query. Camera transform follows row-vector world_view_transform.
     """
-    if (xy.ndim != 2 or xy.shape[1] != 2 or ids.ndim != 2 or
+    if (selection not in ('first', 'first_qualified') or
+            xy.ndim != 2 or xy.shape[1] != 2 or ids.ndim != 2 or
             alpha.shape != ids.shape or ids.shape[0] != xy.shape[0] or
             count.shape != (xy.shape[0],) or overflow.shape != count.shape or
             native_z.shape != count.shape or ids.shape[1] > 128 or chunk_size < 1):
@@ -77,6 +78,12 @@ def grouped_depth_from_support(pc, camera, xy, ids, alpha, count, overflow,
                        low_alpha=torch.zeros_like(count, dtype=torch.bool),
                        footprint_fail=torch.zeros_like(count, dtype=torch.bool),
                        insufficient_distinct=torch.zeros_like(count, dtype=torch.bool))
+    empty_audit.update(chosen_group_index=torch.full_like(count, -1),
+                       skipped_prefix_groups=torch.zeros_like(count),
+                       skipped_prefix_members=torch.zeros_like(count),
+                       skipped_prefix_alpha=torch.zeros_like(count, dtype=alpha.dtype),
+                       skipped_tau_min=torch.zeros_like(count, dtype=alpha.dtype),
+                       skipped_tau_max=torch.zeros_like(count, dtype=alpha.dtype))
     n = pc.get_xyz.shape[0]
     if n == 0 or xy.shape[0] == 0:
         return native_z, empty_audit
@@ -106,7 +113,8 @@ def grouped_depth_from_support(pc, camera, xy, ids, alpha, count, overflow,
         out, rows = _chunk(centers, rotations, scales, xy[start:stop],
                            ids[start:stop], alpha[start:stop], count[start:stop],
                            overflow[start:stop], native_z[start:stop],
-                           camera.Fx, camera.Fy, camera.Cx, camera.Cy, primitive_valid)
+                           camera.Fx, camera.Fy, camera.Cx, camera.Cy, primitive_valid,
+                           selection)
         depths.append(out)
         for key in audit:
             audit[key].append(rows[key])
@@ -114,7 +122,7 @@ def grouped_depth_from_support(pc, camera, xy, ids, alpha, count, overflow,
 
 
 def _chunk(centers, rotations, scales, xy, ids, alpha, count, overflow,
-           native_z, fx, fy, cx, cy, primitive_valid):
+           native_z, fx, fy, cx, cy, primitive_valid, selection):
     q, k = ids.shape
     device = ids.device
     pos = torch.arange(k, device=device)[None, :]
@@ -204,17 +212,91 @@ def _chunk(centers, rotations, scales, xy, ids, alpha, count, overflow,
         good = (~overflow.bool() & (count <= k) & (size >= 2) & ~insufficient &
                 ~low_alpha & ~footprint_fail & torch.isfinite(denom0) &
                 (denom0 > 0) & torch.isfinite(z0) & (z0 > 0))
+        chosen_group_index = torch.where(good, torch.zeros_like(count), -1)
+        skipped_prefix_groups = torch.zeros_like(count)
+        skipped_prefix_members = torch.zeros_like(count)
+        skipped_prefix_alpha = torch.zeros_like(group_alpha)
+        skipped_tau_min = torch.zeros_like(group_alpha)
+        skipped_tau_max = torch.zeros_like(group_alpha)
+        selected = first
+        if selection == 'first_qualified':
+            # Greedy contiguous complete-link segments. A rejected group is
+            # never merged back into a later group; only the readout changes.
+            group_id = torch.zeros((q, k), dtype=torch.long, device=device)
+            start = torch.zeros(q, dtype=torch.long, device=device)
+            group_number = torch.zeros(q, dtype=torch.long, device=device)
+            for position in range(1, k):
+                in_current = ((i[None, :] >= start[:, None]) &
+                              (i[None, :] < position) & vs)
+                compatible = (pair_ok[:, :, position] | ~in_current).all(1)
+                new_group = (position < nv) & ~compatible
+                group_number = group_number + new_group.long()
+                start = torch.where(new_group, position, start)
+                group_id[:, position] = group_number
+            group_size = torch.zeros((q, k), dtype=torch.long, device=device)
+            group_size.scatter_add_(1, group_id, vs.long())
+            alpha_complement = torch.ones((q, k), dtype=al.dtype, device=device)
+            alpha_complement.scatter_reduce_(1, group_id, torch.where(vs, 1-al, 1.),
+                                             reduce='prod', include_self=True)
+            alpha_by_group = 1-alpha_complement
+            first_index = torch.full((q, k), k, dtype=torch.long, device=device)
+            first_index.scatter_reduce_(1, group_id,
+                                        torch.where(vs, i[None, :], k),
+                                        reduce='amin', include_self=True)
+            safe_first = first_index.clamp_max(k-1)
+            first_m = torch.gather(ms, 1, safe_first[:, :, None].expand(-1, -1, 3))
+            first_cov = torch.gather(cov, 1,
+                                     safe_first[:, :, None, None].expand(-1, -1, 3, 3))
+            reference_m = torch.gather(first_m, 1, group_id[:, :, None].expand(-1, -1, 3))
+            reference_cov = torch.gather(first_cov, 1,
+                                         group_id[:, :, None, None].expand(-1, -1, 3, 3))
+            different = vs & ((ms != reference_m).any(-1) |
+                              (cov != reference_cov).any(-1).any(-1))
+            distinct_by_group = torch.zeros((q, k), dtype=torch.long, device=device)
+            distinct_by_group.scatter_add_(1, group_id, different.long())
+            denominator = torch.zeros((q, k), dtype=c0.dtype, device=device)
+            numerator = torch.zeros_like(denominator)
+            denominator.scatter_add_(1, group_id, torch.where(vs, c0*c0, 0.))
+            numerator.scatter_add_(1, group_id, torch.where(vs, c0*b0, 0.))
+            group_depth = numerator / denominator.clamp_min(torch.finfo(c0.dtype).tiny)
+            member_depth = torch.gather(group_depth, 1, group_id)
+            member_point = member_depth[:, :, None] * vd[:, None, :]
+            member_local = torch.matmul(rs.transpose(-1, -2),
+                                        (member_point-ms)[..., None]).squeeze(-1)
+            member_q_axes = (member_local/ss).square()
+            member_q_axes.scatter_(2, ax[:, :, None], 0.)
+            member_footprint = member_q_axes.sum(-1)
+            member_bad = vs & (~torch.isfinite(member_footprint) |
+                               (member_footprint > 4.))
+            bad_by_group = torch.zeros((q, k), dtype=torch.long, device=device)
+            bad_by_group.scatter_add_(1, group_id, member_bad.long())
+            qualified = ((group_size >= 2) & (distinct_by_group > 0) &
+                         (alpha_by_group >= .5) & (bad_by_group == 0) &
+                         torch.isfinite(denominator) & (denominator > 0) &
+                         torch.isfinite(group_depth) & (group_depth > 0))
+            chosen = torch.where(qualified, i[None, :], k).min(1).values
+            good = (chosen < k) & ~overflow.bool() & (count <= k)
+            selected = vs & (group_id == chosen[:, None])
+            chosen_group_index = torch.where(good, chosen, -1)
+            skipped_prefix_groups = torch.where(good, chosen, 0)
+            skipped = vs & (group_id < chosen[:, None]) & good[:, None]
+            skipped_prefix_members = skipped.sum(1)
+            skipped_prefix_alpha = 1-torch.prod(torch.where(skipped, 1-al, 1.), dim=1)
+            skipped_tau_min = torch.where(good & (chosen > 0),
+                                           torch.where(skipped, ts, torch.inf).min(1).values, 0.)
+            skipped_tau_max = torch.where(good & (chosen > 0),
+                                           torch.where(skipped, ts, -torch.inf).max(1).values, 0.)
     live_m = torch.gather(m, 1, gather3)
     live_n = torch.gather(torch.gather(rot, 1, gather33), 3,
                           ax[:, :, None, None].expand(-1, -1, 3, 1)).squeeze(-1)
     # Sanitize inactive entries before products, so a NaN in an excluded member
     # cannot leak through a zero upstream gradient during autograd.
-    live_m = torch.where(first[:, :, None], live_m, 0.)
-    live_n = torch.where(first[:, :, None], live_n, 0.)
+    live_m = torch.where(selected[:, :, None], live_m, 0.)
+    live_n = torch.where(selected[:, :, None], live_n, 0.)
     live_c = (live_n * v[:, None, :]).sum(-1)
     live_b = (live_n * live_m).sum(-1)
-    candidate = torch.where(first, live_c * live_b, 0.).sum(1) / torch.where(
-        first, live_c * live_c, 0.).sum(1).clamp_min(torch.finfo(native_z.dtype).tiny)
+    candidate = torch.where(selected, live_c * live_b, 0.).sum(1) / torch.where(
+        selected, live_c * live_c, 0.).sum(1).clamp_min(torch.finfo(native_z.dtype).tiny)
     output = torch.where(good, candidate, native_z)
     rows = dict(candidate=good, invalid_count=invalid_count, first_group_size=size,
                 first_group_alpha=group_alpha,
@@ -225,5 +307,11 @@ def _chunk(centers, rotations, scales, xy, ids, alpha, count, overflow,
                 boundary_angle_fail=boundary_angle_fail,
                 boundary_distance_fail=boundary_distance_fail,
                 overflow=overflow, low_alpha=low_alpha, footprint_fail=footprint_fail,
-                insufficient_distinct=insufficient)
+                insufficient_distinct=insufficient,
+                chosen_group_index=chosen_group_index,
+                skipped_prefix_groups=skipped_prefix_groups,
+                skipped_prefix_members=skipped_prefix_members,
+                skipped_prefix_alpha=skipped_prefix_alpha,
+                skipped_tau_min=skipped_tau_min,
+                skipped_tau_max=skipped_tau_max)
     return output, rows
