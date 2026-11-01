@@ -1,0 +1,1799 @@
+{
+  "status": "complete",
+  "synthetic": {
+    "max_warp_error_px": 0.0,
+    "zncc_affine_invariant": true,
+    "textureless_invalid": true
+  },
+  "support_gradient": {
+    "max_absolute_error": 1.463401066992276e-10,
+    "xi_gradient": [
+      -0.16357490434747957,
+      0.11602008466417267,
+      0.4047223320947501
+    ],
+    "logit_gradient": [
+      0.036425095652520445,
+      -0.08673361554724252,
+      0.05030851989472207
+    ]
+  },
+  "parameters": {
+    "seed": 20261101,
+    "rays_per_scan": 32,
+    "sigma_px": 1.0,
+    "tau": 0.05,
+    "patch": "9x9 original pixels",
+    "profile_positions": 129,
+    "max_branches": 4,
+    "max_newton_steps": 8
+  },
+  "scans": [
+    {
+      "scan": 37,
+      "rows": [
+        {
+          "index": 2,
+          "valid_input": true,
+          "native_heldout": 0.8448528808309439,
+          "branches": {
+            "photo": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 15,
+              "heldout": 0.8448528808309439,
+              "fallback": true,
+              "cost": null,
+              "pi": null
+            },
+            "joint": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 5,
+              "heldout": 0.8448528808309439,
+              "fallback": true,
+              "cost": null,
+              "pi": null
+            }
+          },
+          "seconds": 0.1700113000000001
+        },
+        {
+          "index": 9,
+          "valid_input": true,
+          "native_heldout": 0.5187675764357235,
+          "branches": {
+            "photo": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 13,
+              "heldout": 0.5187675764357235,
+              "fallback": true,
+              "cost": null,
+              "pi": null
+            },
+            "joint": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 1,
+              "heldout": 0.5187675764357235,
+              "fallback": true,
+              "cost": null,
+              "pi": null
+            }
+          },
+          "seconds": 0.12576640000000006
+        },
+        {
+          "index": 16,
+          "valid_input": true,
+          "native_heldout": 1.0203944115140182,
+          "branches": {
+            "photo": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 14,
+              "heldout": 1.0203944115140182,
+              "fallback": true,
+              "cost": null,
+              "pi": null
+            },
+            "joint": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 2,
+              "heldout": 1.0203944115140182,
+              "fallback": true,
+              "cost": null,
+              "pi": null
+            }
+          },
+          "seconds": 0.13943230000000018
+        },
+        {
+          "index": 38,
+          "valid_input": true,
+          "native_heldout": 0.8539378290244252,
+          "branches": {
+            "photo": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 10,
+              "heldout": 0.8539378290244252,
+              "fallback": true,
+              "cost": null,
+              "pi": null
+            },
+            "joint": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 1,
+              "heldout": 0.8539378290244252,
+              "fallback": true,
+              "cost": null,
+              "pi": null
+            }
+          },
+          "seconds": 0.1329311000000002
+        },
+        {
+          "index": 45,
+          "valid_input": true,
+          "native_heldout": 1.0692768519243627,
+          "branches": {
+            "photo": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 16,
+              "heldout": 1.0692768519243627,
+              "fallback": true,
+              "cost": null,
+              "pi": null
+            },
+            "joint": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 5,
+              "heldout": 1.0692768519243627,
+              "fallback": true,
+              "cost": null,
+              "pi": null
+            }
+          },
+          "seconds": 0.18206940000000005
+        },
+        {
+          "index": 91,
+          "valid_input": true,
+          "native_heldout": 0.4316156297842524,
+          "branches": {
+            "photo": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 17,
+              "heldout": 0.4316156297842524,
+              "fallback": true,
+              "cost": null,
+              "pi": null
+            },
+            "joint": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 1,
+              "heldout": 0.4316156297842524,
+              "fallback": true,
+              "cost": null,
+              "pi": null
+            }
+          },
+          "seconds": 0.13543779999999983
+        },
+        {
+          "index": 124,
+          "valid_input": true,
+          "native_heldout": 0.08620281066053903,
+          "branches": {
+            "photo": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 18,
+              "heldout": 0.08620281066053903,
+              "fallback": true,
+              "cost": null,
+              "pi": null
+            },
+            "joint": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 5,
+              "heldout": 0.08620281066053903,
+              "fallback": true,
+              "cost": null,
+              "pi": null
+            }
+          },
+          "seconds": 0.15624369999999987
+        },
+        {
+          "index": 126,
+          "valid_input": true,
+          "native_heldout": 0.8158431728689663,
+          "branches": {
+            "photo": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 13,
+              "heldout": 0.8158431728689663,
+              "fallback": true,
+              "cost": null,
+              "pi": null
+            },
+            "joint": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 2,
+              "heldout": 0.8158431728689663,
+              "fallback": true,
+              "cost": null,
+              "pi": null
+            }
+          },
+          "seconds": 0.12942889999999974
+        },
+        {
+          "index": 153,
+          "valid_input": true,
+          "native_heldout": 1.048117504967233,
+          "branches": {
+            "photo": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 14,
+              "heldout": 1.048117504967233,
+              "fallback": true,
+              "cost": null,
+              "pi": null
+            },
+            "joint": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 2,
+              "heldout": 1.048117504967233,
+              "fallback": true,
+              "cost": null,
+              "pi": null
+            }
+          },
+          "seconds": 0.1563513999999997
+        },
+        {
+          "index": 157,
+          "valid_input": true,
+          "native_heldout": null,
+          "branches": {
+            "photo": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 0,
+              "heldout": null,
+              "fallback": true,
+              "cost": null,
+              "pi": null
+            },
+            "joint": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 0,
+              "heldout": null,
+              "fallback": true,
+              "cost": null,
+              "pi": null
+            }
+          },
+          "seconds": 0.07652630000000027
+        },
+        {
+          "index": 160,
+          "valid_input": true,
+          "native_heldout": 0.9522360855209853,
+          "branches": {
+            "photo": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 13,
+              "heldout": 0.9522360855209853,
+              "fallback": true,
+              "cost": null,
+              "pi": null
+            },
+            "joint": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 2,
+              "heldout": 0.9522360855209853,
+              "fallback": true,
+              "cost": null,
+              "pi": null
+            }
+          },
+          "seconds": 0.1312082000000001
+        },
+        {
+          "index": 194,
+          "valid_input": true,
+          "native_heldout": 0.8241236521815307,
+          "branches": {
+            "photo": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 18,
+              "heldout": 0.8241236521815307,
+              "fallback": true,
+              "cost": null,
+              "pi": null
+            },
+            "joint": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 3,
+              "heldout": 0.8241236521815307,
+              "fallback": true,
+              "cost": null,
+              "pi": null
+            }
+          },
+          "seconds": 0.1637594
+        },
+        {
+          "index": 257,
+          "valid_input": true,
+          "native_heldout": 0.8647634864032377,
+          "branches": {
+            "photo": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 22,
+              "heldout": 0.8647634864032377,
+              "fallback": true,
+              "cost": null,
+              "pi": null
+            },
+            "joint": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 5,
+              "heldout": 0.8647634864032377,
+              "fallback": true,
+              "cost": null,
+              "pi": null
+            }
+          },
+          "seconds": 0.16816869999999984
+        },
+        {
+          "index": 268,
+          "valid_input": true,
+          "native_heldout": 0.7842694944396356,
+          "branches": {
+            "photo": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 19,
+              "heldout": 0.7842694944396356,
+              "fallback": true,
+              "cost": null,
+              "pi": null
+            },
+            "joint": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 5,
+              "heldout": 0.7842694944396356,
+              "fallback": true,
+              "cost": null,
+              "pi": null
+            }
+          },
+          "seconds": 0.150134
+        },
+        {
+          "index": 294,
+          "valid_input": true,
+          "native_heldout": 0.23677597427862396,
+          "branches": {
+            "photo": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 8,
+              "heldout": 0.23677597427862396,
+              "fallback": true,
+              "cost": null,
+              "pi": null
+            },
+            "joint": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 3,
+              "heldout": 0.23677597427862396,
+              "fallback": true,
+              "cost": null,
+              "pi": null
+            }
+          },
+          "seconds": 0.15288140000000006
+        },
+        {
+          "index": 297,
+          "valid_input": true,
+          "native_heldout": 0.7156834477412201,
+          "branches": {
+            "photo": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 8,
+              "heldout": 0.7156834477412201,
+              "fallback": true,
+              "cost": null,
+              "pi": null
+            },
+            "joint": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 3,
+              "heldout": 0.7156834477412201,
+              "fallback": true,
+              "cost": null,
+              "pi": null
+            }
+          },
+          "seconds": 0.14390329999999985
+        },
+        {
+          "index": 314,
+          "valid_input": true,
+          "native_heldout": 0.1020640647094807,
+          "branches": {
+            "photo": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 17,
+              "heldout": 0.1020640647094807,
+              "fallback": true,
+              "cost": null,
+              "pi": null
+            },
+            "joint": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 6,
+              "heldout": 0.1020640647094807,
+              "fallback": true,
+              "cost": null,
+              "pi": null
+            }
+          },
+          "seconds": 0.22223860000000029
+        },
+        {
+          "index": 319,
+          "valid_input": true,
+          "native_heldout": null,
+          "branches": {
+            "photo": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 0,
+              "heldout": null,
+              "fallback": true,
+              "cost": null,
+              "pi": null
+            },
+            "joint": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 0,
+              "heldout": null,
+              "fallback": true,
+              "cost": null,
+              "pi": null
+            }
+          },
+          "seconds": 0.044049900000000086
+        },
+        {
+          "index": 329,
+          "valid_input": true,
+          "native_heldout": 0.13395258699136348,
+          "branches": {
+            "photo": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 9,
+              "heldout": 0.13395258699136348,
+              "fallback": true,
+              "cost": null,
+              "pi": null
+            },
+            "joint": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 1,
+              "heldout": 0.13395258699136348,
+              "fallback": true,
+              "cost": null,
+              "pi": null
+            }
+          },
+          "seconds": 0.13098369999999981
+        },
+        {
+          "index": 378,
+          "valid_input": true,
+          "native_heldout": 1.0304161053634882,
+          "branches": {
+            "photo": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 15,
+              "heldout": 1.0304161053634882,
+              "fallback": true,
+              "cost": null,
+              "pi": null
+            },
+            "joint": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 2,
+              "heldout": 1.0304161053634882,
+              "fallback": true,
+              "cost": null,
+              "pi": null
+            }
+          },
+          "seconds": 0.14171449999999997
+        },
+        {
+          "index": 381,
+          "valid_input": true,
+          "native_heldout": 0.10715935205784177,
+          "branches": {
+            "photo": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 11,
+              "heldout": 0.10715935205784177,
+              "fallback": true,
+              "cost": null,
+              "pi": null
+            },
+            "joint": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 1,
+              "heldout": 0.10715935205784177,
+              "fallback": true,
+              "cost": null,
+              "pi": null
+            }
+          },
+          "seconds": 0.12592299999999979
+        },
+        {
+          "index": 403,
+          "valid_input": true,
+          "native_heldout": 1.0438675894079392,
+          "branches": {
+            "photo": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 13,
+              "heldout": 1.0438675894079392,
+              "fallback": true,
+              "cost": null,
+              "pi": null
+            },
+            "joint": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 2,
+              "heldout": 1.0438675894079392,
+              "fallback": true,
+              "cost": null,
+              "pi": null
+            }
+          },
+          "seconds": 0.17581369999999996
+        },
+        {
+          "index": 418,
+          "valid_input": true,
+          "native_heldout": null,
+          "branches": {
+            "photo": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 12,
+              "heldout": null,
+              "fallback": true,
+              "cost": null,
+              "pi": null
+            },
+            "joint": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 4,
+              "heldout": null,
+              "fallback": true,
+              "cost": null,
+              "pi": null
+            }
+          },
+          "seconds": 0.16965829999999915
+        },
+        {
+          "index": 429,
+          "valid_input": true,
+          "native_heldout": 0.4810309691488571,
+          "branches": {
+            "photo": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 11,
+              "heldout": 0.4810309691488571,
+              "fallback": true,
+              "cost": null,
+              "pi": null
+            },
+            "joint": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 3,
+              "heldout": 0.4810309691488571,
+              "fallback": true,
+              "cost": null,
+              "pi": null
+            }
+          },
+          "seconds": 0.1357380999999993
+        },
+        {
+          "index": 431,
+          "valid_input": true,
+          "native_heldout": 0.12231342107647891,
+          "branches": {
+            "photo": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 9,
+              "heldout": 0.12231342107647891,
+              "fallback": true,
+              "cost": null,
+              "pi": null
+            },
+            "joint": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 1,
+              "heldout": 0.12231342107647891,
+              "fallback": true,
+              "cost": null,
+              "pi": null
+            }
+          },
+          "seconds": 0.1324456999999999
+        },
+        {
+          "index": 437,
+          "valid_input": true,
+          "native_heldout": 0.868139507417158,
+          "branches": {
+            "photo": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 12,
+              "heldout": 0.868139507417158,
+              "fallback": true,
+              "cost": null,
+              "pi": null
+            },
+            "joint": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 3,
+              "heldout": 0.868139507417158,
+              "fallback": true,
+              "cost": null,
+              "pi": null
+            }
+          },
+          "seconds": 0.14160090000000025
+        },
+        {
+          "index": 440,
+          "valid_input": true,
+          "native_heldout": 1.4413544416373658,
+          "branches": {
+            "photo": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 13,
+              "heldout": 1.4413544416373658,
+              "fallback": true,
+              "cost": null,
+              "pi": null
+            },
+            "joint": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 2,
+              "heldout": 1.4413544416373658,
+              "fallback": true,
+              "cost": null,
+              "pi": null
+            }
+          },
+          "seconds": 0.14613910000000008
+        },
+        {
+          "index": 469,
+          "valid_input": true,
+          "native_heldout": 1.1210444289432653,
+          "branches": {
+            "photo": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 8,
+              "heldout": 1.1210444289432653,
+              "fallback": true,
+              "cost": null,
+              "pi": null
+            },
+            "joint": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 1,
+              "heldout": 1.1210444289432653,
+              "fallback": true,
+              "cost": null,
+              "pi": null
+            }
+          },
+          "seconds": 0.1345938999999996
+        },
+        {
+          "index": 472,
+          "valid_input": true,
+          "native_heldout": 0.019649377003836177,
+          "branches": {
+            "photo": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 11,
+              "heldout": 0.019649377003836177,
+              "fallback": true,
+              "cost": null,
+              "pi": null
+            },
+            "joint": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 3,
+              "heldout": 0.019649377003836177,
+              "fallback": true,
+              "cost": null,
+              "pi": null
+            }
+          },
+          "seconds": 0.14716089999999937
+        },
+        {
+          "index": 488,
+          "valid_input": true,
+          "native_heldout": 0.9404444308742667,
+          "branches": {
+            "photo": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 17,
+              "heldout": 0.9404444308742667,
+              "fallback": true,
+              "cost": null,
+              "pi": null
+            },
+            "joint": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 4,
+              "heldout": 0.9404444308742667,
+              "fallback": true,
+              "cost": null,
+              "pi": null
+            }
+          },
+          "seconds": 0.16702119999999976
+        },
+        {
+          "index": 493,
+          "valid_input": true,
+          "native_heldout": 0.3397608611412728,
+          "branches": {
+            "photo": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 9,
+              "heldout": 0.3397608611412728,
+              "fallback": true,
+              "cost": null,
+              "pi": null
+            },
+            "joint": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 1,
+              "heldout": 0.3397608611412728,
+              "fallback": true,
+              "cost": null,
+              "pi": null
+            }
+          },
+          "seconds": 0.12193849999999973
+        },
+        {
+          "index": 494,
+          "valid_input": true,
+          "native_heldout": 0.49770627348960095,
+          "branches": {
+            "photo": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 12,
+              "heldout": 0.49770627348960095,
+              "fallback": true,
+              "cost": null,
+              "pi": null
+            },
+            "joint": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 2,
+              "heldout": 0.49770627348960095,
+              "fallback": true,
+              "cost": null,
+              "pi": null
+            }
+          },
+          "seconds": 0.12924749999999996
+        }
+      ],
+      "hashes": {
+        "trace": "9152656e1154eaaa3febd2f6f844a272a78a220e07fce4f61587342318562ceb",
+        "metadata": "1a50c9f0ae9105a70c9b1a360eb75fba4fb05297d89e95fc3434dbbb822f03e9",
+        "images": [
+          "b3c01bacdd66c09af63b417cd8ef184adb171eb91cd4c51a9d1791f30ce05404",
+          "3e767110c1ff4659e2e8cc1e586c9a68e465c60bd0f49efd4abc4ecc724b77f3",
+          "3cc777de6c94d29af15dac9f54826bb988bab235bed0df606aad0980cbeb7ee5"
+        ],
+        "cameras": "fe0aa32b87c96c1366500ccdf02493fb6f78ddd505ac484aa5f1315c4716f5b2",
+        "extrinsics": "f2f04e4f7c54d4f53af5acf6f66346158671e78644cd883923609105ea73d705"
+      },
+      "source_commit": "b63b967c4d95e923ef4961ae16b16bdc2a035ec4",
+      "normal_semantics": "camera-space oriented geometric direction, host buffer xyz; not RGB/rendered normal",
+      "trace_model_sha256": "34fe9d7243208432410bcaf41e44f390e41009ef3730a5f5dfd63137bbe325c1",
+      "summary": {
+        "total_rays": 32,
+        "native_heldout_valid": 29,
+        "photo_reliable": 0,
+        "joint_reliable": 0,
+        "photo_fallback": 32,
+        "joint_fallback": 32,
+        "seconds_per_ray_mean": 0.1431412843749999,
+        "heldout": {
+          "native": {
+            "valid_count": 29,
+            "denominator": 32,
+            "mean": 0.6660608350978591,
+            "median": 0.8158431728689663
+          },
+          "photo": {
+            "valid_count": 29,
+            "denominator": 32,
+            "mean": 0.6660608350978591,
+            "median": 0.8158431728689663
+          },
+          "joint": {
+            "valid_count": 29,
+            "denominator": 32,
+            "mean": 0.6660608350978591,
+            "median": 0.8158431728689663
+          }
+        },
+        "joint_reliable_improved": 0,
+        "gate_passed": false
+      }
+    },
+    {
+      "scan": 40,
+      "rows": [
+        {
+          "index": 3,
+          "valid_input": true,
+          "native_heldout": 0.5690395507726846,
+          "branches": {
+            "photo": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 24,
+              "heldout": 0.5690395507726846,
+              "fallback": true,
+              "cost": null,
+              "pi": null
+            },
+            "joint": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 8,
+              "heldout": 0.5690395507726846,
+              "fallback": true,
+              "cost": null,
+              "pi": null
+            }
+          },
+          "seconds": 0.1593051000000001
+        },
+        {
+          "index": 6,
+          "valid_input": true,
+          "native_heldout": null,
+          "branches": {
+            "photo": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 14,
+              "heldout": null,
+              "fallback": true,
+              "cost": null,
+              "pi": null
+            },
+            "joint": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 4,
+              "heldout": null,
+              "fallback": true,
+              "cost": null,
+              "pi": null
+            }
+          },
+          "seconds": 0.1551511999999997
+        },
+        {
+          "index": 10,
+          "valid_input": true,
+          "native_heldout": null,
+          "branches": {
+            "photo": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 21,
+              "heldout": null,
+              "fallback": true,
+              "cost": null,
+              "pi": null
+            },
+            "joint": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 6,
+              "heldout": null,
+              "fallback": true,
+              "cost": null,
+              "pi": null
+            }
+          },
+          "seconds": 0.22254370000000012
+        },
+        {
+          "index": 26,
+          "valid_input": true,
+          "native_heldout": 0.27765672861970425,
+          "branches": {
+            "photo": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 21,
+              "heldout": 0.27765672861970425,
+              "fallback": true,
+              "cost": null,
+              "pi": null
+            },
+            "joint": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 6,
+              "heldout": 0.27765672861970425,
+              "fallback": true,
+              "cost": null,
+              "pi": null
+            }
+          },
+          "seconds": 0.1683887000000004
+        },
+        {
+          "index": 54,
+          "valid_input": true,
+          "native_heldout": 0.6190653686307943,
+          "branches": {
+            "photo": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 20,
+              "heldout": 0.6190653686307943,
+              "fallback": true,
+              "cost": null,
+              "pi": null
+            },
+            "joint": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 4,
+              "heldout": 0.6190653686307943,
+              "fallback": true,
+              "cost": null,
+              "pi": null
+            }
+          },
+          "seconds": 0.18832890000000013
+        },
+        {
+          "index": 61,
+          "valid_input": true,
+          "native_heldout": 0.8128734223773715,
+          "branches": {
+            "photo": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 17,
+              "heldout": 0.8128734223773715,
+              "fallback": true,
+              "cost": null,
+              "pi": null
+            },
+            "joint": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 2,
+              "heldout": 0.8128734223773715,
+              "fallback": true,
+              "cost": null,
+              "pi": null
+            }
+          },
+          "seconds": 0.14009720000000048
+        },
+        {
+          "index": 65,
+          "valid_input": true,
+          "native_heldout": 0.2926966508681218,
+          "branches": {
+            "photo": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 10,
+              "heldout": 0.2926966508681218,
+              "fallback": true,
+              "cost": null,
+              "pi": null
+            },
+            "joint": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 3,
+              "heldout": 0.2926966508681218,
+              "fallback": true,
+              "cost": null,
+              "pi": null
+            }
+          },
+          "seconds": 0.18596379999999968
+        },
+        {
+          "index": 97,
+          "valid_input": true,
+          "native_heldout": null,
+          "branches": {
+            "photo": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 31,
+              "heldout": null,
+              "fallback": true,
+              "cost": null,
+              "pi": null
+            },
+            "joint": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 15,
+              "heldout": null,
+              "fallback": true,
+              "cost": null,
+              "pi": null
+            }
+          },
+          "seconds": 0.15467340000000007
+        },
+        {
+          "index": 117,
+          "valid_input": true,
+          "native_heldout": 0.6889944205105678,
+          "branches": {
+            "photo": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 17,
+              "heldout": 0.6889944205105678,
+              "fallback": true,
+              "cost": null,
+              "pi": null
+            },
+            "joint": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 4,
+              "heldout": 0.6889944205105678,
+              "fallback": true,
+              "cost": null,
+              "pi": null
+            }
+          },
+          "seconds": 0.15344019999999947
+        },
+        {
+          "index": 137,
+          "valid_input": true,
+          "native_heldout": 0.5172002406376095,
+          "branches": {
+            "photo": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 20,
+              "heldout": 0.5172002406376095,
+              "fallback": true,
+              "cost": null,
+              "pi": null
+            },
+            "joint": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 5,
+              "heldout": 0.5172002406376095,
+              "fallback": true,
+              "cost": null,
+              "pi": null
+            }
+          },
+          "seconds": 0.17308780000000024
+        },
+        {
+          "index": 164,
+          "valid_input": true,
+          "native_heldout": null,
+          "branches": {
+            "photo": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 17,
+              "heldout": null,
+              "fallback": true,
+              "cost": null,
+              "pi": null
+            },
+            "joint": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 4,
+              "heldout": null,
+              "fallback": true,
+              "cost": null,
+              "pi": null
+            }
+          },
+          "seconds": 0.15557210000000055
+        },
+        {
+          "index": 166,
+          "valid_input": true,
+          "native_heldout": 1.3510381549932575,
+          "branches": {
+            "photo": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 20,
+              "heldout": 1.3510381549932575,
+              "fallback": true,
+              "cost": null,
+              "pi": null
+            },
+            "joint": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 9,
+              "heldout": 1.3510381549932575,
+              "fallback": true,
+              "cost": null,
+              "pi": null
+            }
+          },
+          "seconds": 0.1481185000000007
+        },
+        {
+          "index": 176,
+          "valid_input": true,
+          "native_heldout": 0.6504166839956198,
+          "branches": {
+            "photo": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 22,
+              "heldout": 0.6504166839956198,
+              "fallback": true,
+              "cost": null,
+              "pi": null
+            },
+            "joint": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 4,
+              "heldout": 0.6504166839956198,
+              "fallback": true,
+              "cost": null,
+              "pi": null
+            }
+          },
+          "seconds": 0.15616200000000013
+        },
+        {
+          "index": 233,
+          "valid_input": true,
+          "native_heldout": 0.5539634810898217,
+          "branches": {
+            "photo": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 16,
+              "heldout": 0.5539634810898217,
+              "fallback": true,
+              "cost": null,
+              "pi": null
+            },
+            "joint": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 3,
+              "heldout": 0.5539634810898217,
+              "fallback": true,
+              "cost": null,
+              "pi": null
+            }
+          },
+          "seconds": 0.1574030000000004
+        },
+        {
+          "index": 240,
+          "valid_input": true,
+          "native_heldout": null,
+          "branches": {
+            "photo": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 0,
+              "heldout": null,
+              "fallback": true,
+              "cost": null,
+              "pi": null
+            },
+            "joint": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 0,
+              "heldout": null,
+              "fallback": true,
+              "cost": null,
+              "pi": null
+            }
+          },
+          "seconds": 0.04310179999999875
+        },
+        {
+          "index": 252,
+          "valid_input": true,
+          "native_heldout": 0.415725502811104,
+          "branches": {
+            "photo": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 17,
+              "heldout": 0.415725502811104,
+              "fallback": true,
+              "cost": null,
+              "pi": null
+            },
+            "joint": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 3,
+              "heldout": 0.415725502811104,
+              "fallback": true,
+              "cost": null,
+              "pi": null
+            }
+          },
+          "seconds": 0.14124559999999953
+        },
+        {
+          "index": 253,
+          "valid_input": true,
+          "native_heldout": null,
+          "branches": {
+            "photo": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 29,
+              "heldout": null,
+              "fallback": true,
+              "cost": null,
+              "pi": null
+            },
+            "joint": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 6,
+              "heldout": null,
+              "fallback": true,
+              "cost": null,
+              "pi": null
+            }
+          },
+          "seconds": 0.15198830000000108
+        },
+        {
+          "index": 281,
+          "valid_input": true,
+          "native_heldout": 0.4992038914909931,
+          "branches": {
+            "photo": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 20,
+              "heldout": 0.4992038914909931,
+              "fallback": true,
+              "cost": null,
+              "pi": null
+            },
+            "joint": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 3,
+              "heldout": 0.4992038914909931,
+              "fallback": true,
+              "cost": null,
+              "pi": null
+            }
+          },
+          "seconds": 0.18024220000000035
+        },
+        {
+          "index": 319,
+          "valid_input": true,
+          "native_heldout": 0.3722195847577706,
+          "branches": {
+            "photo": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 14,
+              "heldout": 0.3722195847577706,
+              "fallback": true,
+              "cost": null,
+              "pi": null
+            },
+            "joint": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 5,
+              "heldout": 0.3722195847577706,
+              "fallback": true,
+              "cost": null,
+              "pi": null
+            }
+          },
+          "seconds": 0.15351299999999846
+        },
+        {
+          "index": 338,
+          "valid_input": true,
+          "native_heldout": 0.4749518475987674,
+          "branches": {
+            "photo": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 20,
+              "heldout": 0.4749518475987674,
+              "fallback": true,
+              "cost": null,
+              "pi": null
+            },
+            "joint": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 5,
+              "heldout": 0.4749518475987674,
+              "fallback": true,
+              "cost": null,
+              "pi": null
+            }
+          },
+          "seconds": 0.16105429999999998
+        },
+        {
+          "index": 343,
+          "valid_input": true,
+          "native_heldout": null,
+          "branches": {
+            "photo": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 0,
+              "heldout": null,
+              "fallback": true,
+              "cost": null,
+              "pi": null
+            },
+            "joint": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 0,
+              "heldout": null,
+              "fallback": true,
+              "cost": null,
+              "pi": null
+            }
+          },
+          "seconds": 0.04608269999999948
+        },
+        {
+          "index": 345,
+          "valid_input": true,
+          "native_heldout": 0.8693449815091705,
+          "branches": {
+            "photo": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 12,
+              "heldout": 0.8693449815091705,
+              "fallback": true,
+              "cost": null,
+              "pi": null
+            },
+            "joint": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 3,
+              "heldout": 0.8693449815091705,
+              "fallback": true,
+              "cost": null,
+              "pi": null
+            }
+          },
+          "seconds": 0.1385973000000007
+        },
+        {
+          "index": 349,
+          "valid_input": true,
+          "native_heldout": 0.9848369817275227,
+          "branches": {
+            "photo": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 26,
+              "heldout": 0.9848369817275227,
+              "fallback": true,
+              "cost": null,
+              "pi": null
+            },
+            "joint": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 9,
+              "heldout": 0.9848369817275227,
+              "fallback": true,
+              "cost": null,
+              "pi": null
+            }
+          },
+          "seconds": 0.18222529999999892
+        },
+        {
+          "index": 373,
+          "valid_input": true,
+          "native_heldout": 0.2905261673556261,
+          "branches": {
+            "photo": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 15,
+              "heldout": 0.2905261673556261,
+              "fallback": true,
+              "cost": null,
+              "pi": null
+            },
+            "joint": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 4,
+              "heldout": 0.2905261673556261,
+              "fallback": true,
+              "cost": null,
+              "pi": null
+            }
+          },
+          "seconds": 0.16722289999999873
+        },
+        {
+          "index": 379,
+          "valid_input": true,
+          "native_heldout": 1.1009882840776228,
+          "branches": {
+            "photo": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 29,
+              "heldout": 1.1009882840776228,
+              "fallback": true,
+              "cost": null,
+              "pi": null
+            },
+            "joint": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 14,
+              "heldout": 1.1009882840776228,
+              "fallback": true,
+              "cost": null,
+              "pi": null
+            }
+          },
+          "seconds": 0.15228999999999893
+        },
+        {
+          "index": 405,
+          "valid_input": true,
+          "native_heldout": null,
+          "branches": {
+            "photo": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 20,
+              "heldout": null,
+              "fallback": true,
+              "cost": null,
+              "pi": null
+            },
+            "joint": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 4,
+              "heldout": null,
+              "fallback": true,
+              "cost": null,
+              "pi": null
+            }
+          },
+          "seconds": 0.17251199999999933
+        },
+        {
+          "index": 429,
+          "valid_input": true,
+          "native_heldout": 0.4879908350340847,
+          "branches": {
+            "photo": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 18,
+              "heldout": 0.4879908350340847,
+              "fallback": true,
+              "cost": null,
+              "pi": null
+            },
+            "joint": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 3,
+              "heldout": 0.4879908350340847,
+              "fallback": true,
+              "cost": null,
+              "pi": null
+            }
+          },
+          "seconds": 0.14167020000000008
+        },
+        {
+          "index": 433,
+          "valid_input": true,
+          "native_heldout": 0.5621544067237524,
+          "branches": {
+            "photo": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 11,
+              "heldout": 0.5621544067237524,
+              "fallback": true,
+              "cost": null,
+              "pi": null
+            },
+            "joint": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 2,
+              "heldout": 0.5621544067237524,
+              "fallback": true,
+              "cost": null,
+              "pi": null
+            }
+          },
+          "seconds": 0.13761480000000148
+        },
+        {
+          "index": 455,
+          "valid_input": true,
+          "native_heldout": 0.7281994772139009,
+          "branches": {
+            "photo": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 20,
+              "heldout": 0.7281994772139009,
+              "fallback": true,
+              "cost": null,
+              "pi": null
+            },
+            "joint": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 3,
+              "heldout": 0.7281994772139009,
+              "fallback": true,
+              "cost": null,
+              "pi": null
+            }
+          },
+          "seconds": 0.14729990000000015
+        },
+        {
+          "index": 469,
+          "valid_input": true,
+          "native_heldout": 0.15258900333701864,
+          "branches": {
+            "photo": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 15,
+              "heldout": 0.15258900333701864,
+              "fallback": true,
+              "cost": null,
+              "pi": null
+            },
+            "joint": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 4,
+              "heldout": 0.15258900333701864,
+              "fallback": true,
+              "cost": null,
+              "pi": null
+            }
+          },
+          "seconds": 0.16309649999999998
+        },
+        {
+          "index": 478,
+          "valid_input": true,
+          "native_heldout": 0.0824163124241497,
+          "branches": {
+            "photo": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 12,
+              "heldout": 0.0824163124241497,
+              "fallback": true,
+              "cost": null,
+              "pi": null
+            },
+            "joint": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 2,
+              "heldout": 0.0824163124241497,
+              "fallback": true,
+              "cost": null,
+              "pi": null
+            }
+          },
+          "seconds": 0.13422079999999958
+        },
+        {
+          "index": 485,
+          "valid_input": true,
+          "native_heldout": 1.0553484036128307,
+          "branches": {
+            "photo": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 25,
+              "heldout": 1.0553484036128307,
+              "fallback": true,
+              "cost": null,
+              "pi": null
+            },
+            "joint": {
+              "reliable": false,
+              "count": 0,
+              "grid_minima": 5,
+              "heldout": 1.0553484036128307,
+              "fallback": true,
+              "cost": null,
+              "pi": null
+            }
+          },
+          "seconds": 0.1519636999999996
+        }
+      ],
+      "hashes": {
+        "trace": "503c96ac7633b5689b4f0b3b010720942a75372fb20b1e8dc2a0ef6eff1aef8b",
+        "metadata": "14756654c12ba281ae1a0f018386c1334ddf2c0840828ab5cc6b34e194f4b74e",
+        "images": [
+          "3e07c2d1d740d2aee03d06eaa312699ddd26a6523db68f8e81bf028c8317b8ea",
+          "cecd92c9dc51c21df7d9b7e845e9d4055e03ddb632ca3bc1b9b5aa44de35a9f9",
+          "d6b02ba41aad89620f5c97adc30768c9752dc65e60503b69a4a540f57ce59955"
+        ],
+        "cameras": "9dd012bebe2dea0514af3f784dbb8fff23354fd7e9476ae6f9c668c40162d06b",
+        "extrinsics": "93a27c4b9fb598996665436de9850511b28533c7d94835d4d754c2887aad40a0"
+      },
+      "source_commit": "b63b967c4d95e923ef4961ae16b16bdc2a035ec4",
+      "normal_semantics": "camera-space oriented geometric direction, host buffer xyz; not RGB/rendered normal",
+      "trace_model_sha256": "d1df2e5ac7048dc2ba3b76197bb252d59134faf4220242bfb3e39238f6e5e0d8",
+      "summary": {
+        "total_rays": 32,
+        "native_heldout_valid": 24,
+        "photo_reliable": 0,
+        "joint_reliable": 0,
+        "photo_fallback": 32,
+        "joint_fallback": 32,
+        "seconds_per_ray_mean": 0.15263052812499991,
+        "heldout": {
+          "native": {
+            "valid_count": 24,
+            "denominator": 32,
+            "mean": 0.6003933492570779,
+            "median": 0.5580589439067871
+          },
+          "photo": {
+            "valid_count": 24,
+            "denominator": 32,
+            "mean": 0.6003933492570779,
+            "median": 0.5580589439067871
+          },
+          "joint": {
+            "valid_count": 24,
+            "denominator": 32,
+            "mean": 0.6003933492570779,
+            "median": 0.5580589439067871
+          }
+        },
+        "joint_reliable_improved": 0,
+        "gate_passed": false
+      }
+    }
+  ],
+  "gate_passed": false,
+  "limitations": "The observed images are training views of the frozen original model; view2 is held out from the local solver only. No GT reconstruction metric or Gaussian parameter backpropagation. Host warp_patch_ncc uses squared signed correlation and a 5e-6 variance gate, whereas this probe uses signed 1-ZNCC on grayscale with variance >1e-8; native, photo and joint are compared under this same probe metric. No reliable isolated converged joint branch was found, so implicit-solution derivatives were not evaluated. The 32-ray denominator is retained; unavailable photometric costs are null and invalidate the pass gate."
+}
