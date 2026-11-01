@@ -62,6 +62,21 @@ def read_training_cfg(path):
     return result
 
 
+def audit_opacity(logit, activated, filtered):
+    """The PLY stores pre-sigmoid logits; their signed infinities are valid limits."""
+    if np.isnan(logit).any():
+        raise ValueError('NaN opacity logit in original PLY')
+    positive, negative = np.isposinf(logit), np.isneginf(logit)
+    for name, value in (('sigmoid opacity', activated), ('render opacity', filtered)):
+        if not np.isfinite(value).all() or np.any((value < 0.) | (value > 1.)):
+            raise ValueError(f'{name} must be finite and in [0, 1]')
+    if not np.all(activated[positive] == 1.) or not np.all(activated[negative] == 0.):
+        raise ValueError('opacity saturation disagrees with sigmoid logit')
+    if np.any(filtered > activated + 1e-6):
+        raise ValueError('3D-filtered opacity exceeds unfiltered opacity')
+    return dict(posinf=int(positive.sum()), neginf=int(negative.sum()), nan=0)
+
+
 def replay_members(xy, ids, alpha, counts, ray_planes, mean2d, fx, fy, width, height):
     transmittance = np.zeros_like(alpha, dtype=np.float32)
     weight = np.zeros_like(alpha, dtype=np.float32)
@@ -159,6 +174,8 @@ def main():
             scale, opacity = gaussians.get_scaling, gaussians.get_opacity
         else:
             scale, opacity = gaussians.get_scaling_n_opacity_with_3D_filter
+        opacity_stats = audit_opacity(gaussians._opacity.cpu().numpy(),
+                                      gaussians.get_opacity.cpu().numpy(), opacity.cpu().numpy())
         rendered, _, native_alpha, native_normal, native_depth, native_median, _, geom, bins, img = (
             _C.rasterize_gaussians(
                 bg, gaussians.get_xyz, empty, opacity, scale, gaussians.get_rotation,
@@ -180,6 +197,11 @@ def main():
         ids, alpha, count, overflow = [v.cpu().numpy() for v in (ids, alpha, count, overflow)]
         if np.any(overflow) or np.any(count > args.support_k):
             raise ValueError(f'incomplete accepted lists; max count={int(count.max())}; raise K')
+        valid_alpha = alpha[ids >= 0]
+        if (not np.isfinite(alpha).all() or
+                np.any((valid_alpha < 1. / 255. - 1e-6) | (valid_alpha > .99 + 1e-6)) or
+                np.any(alpha[ids < 0] != 0.)):
+            raise ValueError('accepted alpha is non-finite or outside native range')
         if geom.data_ptr() % 128:
             raise ValueError('geometry allocation violates native 128-byte layout assumption')
         geometry = native_geometry(geom, points)
@@ -210,6 +232,8 @@ def main():
                        raw_scale=gaussians._scaling[indices].cpu().numpy(),
                        scale_unaa=gaussians.get_scaling[indices].cpu().numpy(),
                        opacity_logit=gaussians._opacity[indices].cpu().numpy(),
+                       opacity_logit_posinf=torch.isposinf(gaussians._opacity[indices]).cpu().numpy(),
+                       opacity_logit_neginf=torch.isneginf(gaussians._opacity[indices]).cpu().numpy(),
                        opacity_unaa=gaussians.get_opacity[indices].cpu().numpy(),
                        filter_3D=saved_filter[indices].cpu().numpy(),
                        scale_render=scale[indices].cpu().numpy(),
@@ -230,7 +254,7 @@ def main():
         filter_mean = float(filter_delta.mean().item())
         nonfinite = {key: int(np.size(value) - np.isfinite(value).sum())
                      for key, value in capture.items()
-                     if np.issubdtype(value.dtype, np.floating)}
+                     if key != 'opacity_logit' and np.issubdtype(value.dtype, np.floating)}
         if any(nonfinite.values()) or not np.isfinite([filter_max, filter_mean]).all():
             raise ValueError(f'non-finite capture fields: {nonfinite}')
     output.mkdir(parents=True, exist_ok=False)
@@ -261,6 +285,10 @@ def main():
                     filter_recompute_max_abs=filter_max,
                     filter_recompute_mean_abs=filter_mean,
                     nonfinite_counts=nonfinite,
+                    opacity_logit_full_stats=opacity_stats,
+                    opacity_logit_selected_stats=dict(
+                        posinf=int(capture['opacity_logit_posinf'].sum()),
+                        neginf=int(capture['opacity_logit_neginf'].sum()), nan=0),
                     normal_definition='native preprocess computeCov2D camera-space normal; stored float4 GeometryState.normals',
                     T_weight_provenance='float32 replay of native accepted alpha in list order',
                     detached=True, seed=args.seed, rays=args.rays, neighborhood='3x3',
