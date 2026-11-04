@@ -121,6 +121,7 @@ over 8. It additionally checks continuous analytic opacity-gradient convergence
 at levels 2/4/8/16, preserving the known ~27% low-resolution discrepancy instead
 of treating discrete gradcheck as continuous accuracy evidence.
 
-Scene output is restricted to /root/autodl-tmp/joint_tv_runs, with an initial
+Scene output is restricted to /root/joint_tv_runs on the system filesystem with
+at least 1 GiB free (the data disk may be nearly full), with an initial
 status=started_not_complete manifest and append-only per-ray journal. Only normal
 completion writes status=complete. External timeout remains mandatory.

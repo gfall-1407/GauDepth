@@ -7,6 +7,7 @@ import argparse
 import json
 from pathlib import Path
 import subprocess
+import shutil
 import time
 import numpy as np
 import torch
@@ -41,9 +42,17 @@ def camera_rays(source, name, side=8):
 def main(args):
     if not torch.cuda.is_available(): raise RuntimeError('CUDA required')
     out=Path(args.output).resolve()
-    # Every generated file must stay in the dedicated disposable experiment area.
-    if not out.is_relative_to(Path('/root/autodl-tmp/joint_tv_runs').resolve()):
-        raise ValueError('output must be under /root/autodl-tmp/joint_tv_runs')
+    # The data disk can be almost full. All new artifacts stay on the system
+    # filesystem, in this dedicated root, never beside an input model or dataset.
+    run_root=Path('/root/joint_tv_runs')
+    if not out.is_relative_to(run_root.resolve()):
+        raise ValueError('output must be under /root/joint_tv_runs')
+    run_root.mkdir(parents=True,exist_ok=True)
+    if run_root.stat().st_dev!=Path('/root').stat().st_dev:
+        raise ValueError('output root is not on the system filesystem')
+    free_bytes=shutil.disk_usage(run_root).free
+    if free_bytes < 1<<30:
+        raise ValueError('less than 1 GiB free on the system output disk')
     if out.exists(): raise FileExistsError(out)
     journal=out.with_suffix('.rows.jsonl')
     if journal.exists(): raise FileExistsError(journal)
@@ -59,7 +68,8 @@ def main(args):
     protocol=dict(PROBE_PROTOCOL,member_epsilon=args.member_epsilon,max_members=args.max_members)
     out.parent.mkdir(parents=True,exist_ok=True)
     out.write_text(json.dumps(dict(status='started_not_complete',head=head,protocol=protocol,
-                                  input_identity=identity),indent=2)+'\n')
+                                  input_identity=identity,output_root=str(run_root),
+                                  initial_output_free_bytes=free_bytes),indent=2)+'\n')
     journal.touch(exist_ok=False)
     def save_row(row):
         line=json.dumps(row,allow_nan=False)
@@ -140,6 +150,7 @@ def main(args):
         max_members=args.max_members,selection_seconds=selection_seconds,
         total_seconds=time.monotonic()-started,
         peak_allocated_bytes=torch.cuda.max_memory_allocated(),rows=rows)
+    report.update(output_root=str(run_root),initial_output_free_bytes=free_bytes)
     out.write_text(json.dumps(report,indent=2,allow_nan=False)+'\n')
 
 

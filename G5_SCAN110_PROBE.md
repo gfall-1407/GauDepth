@@ -29,7 +29,11 @@ Deployment: use the already authorized research/joint-tv-train-20261104 branch;
 fetch the reviewed exact commit into an independent checkout, never switch the
 shared server repository. Check hostname/GPU availability/other GPU jobs before
 running. Record git HEAD, Python/torch/CUDA/GPU identity, stdout, stderr and exit
-codes in a new /root/autodl-tmp/joint_tv_runs/scan110_<unique-run> directory.
+codes in a new /root/joint_tv_runs/scan110_<unique-run> directory on the system
+disk. The probe verifies that root shares /root's filesystem and has at least
+1 GiB free. The input data disk is read-only; do not create checkouts or results
+there. The controller observed G1 system disk 22 GiB free and data disk 98% used
+at startup on 2026-11-04, so this output guard is required for the G1 deployment.
 
 With the actual G5 environment verified and this checkout current:
 
@@ -40,7 +44,7 @@ timeout -k 10s 270s python -B probe_joint_scene_gpu.py \
   --input-ply /root/GauDepth_runs/pair12_inputs/scan110/point_cloud.ply \
   --source-path /root/autodl-tmp/DTU/scan110 \
   --expected-head <REVIEWED_COMMIT> \
-  --output /root/autodl-tmp/joint_tv_runs/scan110_<unique-run>/probe.json \
+  --output /root/joint_tv_runs/scan110_<unique-run>/probe.json \
   --view 0049 --side 8 --max-seconds 240
 ```
 
