@@ -51,7 +51,7 @@ def directional_slope(t, mean, sigma, amplitude):
     return (-0.5*g*u/(sigma*(1-g))).sum(-1)
 
 
-def profile_knots(mean, sigma, amplitude, near, far, subdivisions=1):
+def profile_knots(mean, sigma, amplitude, near, far, subdivisions=1,member_mask=None):
     """Nested adaptive grids. Knots remain differentiable through sort and clamp.
 
     Include each component's peak, near-peak scale sqrt(1-a)*s, and tails.
@@ -63,6 +63,13 @@ def profile_knots(mean, sigma, amplitude, near, far, subdivisions=1):
     offsets = mean.new_tensor([-8., -4., -2., -1., -.5, 0., .5, 1., 2., 4., 8.])
     outer = mean[..., None] + sigma[..., None] * offsets
     inner = mean[..., None] + (sigma * torch.sqrt(1-amplitude))[..., None] * offsets[2:-2]
+    if member_mask is not None:
+        if member_mask.shape!=mean.shape or member_mask.dtype!=torch.bool or member_mask.device!=mean.device:
+            raise ValueError('member_mask must be a same-device boolean profile mask')
+        # Padding must not introduce new interior search nodes. Collapsing its
+        # knots to near leaves the active grid invariant after duplicate removal.
+        outer=torch.where(member_mask[...,None],outer,torch.full_like(outer,near))
+        inner=torch.where(member_mask[...,None],inner,torch.full_like(inner,near))
     fixed = torch.linspace(near, far, 33, device=mean.device, dtype=mean.dtype)
     t = torch.cat((outer.flatten(1), inner.flatten(1), fixed.expand(mean.shape[0], -1)), -1)
     t = t.clamp(near, far).sort(-1).values
