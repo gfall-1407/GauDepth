@@ -16,6 +16,12 @@ evaluation. No fallback to a differently trained scan110 PLY is allowed.
 Expected input PLY location from that evidence:
 /root/GauDepth_runs/pair12_inputs/scan110/point_cloud.ply.
 Expected camera/data source: /root/autodl-tmp/DTU/scan110.
+The preserved G1_20261101_12scan_original7000_inventory.txt independently records
+the same scan110 PLY SHA at
+/root/autodl-tmp/GauDepth/outtest/scan110/point_cloud/iteration_7000/point_cloud.ply.
+If the coordinator assigns G1, the same scan110 model-id can be used with this
+input path only after live PLY and camera hashes pass; server identity alone is
+not a reason to assume files are identical.
 GT is not used by this numerical probe. Its result is not interchangeable with
 scan40, and a successful probe is not a mesh-quality or training result.
 

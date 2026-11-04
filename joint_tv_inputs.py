@@ -14,7 +14,7 @@ MODEL_IDENTITIES = {
     'scan110_original7000': {
         'scene': 'scan110',
         'ply_sha256': '733bd5ad69246915e7777b740b1891a253624b1d2232df5f19e79a557de78aa7',
-        'source': 'G5 native capture faa9294 metadata.json, checked against live G5 before execution',
+        'source': 'G5 native capture faa9294 metadata.json; runtime verifies PLY and COLMAP hashes',
         'expected_rows': 142892,
         'colmap_sha256': {
             'cameras.bin': '9dd012bebe2dea0514af3f784dbb8fff23354fd7e9476ae6f9c668c40162d06b',
