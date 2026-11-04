@@ -37,6 +37,7 @@ if __name__ == '__main__':
     parser.add_argument('--patch_size', type=float, default=60)
     parser.add_argument('--max_dist', type=float, default=20)
     parser.add_argument('--visualize_threshold', type=float, default=10)
+    parser.add_argument('--seed', type=int, default=0)
     args = parser.parse_args()
 
     thresh = args.downsample_density
@@ -78,7 +79,7 @@ if __name__ == '__main__':
 
     pbar.update(1)
     pbar.set_description('random shuffle pcd index')
-    shuffle_rng = np.random.default_rng()
+    shuffle_rng = np.random.default_rng(args.seed)
     shuffle_rng.shuffle(data_pcd, axis=0)
 
     pbar.update(1)
@@ -164,5 +165,13 @@ if __name__ == '__main__':
             'mean_s2d': mean_s2d,
             'overall': over_all,
         }, fp, indent=True)
+    with open(f'{args.vis_out_dir}/evaluation_counts.json', 'w') as fp:
+        json.dump(dict(seed=args.seed, max_dist=args.max_dist,
+            downsample_density=args.downsample_density, patch_size=args.patch_size,
+            reconstructed_samples=int(len(data_down)),
+            observed_reconstruction_samples=int(len(data_in_obs)),
+            scan_above_plane_samples=int(len(stl_above)),
+            d2s_count_below_max_dist=int((dist_d2s < max_dist).sum()),
+            s2d_count_below_max_dist=int((dist_s2d < max_dist).sum())), fp, indent=True)
 
 

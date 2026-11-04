@@ -6,6 +6,8 @@ from scene import Scene
 import cv2
 import os
 import random
+import subprocess
+import sys
 from os import makedirs, path
 from argparse import ArgumentParser
 from arguments import ModelParams, PipelineParams, get_combined_args
@@ -179,9 +181,11 @@ def evaluate_mesh(dataset : ModelParams, iteration : int, DTU_PATH : str):
     # scan = dataset.model_path.split("/")[-1][4:]
     scan = int(dataset.source_path.split("/")[-1][4:])
     
-    cmd = f"python dtu_eval/eval.py --data {aligned_mesh_file} --scan {scan} --mode mesh --dataset_dir {DTU_PATH} --vis_out_dir {out_dir}"
+    cmd = [sys.executable, "dtu_eval/eval.py", "--data", aligned_mesh_file,
+           "--scan", str(scan), "--mode", "mesh", "--dataset_dir", DTU_PATH,
+           "--vis_out_dir", out_dir, "--seed", str(args.eval_seed)]
     print(cmd)
-    os.system(cmd)
+    subprocess.run(cmd, check=True)
     
 if __name__ == "__main__":
     # Set up command line argument parser
@@ -192,6 +196,7 @@ if __name__ == "__main__":
     parser.add_argument("--skip_train", action="store_true")
     parser.add_argument("--skip_test", action="store_true")
     parser.add_argument("--quiet", action="store_true")
+    parser.add_argument("--eval_seed", default=0, type=int)
     parser.add_argument('--scan_id', type=str,  help='scan id of the input mesh')
     parser.add_argument('--DTU', type=str,  default='dtu_eval/Offical_DTU_Dataset', help='path to the GT DTU point clouds')
     
