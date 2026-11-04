@@ -1,10 +1,26 @@
 # Independent static review and execution status, 2026-11-04
 
-STATUS UPDATE: the preliminary static GO below was superseded by independent
-numerical NO GO for commit 03b7916 (review thread
-01a1a5ad-3853-7149-b6ef-a82e7a362010). The current repair must receive a fresh
-independent review. Remote push approval remains pending; no retry has occurred.
-See JOINT_TV_PLAN.md's protocol-v2 section for fixes and numerical differences.
+CURRENT STATUS: independent numerical re-review permits only bounded GPU
+synthetic/feasibility checks of code commit
+8cfbe95c424932f4685b041fc45c062e3f5d1827. It does not permit training or certify
+continuous accuracy. Remote push approval remains pending; no retry has occurred.
+
+The preliminary static GO below was superseded by independent numerical NO GO
+for commit 03b7916 (review thread 01a1a5ad-3853-7149-b6ef-a82e7a362010).
+Repairs are in 48b3e4daab7f8efca05551866027d789fe5f7af5, with a diagnostic
+overflow fix in 8cfbe95c424932f4685b041fc45c062e3f5d1827. The first repair has an
+independent 14/14 CPU synthetic pass (0.213 s), and the overflow regression has
+an independent focused pass (0.005 s). The implementation task's final complete
+CPU suite passed 15/15 in 0.196 s. These were single-thread tiny synthetic tests,
+not scene computation, local GPU work, server work, or training. Evidence is in
+evidence/joint_tv_v2_cpu_recheck.log and joint_tv_v2_convergence_cpu.json.
+
+The separated-layer 16-level depth error is 1.39940295896e-4, below the unchanged
+3e-4 limit. Opacity-gradient max absolute error falls from .279737109623 at
+level 2 to .00191660420778 at level 16; low-resolution discrepancies remain
+recorded. See JOINT_TV_PLAN.md's protocol-v2 section for numerical differences.
+
+The remainder of this file preserves the initial review/execution chronology.
 
 Reviewer: independent sub-agent /root/joint_core_review, two passes. The first
 pass found a continuous turning-root degeneracy concealed by a secant slope,
