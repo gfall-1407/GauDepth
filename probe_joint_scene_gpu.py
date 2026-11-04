@@ -127,7 +127,7 @@ def main(args):
                 slope=float(r.slope),analytic_slope=float(r.analytic_slope) if bool(r.valid) else None,
                 knots=r.knots,forward_backward_seconds=time.perf_counter()-begin,
                 gradients={name:dict(finite=bool(torch.isfinite(v).all()),
-                           norm=float(v.norm()) if bool(torch.isfinite(v).all()) else None)
+                           norm=float(v.double().norm()) if bool(torch.isfinite(v).all()) else None)
                            for name,v in grads.items()})
             if previous_grads is not None:
                 comparisons.append(refinement_comparison(records[-1],record,previous_grads,grads))

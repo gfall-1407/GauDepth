@@ -1,5 +1,6 @@
 test_continuous_turning_root_rejected (test_joint_tv_depth.JointTVTests) ... ok
 test_empty_profile_and_amplitude_boundary (test_joint_tv_depth.JointTVTests) ... ok
+test_finite_float32_gradient_difference_does_not_overflow (test_joint_tv_depth.JointTVTests) ... ok
 test_front_layer_continuous_gradient_convergence (test_joint_tv_depth.JointTVTests) ... ok
 test_front_layer_history_retained (test_joint_tv_depth.JointTVTests) ... ok
 test_full_covariance_chain_gradient (test_joint_tv_depth.JointTVTests) ... ok
@@ -14,6 +15,6 @@ test_single_and_aligned_equal_sep (test_joint_tv_depth.JointTVTests) ... ok
 test_true_no_root_not_solver_failure (test_joint_tv_depth.JointTVTests) ... ok
 
 ----------------------------------------------------------------------
-Ran 14 tests in 0.214s
+Ran 15 tests in 0.196s
 
 OK

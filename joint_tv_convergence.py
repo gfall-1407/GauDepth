@@ -39,11 +39,12 @@ PROBE_PROTOCOL = {
 
 def gradient_delta(previous, current, *, rtol=.01, atol=1e-6):
     """Compare vectors on identical parameter indices, not only their norms."""
-    delta = (current-previous).double()
     a,b = previous.double(),current.double()
+    delta = b-a
     scale = torch.maximum(a.norm(),b.norm())
     norm=delta.norm()
-    finite=bool(torch.isfinite(a).all() & torch.isfinite(b).all())
+    finite=bool(torch.isfinite(a).all() & torch.isfinite(b).all()
+                & torch.isfinite(delta).all() & torch.isfinite(scale) & torch.isfinite(norm))
     if not finite:
         return dict(finite=False,delta_l2=None,delta_linf=None,relative_l2=None,passed=False)
     return dict(finite=finite,delta_l2=float(norm),delta_linf=float(delta.abs().max()),

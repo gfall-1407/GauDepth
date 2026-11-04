@@ -72,7 +72,7 @@ are quality outcomes; RGB, ray tests, and root coverage are supporting diagnosti
 
 1. Independent source review before push; Git-only synchronization to a new G6
    checkout. Recheck hostname, GPU load, commit, native extension identity.
-2. Fourteen synthetic tests: exact/analytic controls, adaptive-grid gradcheck,
+2. Fifteen synthetic tests: exact/analytic controls, adaptive-grid gradcheck,
    full covariance chain gradcheck, no-root, near-occupied and gradient guard,
    continuous gradient convergence and honest refinement-report semantics.
    The suite defaults to CUDA. JOINT_TEST_DEVICE=cpu explicitly allows only this

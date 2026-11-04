@@ -168,6 +168,15 @@ class JointTVTests(unittest.TestCase):
         self.assertFalse(result['finite'])
         json.dumps(result,allow_nan=False)
 
+    def test_finite_float32_gradient_difference_does_not_overflow(self):
+        import json
+        a=torch.tensor([3e38],device=self.device,dtype=torch.float32)
+        result=gradient_delta(a,-a)
+        self.assertTrue(result['finite'])
+        self.assertFalse(result['passed'])
+        self.assertAlmostEqual(result['relative_l2'],2.)
+        json.dumps(result,allow_nan=False)
+
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)
