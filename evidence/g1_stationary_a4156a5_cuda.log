@@ -1,0 +1,12 @@
+test_analytic_front_layer_gradient (test_stationary_tv_depth.StationaryTVTests.test_analytic_front_layer_gradient) ... ok
+test_far_tail_direction_underflow (test_stationary_tv_depth.StationaryTVTests.test_far_tail_direction_underflow) ... ok
+test_finite_near_derivative (test_stationary_tv_depth.StationaryTVTests.test_finite_near_derivative) ... ok
+test_gradcheck_independent_forward (test_stationary_tv_depth.StationaryTVTests.test_gradcheck_independent_forward) ... ok
+test_no_root_and_degenerate_root (test_stationary_tv_depth.StationaryTVTests.test_no_root_and_degenerate_root) ... ok
+test_refinement_branch_and_gradients (test_stationary_tv_depth.StationaryTVTests.test_refinement_branch_and_gradients) ... ok
+test_zero_amplitude_direction (test_stationary_tv_depth.StationaryTVTests.test_zero_amplitude_direction) ... ok
+
+----------------------------------------------------------------------
+Ran 7 tests in 2.026s
+
+OK
