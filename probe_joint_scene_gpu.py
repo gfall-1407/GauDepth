@@ -1,10 +1,9 @@
 """Bounded CUDA feasibility probe. No training, GT use, or input writes.
 
 The sparse sample measures numerical behavior/cost, NOT reconstruction quality.
-Source is synchronized by Git. Invoke from an isolated checkout on G6.
+Source is synchronized by Git. Invoke from an isolated authorized GPU checkout.
 """
 import argparse
-import hashlib
 import json
 from pathlib import Path
 import subprocess
@@ -15,15 +14,7 @@ from scene.gaussian_model import GaussianModel
 from scene.colmap_loader import read_intrinsics_binary, read_extrinsics_binary, qvec2rotmat
 from joint_tv_depth import ray_profiles, joint_depth, continuous_sep_depth
 from joint_tv_convergence import PROBE_PROTOCOL, refinement_comparison
-
-EXPECTED_SHA = '51f5f92bd6015ae98509b58b5aa293d110f4b4f13b8217916fdea0a819d84187'
-
-
-def sha256(p):
-    h=hashlib.sha256()
-    with open(p,'rb') as f:
-        for b in iter(lambda:f.read(1<<20), b''): h.update(b)
-    return h.hexdigest()
+from joint_tv_inputs import MODEL_IDENTITIES, verify_inputs
 
 
 def camera_rays(source, name, side=8):
@@ -60,14 +51,15 @@ def main(args):
         raise ValueError('invalid support budget')
     if not 1 <= args.side <= 8 or not 0 < args.max_seconds <= 240:
         raise ValueError('invalid probe budget')
-    if sha256(args.input_ply)!=EXPECTED_SHA: raise ValueError('wrong original 7k PLY')
+    identity=verify_inputs(args.input_ply,args.source_path,args.model_id)
     head=subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip()
     if head!=args.expected_head: raise ValueError('wrong code commit')
     if subprocess.check_output(['git','status','--porcelain'],text=True).strip():
         raise ValueError('dirty experiment checkout')
     protocol=dict(PROBE_PROTOCOL,member_epsilon=args.member_epsilon,max_members=args.max_members)
     out.parent.mkdir(parents=True,exist_ok=True)
-    out.write_text(json.dumps(dict(status='started_not_complete',head=head,protocol=protocol),indent=2)+'\n')
+    out.write_text(json.dumps(dict(status='started_not_complete',head=head,protocol=protocol,
+                                  input_identity=identity),indent=2)+'\n')
     journal.touch(exist_ok=False)
     def save_row(row):
         line=json.dumps(row,allow_nan=False)
@@ -76,6 +68,8 @@ def main(args):
     started=time.monotonic()
     torch.cuda.reset_peak_memory_stats()
     g=GaussianModel(3);g.load_ply(args.input_ply)
+    if identity['expected_rows'] is not None and len(g.get_xyz)!=identity['expected_rows']:
+        raise ValueError('PLY row count does not match '+args.model_id)
     origin,direction,pixels,size=camera_rays(args.source_path,args.view,args.side)
     scales,alpha=g.get_scaling_n_opacity_with_3D_filter
     # Explicit finite-field definition for native fully opaque parameters.
@@ -140,7 +134,7 @@ def main(args):
                    continuous_error_certified=False)
         rows.append(row);save_row(row)
     report=dict(status='complete',scope='numerical_cost_probe_not_quality_or_training',head=head,
-        input_ply=args.input_ply,input_sha256=EXPECTED_SHA,gpu=torch.cuda.get_device_name(),
+        input_identity=identity,gpu=torch.cuda.get_device_name(),
         gaussian_count=len(g.get_xyz),view=args.view,image_size=size,
         protocol=protocol,member_epsilon=args.member_epsilon,
         max_members=args.max_members,selection_seconds=selection_seconds,
@@ -152,6 +146,7 @@ def main(args):
 if __name__=='__main__':
     p=argparse.ArgumentParser(description=__doc__)
     p.add_argument('--input-ply',required=True);p.add_argument('--source-path',required=True)
+    p.add_argument('--model-id',choices=sorted(MODEL_IDENTITIES),required=True)
     p.add_argument('--output',required=True);p.add_argument('--expected-head',required=True)
     p.add_argument('--view',default='0049');p.add_argument('--side',type=int,default=8)
     p.add_argument('--member-epsilon',type=float,default=1e-6)
