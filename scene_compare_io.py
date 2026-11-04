@@ -63,8 +63,8 @@ def validate_profile(model, source, dtu, iteration, cfg, image_names, profile):
 
 def validate_inputs(model, source, dtu, iteration, profile=None):
     model, source, dtu = map(lambda p: Path(p).resolve(), (model, source, dtu))
-    if iteration not in (7000,7500,8000):
-        raise ValueError('declare the early stage explicitly: 7000/7500/8000')
+    if iteration not in (7000,7500,8000,30000):
+        raise ValueError('declare the frozen model stage explicitly: 7000/7500/8000/30000')
     scan = int(source.name.removeprefix('scan'))
     paths = [model/'cfg_args', model/'point_cloud'/f'iteration_{iteration}'/'point_cloud.ply',
              source/'sparse'/'0'/'cameras.bin', source/'sparse'/'0'/'images.bin',

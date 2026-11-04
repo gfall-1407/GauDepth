@@ -1,0 +1,673 @@
+{
+  "schema": 1,
+  "scene": "scan40",
+  "iteration": 30000,
+  "ply_sha256": "d1df2e5ac7048dc2ba3b76197bb252d59134faf4220242bfb3e39238f6e5e0d8",
+  "gaussians": 983080,
+  "image_names": [
+    "0000",
+    "0001",
+    "0002",
+    "0003",
+    "0004",
+    "0005",
+    "0006",
+    "0007",
+    "0008",
+    "0009",
+    "0010",
+    "0011",
+    "0012",
+    "0013",
+    "0014",
+    "0015",
+    "0016",
+    "0017",
+    "0018",
+    "0019",
+    "0020",
+    "0021",
+    "0022",
+    "0023",
+    "0024",
+    "0025",
+    "0026",
+    "0027",
+    "0028",
+    "0029",
+    "0030",
+    "0031",
+    "0032",
+    "0033",
+    "0034",
+    "0035",
+    "0036",
+    "0037",
+    "0038",
+    "0039",
+    "0040",
+    "0041",
+    "0042",
+    "0043",
+    "0044",
+    "0045",
+    "0046",
+    "0047",
+    "0048"
+  ],
+  "raw_dimensions": [
+    1554,
+    1162
+  ],
+  "render_dimensions": [
+    777,
+    581
+  ],
+  "cfg": {
+    "sh_degree": 3,
+    "resolution": 2,
+    "images": "images",
+    "eval": false,
+    "white_background": false,
+    "kernel_size": 0,
+    "use_decoupled_appearance": 3,
+    "disable_filter3D": false
+  },
+  "hashes": [
+    {
+      "root": "source",
+      "relative": "sparse/0/cameras.bin",
+      "sha256": "9dd012bebe2dea0514af3f784dbb8fff23354fd7e9476ae6f9c668c40162d06b"
+    },
+    {
+      "root": "source",
+      "relative": "sparse/0/images.bin",
+      "sha256": "93a27c4b9fb598996665436de9850511b28533c7d94835d4d754c2887aad40a0"
+    },
+    {
+      "root": "source",
+      "relative": "sparse/0/points3D.ply",
+      "sha256": "353962cbe70c169b8b6b8bad84d2450e6ea540e26c47fda441e231901946328d"
+    },
+    {
+      "root": "dtu",
+      "relative": "Points/stl/stl040_total.ply",
+      "sha256": "6f63a55237acbb2e6edcc490628f53f17a43b5298039d6da86024ba3dbc8dc14"
+    },
+    {
+      "root": "dtu",
+      "relative": "ObsMask/ObsMask40_10.mat",
+      "sha256": "8925018daf8a80c3a81d447894198fca6c0857f978710af1440e9f8aee3a8489"
+    },
+    {
+      "root": "dtu",
+      "relative": "ObsMask/Plane40.mat",
+      "sha256": "ede1a4430238827441bcfc6f3462f0e4cb67fa5e28cdcb7b807c9eddb64f628e"
+    },
+    {
+      "root": "source",
+      "relative": "images/0000.png",
+      "sha256": "3e07c2d1d740d2aee03d06eaa312699ddd26a6523db68f8e81bf028c8317b8ea"
+    },
+    {
+      "root": "source",
+      "relative": "images/0001.png",
+      "sha256": "cecd92c9dc51c21df7d9b7e845e9d4055e03ddb632ca3bc1b9b5aa44de35a9f9"
+    },
+    {
+      "root": "source",
+      "relative": "images/0002.png",
+      "sha256": "d6b02ba41aad89620f5c97adc30768c9752dc65e60503b69a4a540f57ce59955"
+    },
+    {
+      "root": "source",
+      "relative": "images/0003.png",
+      "sha256": "1603581a9430bb1e543dc9cf3a35a03ae66ff070203a5268bb49f8fc2a637b31"
+    },
+    {
+      "root": "source",
+      "relative": "images/0004.png",
+      "sha256": "405864e3f1f36a4e0179d153b62925eb62c268980af29848105935b182f61cba"
+    },
+    {
+      "root": "source",
+      "relative": "images/0005.png",
+      "sha256": "8e65666eb7379bf2aeede7909928e3afd2a2c9a0df2eaa7c0ad534554a1d5836"
+    },
+    {
+      "root": "source",
+      "relative": "images/0006.png",
+      "sha256": "d65db5f0d4971647d0e2bf256d4182c4ec8a1aba894f977b5476248610581578"
+    },
+    {
+      "root": "source",
+      "relative": "images/0007.png",
+      "sha256": "8063f5e0c370f1ce3f12d356398470dcfc2a337efcf4a92a9b86321a8b8e4ded"
+    },
+    {
+      "root": "source",
+      "relative": "images/0008.png",
+      "sha256": "98a8fb41bfd90037fe8a04ef498306f3427beec820242decbb2bbe83d29f6d05"
+    },
+    {
+      "root": "source",
+      "relative": "images/0009.png",
+      "sha256": "e26a3e39bf90781feb06c7eac3ea3316bd7e0fccb6c94c5f1a59860d9a79cc6d"
+    },
+    {
+      "root": "source",
+      "relative": "images/0010.png",
+      "sha256": "fedd3a8e4ef11c0622b17e387288c9abb8cf81453916a96a8b6cbcee5abd855f"
+    },
+    {
+      "root": "source",
+      "relative": "images/0011.png",
+      "sha256": "5b26e20bbe9e8952d328d2ac18ff29b608dcfcb7930b71fe90245f0f1ccf72eb"
+    },
+    {
+      "root": "source",
+      "relative": "images/0012.png",
+      "sha256": "e84acb4b36590268b408765974a72fed6541e7def847db5042e4c0a3339c237f"
+    },
+    {
+      "root": "source",
+      "relative": "images/0013.png",
+      "sha256": "834f34f6311b7d4bf2511cdd11c6413b60befa59be32dd4c92db07e38650ef52"
+    },
+    {
+      "root": "source",
+      "relative": "images/0014.png",
+      "sha256": "51db6c174f5bad9d19232727b53051d03e4e8fae5f21d8dedaeaa1834656cddd"
+    },
+    {
+      "root": "source",
+      "relative": "images/0015.png",
+      "sha256": "0d728d48af0e85f399bfc34867702cca0a12ada4bfef154ce298ce2836043ee5"
+    },
+    {
+      "root": "source",
+      "relative": "images/0016.png",
+      "sha256": "c048b824397f2fffedbad4ddae97b831edd0fdcf8bfe836ef89fb9abd8c8f0ad"
+    },
+    {
+      "root": "source",
+      "relative": "images/0017.png",
+      "sha256": "49cc78d070a035bfd0e42829a2d736a1f30ab8c3d8a726cc44bc5ff1bb92b860"
+    },
+    {
+      "root": "source",
+      "relative": "images/0018.png",
+      "sha256": "d7723be97aab02e7dbb802d7a848d068dabaeb028840bce201dc584b192b3f60"
+    },
+    {
+      "root": "source",
+      "relative": "images/0019.png",
+      "sha256": "524454b7682f5bf2928234bd451cfc5e2ecb587a8df004171b38bdf31d521a22"
+    },
+    {
+      "root": "source",
+      "relative": "images/0020.png",
+      "sha256": "3e8ae9826080de7301da95646a75f7824969dd48151245819345cf20364155b3"
+    },
+    {
+      "root": "source",
+      "relative": "images/0021.png",
+      "sha256": "c5137219456878e63d7c8228692a29272fa8bca8fd65114d23e8f62fc052a300"
+    },
+    {
+      "root": "source",
+      "relative": "images/0022.png",
+      "sha256": "4a8c698bb98fdecf558fd35423a6350858792d039cfd08d9fd4f8a919d8ada61"
+    },
+    {
+      "root": "source",
+      "relative": "images/0023.png",
+      "sha256": "f77d1dcc3772b4b2ce169a051152fe13e95b9ef3c9dd994d5080ba1cc368b692"
+    },
+    {
+      "root": "source",
+      "relative": "images/0024.png",
+      "sha256": "2df3a42f271722aeab8ec6d9f5e1897eb6572ae9570d6597ce6715edf1776a71"
+    },
+    {
+      "root": "source",
+      "relative": "images/0025.png",
+      "sha256": "4f760ffd696093518568c41f3ed79f9b42f4bc08a67d91a397d9173bae4b7806"
+    },
+    {
+      "root": "source",
+      "relative": "images/0026.png",
+      "sha256": "2b4c915b39a9e399fb8ffc89a0015d8045a05b96dc6519e699cfb72f6c050349"
+    },
+    {
+      "root": "source",
+      "relative": "images/0027.png",
+      "sha256": "31f4ee95663161355581d47a602c4a426e5e85d7122c6cb63786ccd05cfc2d75"
+    },
+    {
+      "root": "source",
+      "relative": "images/0028.png",
+      "sha256": "484a283577127c95787cb4d12d48d5b326ef1ec4794ef60f4fde481904db0836"
+    },
+    {
+      "root": "source",
+      "relative": "images/0029.png",
+      "sha256": "beadd02aca82ccc3ad4e27243fbd8fd1ea88e79c1b420f90bba83b8768f9914d"
+    },
+    {
+      "root": "source",
+      "relative": "images/0030.png",
+      "sha256": "0ffbc0158d2dcb12bb9862d8556e40d1e0c4f19296b6d6c1968b416b53942558"
+    },
+    {
+      "root": "source",
+      "relative": "images/0031.png",
+      "sha256": "7ac3868c9d6a183963fce8dccc15b70b390ce2315d8e7a7639faaed06084dce1"
+    },
+    {
+      "root": "source",
+      "relative": "images/0032.png",
+      "sha256": "551175e1af569b92e3f49e9b99f9c5ff0c8ae6b126f1a76dd823b942785a4f63"
+    },
+    {
+      "root": "source",
+      "relative": "images/0033.png",
+      "sha256": "080e21c6c53e71935ae7eca964c4caf34c599130fa5d753e08a5cdd39077c409"
+    },
+    {
+      "root": "source",
+      "relative": "images/0034.png",
+      "sha256": "eeb6602adb1e8abbe266d8c1bb4833a552a9fa670459927378e30fcf2fde141f"
+    },
+    {
+      "root": "source",
+      "relative": "images/0035.png",
+      "sha256": "e8d38c9c12565cc688c3f8c644f4bbebfd1f993da01ad504372f6fa3dbd0e17d"
+    },
+    {
+      "root": "source",
+      "relative": "images/0036.png",
+      "sha256": "1721d02b4a0da4d97206c2812af1f582933f92ead9e7a3f12166487f53d62566"
+    },
+    {
+      "root": "source",
+      "relative": "images/0037.png",
+      "sha256": "363f4e15ba3a00b5846bafef9c86265fa4aec5828ab4ac1afb05e9a1999ba003"
+    },
+    {
+      "root": "source",
+      "relative": "images/0038.png",
+      "sha256": "59dec7f55f84042d123340bf44379296083897f66ded00b7a0ac459b44222af7"
+    },
+    {
+      "root": "source",
+      "relative": "images/0039.png",
+      "sha256": "e86f2d35a83cd439060d73df31f7c902d9dbc3e2d6da4a0fe2b7f9e2dd8b4305"
+    },
+    {
+      "root": "source",
+      "relative": "images/0040.png",
+      "sha256": "1205d7d2ddf4d07623b34c152f87e7ec8d8be0427fbb36800d7246d8bba0a851"
+    },
+    {
+      "root": "source",
+      "relative": "images/0041.png",
+      "sha256": "b4c9e7c6283a47b90816331fa177f0b890959f0133fa9be57e22149f292faa39"
+    },
+    {
+      "root": "source",
+      "relative": "images/0042.png",
+      "sha256": "69ef6e38703cc5dcc4e4ffe48293cf3bac2491f6a6ffd2545895d71281bf8398"
+    },
+    {
+      "root": "source",
+      "relative": "images/0043.png",
+      "sha256": "6e22181ba1a3d5ab40a207f899f93cca0419d243f8e285fa941d5f46ffd3649f"
+    },
+    {
+      "root": "source",
+      "relative": "images/0044.png",
+      "sha256": "ac68626947b41c9a2c6ebf4270690b5e3dd53ab68c5fea1bf26f8bebcdfbb79f"
+    },
+    {
+      "root": "source",
+      "relative": "images/0045.png",
+      "sha256": "b0db1403e50eb1b3f61b0a2bd7af8681da93b8b68c7d56d9480d95860ee2184c"
+    },
+    {
+      "root": "source",
+      "relative": "images/0046.png",
+      "sha256": "ee49767dce279d08fca0cd5ac8f3ae6cd1daac11243b14783fe45fe38a2d8aab"
+    },
+    {
+      "root": "source",
+      "relative": "images/0047.png",
+      "sha256": "154d073fcac31dada46e672e42b505aacd9610bfea2ec12681c0a3a2fcae8865"
+    },
+    {
+      "root": "source",
+      "relative": "images/0048.png",
+      "sha256": "e98740559bb9d09e8c882c88e9c04c7ae385bf53051ff2bfe77f4349d033bf43"
+    },
+    {
+      "root": "dtu",
+      "relative": "Calibration/cal18/pos_001.txt",
+      "sha256": "892234b937d511d0e10ab80f7832f2e3316a032aa0221db264c795169273ba20"
+    },
+    {
+      "root": "dtu",
+      "relative": "Calibration/cal18/pos_002.txt",
+      "sha256": "ad57a8e6042f616d7c225d944fe5b01ecbfedfcb8fea3148e776139c0a79045a"
+    },
+    {
+      "root": "dtu",
+      "relative": "Calibration/cal18/pos_003.txt",
+      "sha256": "2ae1bd34ae18b7595cf0c3125aa5d669f69775a885b69ee9e8426cabcba491cb"
+    },
+    {
+      "root": "dtu",
+      "relative": "Calibration/cal18/pos_004.txt",
+      "sha256": "b34fbd8b584ee6085ed59ad2656e46dc3abe9fdc0d09b310228a87bd141ff34d"
+    },
+    {
+      "root": "dtu",
+      "relative": "Calibration/cal18/pos_005.txt",
+      "sha256": "54d049c6e0b234ec949e1902d89eec33587f8ad4a53fd7df648ae3707d493642"
+    },
+    {
+      "root": "dtu",
+      "relative": "Calibration/cal18/pos_006.txt",
+      "sha256": "d51df3a6d0055c8a01cad8f2f50811594e64360b561ece2f25b54d2bfe1c88b0"
+    },
+    {
+      "root": "dtu",
+      "relative": "Calibration/cal18/pos_007.txt",
+      "sha256": "eba9bcfb252b997348c9cae16a39dad829a29969bc939e681b55cfc0a36dbe46"
+    },
+    {
+      "root": "dtu",
+      "relative": "Calibration/cal18/pos_008.txt",
+      "sha256": "a04b1d0ea0d80980585b562dad17c283cc6e9564996b9fca352bbe6cdf9e3893"
+    },
+    {
+      "root": "dtu",
+      "relative": "Calibration/cal18/pos_009.txt",
+      "sha256": "db1e23ced12f7bf5ca24e46b402dcaace98481a4ff2158d53747bcdac91184c2"
+    },
+    {
+      "root": "dtu",
+      "relative": "Calibration/cal18/pos_010.txt",
+      "sha256": "ecc3a331d36a3bc4d8b1c739fb24184a590f017498d2268ab0d52e42a56f6a23"
+    },
+    {
+      "root": "dtu",
+      "relative": "Calibration/cal18/pos_011.txt",
+      "sha256": "a64e9a8a2f4e3408740366f7047c6c9b8b6acd86444ec18af75a07e96fd760d1"
+    },
+    {
+      "root": "dtu",
+      "relative": "Calibration/cal18/pos_012.txt",
+      "sha256": "67858dd75353b8ddaa837d11cfb193d14afb68af7f184274bd55fe3ea5631591"
+    },
+    {
+      "root": "dtu",
+      "relative": "Calibration/cal18/pos_013.txt",
+      "sha256": "8f8975bb6e790a4b81a2d9adc62b9c2c074228558e7baae2b3fb4948ff7eb93b"
+    },
+    {
+      "root": "dtu",
+      "relative": "Calibration/cal18/pos_014.txt",
+      "sha256": "52df3cbc7fb79d2f4e010158f495a144778e899d7a35618ec43177c162ecdb27"
+    },
+    {
+      "root": "dtu",
+      "relative": "Calibration/cal18/pos_015.txt",
+      "sha256": "267e5f2517fefc205492668df0d7585d9d1d3ceafa68f75712988a40a6479148"
+    },
+    {
+      "root": "dtu",
+      "relative": "Calibration/cal18/pos_016.txt",
+      "sha256": "622056133b5268797c11f7a2f9b26ada9de9afc02e992f50ea32aa0a691ec0e8"
+    },
+    {
+      "root": "dtu",
+      "relative": "Calibration/cal18/pos_017.txt",
+      "sha256": "10be00b1e1321d0e7308dfb63e3355db51899bfc1b5a5283d881bc1243e86783"
+    },
+    {
+      "root": "dtu",
+      "relative": "Calibration/cal18/pos_018.txt",
+      "sha256": "f8add6c54af0fc99d08e6c3f234767ae1eaa06f936a9bdb5d40838dd1cc60cfa"
+    },
+    {
+      "root": "dtu",
+      "relative": "Calibration/cal18/pos_019.txt",
+      "sha256": "570333481a91c7776e8da0e3e2228c542a512eb1ee202d5d931aa93d368fd966"
+    },
+    {
+      "root": "dtu",
+      "relative": "Calibration/cal18/pos_020.txt",
+      "sha256": "bf2344171ffa41969c9761ddbe1c1c097e12070b749673afe4022d959083bcd1"
+    },
+    {
+      "root": "dtu",
+      "relative": "Calibration/cal18/pos_021.txt",
+      "sha256": "a2e29b287e903d097c8e8673cfa9af29610e92cfb7d148163f59f01f6535fbe4"
+    },
+    {
+      "root": "dtu",
+      "relative": "Calibration/cal18/pos_022.txt",
+      "sha256": "0472bff960feb6e256949e9376de19875b6f1311d4ece06d0eb97f292513e5c6"
+    },
+    {
+      "root": "dtu",
+      "relative": "Calibration/cal18/pos_023.txt",
+      "sha256": "7b6e4f73b727ef3c83947f09f2a9d74d6eb0d7071ec375eeb380e2eb39882014"
+    },
+    {
+      "root": "dtu",
+      "relative": "Calibration/cal18/pos_024.txt",
+      "sha256": "cb030dcd9eff73a611c7bd986ca1be5d050905d789ee9f36e2a473b53ddaacd3"
+    },
+    {
+      "root": "dtu",
+      "relative": "Calibration/cal18/pos_025.txt",
+      "sha256": "a6773cd522ad09d663bb9612477342cda3a930c223ec10493935ef4cf00f549a"
+    },
+    {
+      "root": "dtu",
+      "relative": "Calibration/cal18/pos_026.txt",
+      "sha256": "cffb3b8bdda10f8509d457ae23e2841a81d93ba75d878552e8aeb37feea21d10"
+    },
+    {
+      "root": "dtu",
+      "relative": "Calibration/cal18/pos_027.txt",
+      "sha256": "52a871abf5aaf2956603339d87b6baeb6576eaf14ee910582a699e09e5069660"
+    },
+    {
+      "root": "dtu",
+      "relative": "Calibration/cal18/pos_028.txt",
+      "sha256": "e0b30d843e30842e7525adbef54fdecc916b68ba7b07997b1cd480bc1583eae1"
+    },
+    {
+      "root": "dtu",
+      "relative": "Calibration/cal18/pos_029.txt",
+      "sha256": "fd40437296bca421aeb75a9a82f09c772d96d41725077994a639f09f7a98c037"
+    },
+    {
+      "root": "dtu",
+      "relative": "Calibration/cal18/pos_030.txt",
+      "sha256": "998e13d9b6daea39e071690834b38c4295152095dde92ef32b79d125bca5a9ae"
+    },
+    {
+      "root": "dtu",
+      "relative": "Calibration/cal18/pos_031.txt",
+      "sha256": "9c716db26fdb3efd45dde164ec138c6e3c06b5e5723f9aaf4b2effb9b6432eb3"
+    },
+    {
+      "root": "dtu",
+      "relative": "Calibration/cal18/pos_032.txt",
+      "sha256": "65f67822f110120233daa92539efe761b3c3e9ac11020dc03aac527a3a2563f6"
+    },
+    {
+      "root": "dtu",
+      "relative": "Calibration/cal18/pos_033.txt",
+      "sha256": "21b3210c9c20c8630bc8266f31a1b963457da99f9e465bebe54d4ab83cec64d8"
+    },
+    {
+      "root": "dtu",
+      "relative": "Calibration/cal18/pos_034.txt",
+      "sha256": "0691a51e3064fc67fe03bbfce187dca504bb868fd3916086fd02a62fbc31dfd3"
+    },
+    {
+      "root": "dtu",
+      "relative": "Calibration/cal18/pos_035.txt",
+      "sha256": "ff44bd66caf7d030df84339d918b491968b0793860eee0b13bea4eed72221ed4"
+    },
+    {
+      "root": "dtu",
+      "relative": "Calibration/cal18/pos_036.txt",
+      "sha256": "daab32a8b8a9ff58fc9958ebc8fc59be0314e6da7b52799e03f5d1b6c678ece9"
+    },
+    {
+      "root": "dtu",
+      "relative": "Calibration/cal18/pos_037.txt",
+      "sha256": "fb110d34849d380b071c8e970e4274895643eeb4693254017a502a1baa43329a"
+    },
+    {
+      "root": "dtu",
+      "relative": "Calibration/cal18/pos_038.txt",
+      "sha256": "e234e914afa7c250f4370d6035165e5af4287fdbfc6db5a739dbf0696f8c0e0b"
+    },
+    {
+      "root": "dtu",
+      "relative": "Calibration/cal18/pos_039.txt",
+      "sha256": "5e5a9ebcf83d96ef6f1deab22d26f2fefd74879980057d2cd8d46217c9a3b8d4"
+    },
+    {
+      "root": "dtu",
+      "relative": "Calibration/cal18/pos_040.txt",
+      "sha256": "2296c1c806b01721f19fde0fa3057f59e4d1e1ece0cd739641e4528281e6d14b"
+    },
+    {
+      "root": "dtu",
+      "relative": "Calibration/cal18/pos_041.txt",
+      "sha256": "2d012ab992a1c84a28d292b9b0077fbad0707ff7b64a206e845dfd14acbbe30f"
+    },
+    {
+      "root": "dtu",
+      "relative": "Calibration/cal18/pos_042.txt",
+      "sha256": "f6338e4136557be009565161eba2236c33dec5940be052d7410a10542680a66a"
+    },
+    {
+      "root": "dtu",
+      "relative": "Calibration/cal18/pos_043.txt",
+      "sha256": "259147e0fd812dacc824b693312309617f93ec43f75db2431d7bcd3f74a70c23"
+    },
+    {
+      "root": "dtu",
+      "relative": "Calibration/cal18/pos_044.txt",
+      "sha256": "5440f8c5b5081fb61e04b3dafb5ae9a345a3b61f08aa3156c02500a00e61cfeb"
+    },
+    {
+      "root": "dtu",
+      "relative": "Calibration/cal18/pos_045.txt",
+      "sha256": "4716b2adc88789e93e574a5e001edf933a55d3e774a7276604e906ceee061b27"
+    },
+    {
+      "root": "dtu",
+      "relative": "Calibration/cal18/pos_046.txt",
+      "sha256": "c8bf3ba303628fec3a3b3a36cb7830e7aa7e9897d19fde70eb857de225167fda"
+    },
+    {
+      "root": "dtu",
+      "relative": "Calibration/cal18/pos_047.txt",
+      "sha256": "a56286759d372597b23c91083de74d84ca349b56c191aa1a5fc64609028c15de"
+    },
+    {
+      "root": "dtu",
+      "relative": "Calibration/cal18/pos_048.txt",
+      "sha256": "d61d7d07f188c28e9dc512830878e94f91bac1b7564440e78485d69e6621d302"
+    },
+    {
+      "root": "dtu",
+      "relative": "Calibration/cal18/pos_049.txt",
+      "sha256": "5c9a1c167a539895b57c2a6894e875e519544a8870635efefa270f7bc06d7c94"
+    },
+    {
+      "root": "dtu",
+      "relative": "Calibration/cal18/pos_050.txt",
+      "sha256": "9d952c852416cedfe93e61b4854ba39ed20b954bb4601cdb337c3b896f491ce7"
+    },
+    {
+      "root": "dtu",
+      "relative": "Calibration/cal18/pos_051.txt",
+      "sha256": "51449d2b47054ad499a2ee8cc59e2a0e50c45bb2f952507186cb5696f016dc03"
+    },
+    {
+      "root": "dtu",
+      "relative": "Calibration/cal18/pos_052.txt",
+      "sha256": "68a45b64444348bcc2401f67d5ae4af44fb5e029b65ba7bb01d35266333f66b1"
+    },
+    {
+      "root": "dtu",
+      "relative": "Calibration/cal18/pos_053.txt",
+      "sha256": "f6cbad24653bc46ea6e510e42f2fc92db7864efb75dd1fdfd2cf1ba0a659b657"
+    },
+    {
+      "root": "dtu",
+      "relative": "Calibration/cal18/pos_054.txt",
+      "sha256": "c4693ceca5a5d6b94079ad0b9e1f09b33ea94524e0e347b50ee9e0c267c2d6e3"
+    },
+    {
+      "root": "dtu",
+      "relative": "Calibration/cal18/pos_055.txt",
+      "sha256": "8de7f421a4ed7283d467a0a1269245acd90dec1cc30a84e689c02e6dc0ed0c51"
+    },
+    {
+      "root": "dtu",
+      "relative": "Calibration/cal18/pos_056.txt",
+      "sha256": "c07613165bd303d99018327ff461f804fe55048b9115018ad23faeb28bdea20d"
+    },
+    {
+      "root": "dtu",
+      "relative": "Calibration/cal18/pos_057.txt",
+      "sha256": "c8c8beca900334177692bac7661534730a668ec55a3510c429cab4ff584a53f8"
+    },
+    {
+      "root": "dtu",
+      "relative": "Calibration/cal18/pos_058.txt",
+      "sha256": "782f768ac6cfc9690b437b4c59fd9c2cac26c54ae5a954e15f63693c047be3da"
+    },
+    {
+      "root": "dtu",
+      "relative": "Calibration/cal18/pos_059.txt",
+      "sha256": "d081a36584ec26d03f39aa04e166db9fbd3d6b03f4f38eec272252ee8b0b6945"
+    },
+    {
+      "root": "dtu",
+      "relative": "Calibration/cal18/pos_060.txt",
+      "sha256": "46fdaaea4b9bc94dbf6bd55896a85c880ec5f8a45f57f2a506ec387dfc008d15"
+    },
+    {
+      "root": "dtu",
+      "relative": "Calibration/cal18/pos_061.txt",
+      "sha256": "7f7f6b08a82cbe003de5458edc00fe309d58d605cc443b817136d605dba7d54c"
+    },
+    {
+      "root": "dtu",
+      "relative": "Calibration/cal18/pos_062.txt",
+      "sha256": "5d113b12ea28581e60abcdf8c2833a313e4221005a42d95a00d6d8c60cd05e4c"
+    },
+    {
+      "root": "dtu",
+      "relative": "Calibration/cal18/pos_063.txt",
+      "sha256": "165ca919c0220db61628b9e4d022cca46f1429daf175cc055b4b3474a48e688b"
+    },
+    {
+      "root": "dtu",
+      "relative": "Calibration/cal18/pos_064.txt",
+      "sha256": "f459a3c90e819bb7333d3b8d661fdd4018d746b7cff24c6968a44f06f420cd99"
+    }
+  ]
+}

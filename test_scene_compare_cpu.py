@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 import numpy as np
 from collective_readout import reference_opacity, first_crossing_numpy
-from scene_compare_io import camera_alignment, read_cfg, stage_model, sha256, validate_profile
+from scene_compare_io import camera_alignment, read_cfg, stage_model, sha256, validate_profile, validate_inputs
 
 
 @contextmanager
@@ -23,6 +23,30 @@ def fixture_directory():
 
 
 class SceneCompareTests(unittest.TestCase):
+    def test_frozen_30000_requires_matching_profile_and_model_identity(self):
+        from PIL import Image
+        with fixture_directory() as d:
+            base=Path(d).resolve();model=base/'model';source=base/'scan40';dtu=base/'gt'
+            ply=model/'point_cloud/iteration_30000/point_cloud.ply'
+            ply.parent.mkdir(parents=True)
+            ply.write_bytes(b'ply\nformat ascii 1.0\nelement vertex 2\nproperty float x\nend_header\n0\n1\n')
+            (model/'cfg_args').write_text('Namespace(eval=False, resolution=2)')
+            (source/'images').mkdir(parents=True)
+            im=source/'images/0000.png';Image.new('RGBA',(4,2)).save(im)
+            paths=[source/'sparse/0'/n for n in ('cameras.bin','images.bin','points3D.ply')]
+            paths += [dtu/p for p in ('Points/stl/stl040_total.ply','ObsMask/ObsMask40_10.mat','ObsMask/Plane40.mat')]
+            paths += [dtu/'Calibration/cal18'/f'pos_{i:03}.txt' for i in range(1,65)]
+            for p in paths:p.parent.mkdir(parents=True,exist_ok=True);p.write_bytes(b'fixture')
+            profile=dict(scene='scan40',iteration=30000,ply_sha256=sha256(ply),gaussians=2,
+                image_names=['0000'],raw_dimensions=[4,2],cfg={'resolution':2},
+                hashes=[dict(root='source',relative='images/0000.png',sha256=sha256(im))])
+            manifest=validate_inputs(model,source,dtu,30000,profile)
+            self.assertEqual(manifest['iteration'],30000)
+            with self.assertRaises(ValueError):
+                validate_inputs(model,source,dtu,30000,{**profile,'iteration':7000})
+            ply.write_bytes(ply.read_bytes()+b'2\n')
+            with self.assertRaises(ValueError):validate_inputs(model,source,dtu,30000,profile)
+
     def test_reviewed_profile_rejects_wrong_model_count_resolution_and_images(self):
         from PIL import Image
         with fixture_directory() as d:

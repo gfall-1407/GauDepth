@@ -222,6 +222,7 @@ def evaluate_all(args):
         dump(root/'scores.json',dict(scene=manifest['scan'],iteration=args.iteration,
              units='mm', criterion='DTU mesh only', scores=scores,
              complete=len(scores)==len(METHODS),
+             frozen_model=True, optimizer_updates=0,
              early_screening_only=True, official_submission_claim=False))
     print(json.dumps(scores,indent=2))
 
