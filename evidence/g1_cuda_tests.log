@@ -1,0 +1,23 @@
+test_continuous_turning_root_rejected (test_joint_tv_depth.JointTVTests.test_continuous_turning_root_rejected) ... ok
+test_empty_profile_and_amplitude_boundary (test_joint_tv_depth.JointTVTests.test_empty_profile_and_amplitude_boundary) ... ok
+test_finite_float32_gradient_difference_does_not_overflow (test_joint_tv_depth.JointTVTests.test_finite_float32_gradient_difference_does_not_overflow) ... ok
+test_front_layer_continuous_gradient_convergence (test_joint_tv_depth.JointTVTests.test_front_layer_continuous_gradient_convergence) ... /root/joint_tv_code_6d64509/test_joint_tv_depth.py:85: UserWarning: Converting a tensor with requires_grad=True to a scalar may lead to unexpected behavior.
+Consider using tensor.detach() first. (Triggered internally at /__w/pytorch/pytorch/torch/csrc/autograd/generated/python_variable_methods.cpp:822.)
+  depth_errors.append(float((r.depth-exact).abs()))
+ok
+test_front_layer_history_retained (test_joint_tv_depth.JointTVTests.test_front_layer_history_retained) ... ok
+test_full_covariance_chain_gradient (test_joint_tv_depth.JointTVTests.test_full_covariance_chain_gradient) ... ok
+test_gradcheck_actual_adaptive_grid (test_joint_tv_depth.JointTVTests.test_gradcheck_actual_adaptive_grid) ... ok
+test_gradient_comparison_uses_vectors_not_norms (test_joint_tv_depth.JointTVTests.test_gradient_comparison_uses_vectors_not_norms) ... ok
+test_invalid_near_and_gradient_guard (test_joint_tv_depth.JointTVTests.test_invalid_near_and_gradient_guard) ... ok
+test_invalid_roots_do_not_pass_convergence (test_joint_tv_depth.JointTVTests.test_invalid_roots_do_not_pass_convergence) ... ok
+test_nonfinite_gradient_report_is_serializable (test_joint_tv_depth.JointTVTests.test_nonfinite_gradient_report_is_serializable) ... ok
+test_recovery_after_first_peak (test_joint_tv_depth.JointTVTests.test_recovery_after_first_peak) ... ok
+test_refinement_and_total_inequality (test_joint_tv_depth.JointTVTests.test_refinement_and_total_inequality) ... ok
+test_single_and_aligned_equal_sep (test_joint_tv_depth.JointTVTests.test_single_and_aligned_equal_sep) ... ok
+test_true_no_root_not_solver_failure (test_joint_tv_depth.JointTVTests.test_true_no_root_not_solver_failure) ... ok
+
+----------------------------------------------------------------------
+Ran 15 tests in 3.723s
+
+OK

@@ -1,0 +1,334 @@
+{
+  "status": "complete",
+  "head": "5e0bde35d4786babdb59c48fc48ebd90c32de3c9",
+  "gpu": "NVIDIA GeForce RTX 4090 D",
+  "gaussian_count": 142892,
+  "view": "0049",
+  "image_size": [
+    777,
+    581
+  ],
+  "selection_seconds": 0.14808364585042,
+  "total_seconds": 12.489651937037706,
+  "peak_allocated_bytes": 827653632,
+  "initial_output_free_bytes": 22819303424,
+  "input_identity": {
+    "model_id": "scan110_original7000",
+    "scene": "scan110",
+    "input_ply": "/root/autodl-tmp/GauDepth/outtest/scan110/point_cloud/iteration_7000/point_cloud.ply",
+    "input_sha256": "733bd5ad69246915e7777b740b1891a253624b1d2232df5f19e79a557de78aa7",
+    "source_path": "/root/autodl-tmp/DTU/scan110",
+    "colmap_sha256": {
+      "cameras.bin": "9dd012bebe2dea0514af3f784dbb8fff23354fd7e9476ae6f9c668c40162d06b",
+      "images.bin": "433bda84b16ae7961619442c5bc74c70ddbb090e38ff61eaf601ff3719bb2794"
+    },
+    "expected_rows": 142892,
+    "identity_source": "G5 native capture faa9294 metadata.json; runtime verifies PLY and COLMAP hashes"
+  },
+  "ray_count": 64,
+  "statuses": {
+    "evaluated": 64
+  },
+  "members": {
+    "n": 64,
+    "min": 17,
+    "median": 159.0,
+    "max": 485
+  },
+  "omitted_TV_bound": {
+    "n": 64,
+    "min": 6.696484809417361e-07,
+    "median": 1.2709607632615217e-05,
+    "max": 4.421163408145508e-05
+  },
+  "peak_allocated_GiB": 0.7708125114440918,
+  "levels": {
+    "2": {
+      "valid_roots": 48,
+      "sampled_roots": 48,
+      "nonfinite_gradient_groups": 0,
+      "forward_backward_seconds": {
+        "n": 64,
+        "min": 0.010751720517873764,
+        "median": 0.023861899971961975,
+        "max": 1.0467339530587196
+      },
+      "gradient_norms": {
+        "xyz": {
+          "n": 48,
+          "min": 0.7086218843043524,
+          "median": 3.2115147359052596,
+          "max": 39.53366289490889
+        },
+        "log_scale": {
+          "n": 48,
+          "min": 0.0013883196003595965,
+          "median": 0.026863759924634426,
+          "max": 1.2100443447096865
+        },
+        "rotation": {
+          "n": 48,
+          "min": 0.007741818453533321,
+          "median": 0.21021501138438053,
+          "max": 14.918291521549822
+        },
+        "opacity_logit": {
+          "n": 48,
+          "min": 9.638393474404847e-05,
+          "median": 0.004999750023698883,
+          "max": 0.4078848560870181
+        }
+      }
+    },
+    "4": {
+      "valid_roots": 48,
+      "sampled_roots": 48,
+      "nonfinite_gradient_groups": 0,
+      "forward_backward_seconds": {
+        "n": 64,
+        "min": 0.009451519697904587,
+        "median": 0.03656250797212124,
+        "max": 0.08193469047546387
+      },
+      "gradient_norms": {
+        "xyz": {
+          "n": 48,
+          "min": 0.6841515955881783,
+          "median": 3.1588828311250237,
+          "max": 26.20623093094365
+        },
+        "log_scale": {
+          "n": 48,
+          "min": 0.0020478936141628537,
+          "median": 0.028612151082225874,
+          "max": 0.7228538146358452
+        },
+        "rotation": {
+          "n": 48,
+          "min": 0.013695530851108341,
+          "median": 0.21758359587312964,
+          "max": 8.484592305222312
+        },
+        "opacity_logit": {
+          "n": 48,
+          "min": 9.593033147764881e-05,
+          "median": 0.004800106625940796,
+          "max": 0.24346383545129432
+        }
+      }
+    },
+    "8": {
+      "valid_roots": 48,
+      "sampled_roots": 48,
+      "nonfinite_gradient_groups": 0,
+      "forward_backward_seconds": {
+        "n": 64,
+        "min": 0.013567492365837097,
+        "median": 0.063581557944417,
+        "max": 0.15764428675174713
+      },
+      "gradient_norms": {
+        "xyz": {
+          "n": 48,
+          "min": 0.8787095446138151,
+          "median": 3.3767539028781215,
+          "max": 31.585945348462452
+        },
+        "log_scale": {
+          "n": 48,
+          "min": 0.002813188888652583,
+          "median": 0.03173766144440488,
+          "max": 1.5075483366770468
+        },
+        "rotation": {
+          "n": 48,
+          "min": 0.03516359018640806,
+          "median": 0.3135983237325869,
+          "max": 7.896146469754492
+        },
+        "opacity_logit": {
+          "n": 48,
+          "min": 9.648193483026448e-05,
+          "median": 0.004702731589768436,
+          "max": 0.20268712339802017
+        }
+      }
+    }
+  },
+  "pairs": {
+    "(2, 4)": {
+      "observed_pair_passed": 0,
+      "status_changed": 0,
+      "comparable": 48,
+      "depth_abs_change": {
+        "n": 48,
+        "min": 0.0,
+        "median": 2.6226043701171875e-06,
+        "max": 0.0003199577331542969
+      },
+      "TV_abs_change": {
+        "n": 48,
+        "min": 2.9325485229492188e-05,
+        "median": 0.0004633665084838867,
+        "max": 0.0025205612182617188
+      },
+      "depth_within_tolerance": 34,
+      "TV_within_tolerance": 0,
+      "gradients": {
+        "xyz": {
+          "passed": 1,
+          "relative_l2": {
+            "n": 48,
+            "min": 0.0068558906335643415,
+            "median": 0.18761644993176602,
+            "max": 0.8656523896900954
+          },
+          "absolute_l2": {
+            "n": 48,
+            "min": 0.012454733009135209,
+            "median": 0.7061415565101067,
+            "max": 16.25429376243021
+          }
+        },
+        "log_scale": {
+          "passed": 1,
+          "relative_l2": {
+            "n": 48,
+            "min": 0.007041173881261973,
+            "median": 0.2079821824768776,
+            "max": 0.9534770019441798
+          },
+          "absolute_l2": {
+            "n": 48,
+            "min": 0.000231397717307188,
+            "median": 0.004653580074569921,
+            "max": 0.49785486422592967
+          }
+        },
+        "rotation": {
+          "passed": 0,
+          "relative_l2": {
+            "n": 48,
+            "min": 0.02000598867820572,
+            "median": 0.37890650677721416,
+            "max": 0.9350596476929054
+          },
+          "absolute_l2": {
+            "n": 48,
+            "min": 0.0014380333105028708,
+            "median": 0.07924539190723667,
+            "max": 6.620429101022698
+          }
+        },
+        "opacity_logit": {
+          "passed": 20,
+          "relative_l2": {
+            "n": 48,
+            "min": 0.0013672876450675285,
+            "median": 0.01375230795876221,
+            "max": 0.5394970065907527
+          },
+          "absolute_l2": {
+            "n": 48,
+            "min": 7.12423627710568e-07,
+            "median": 0.00011276671728100216,
+            "max": 0.16442643182975525
+          }
+        }
+      }
+    },
+    "(4, 8)": {
+      "observed_pair_passed": 0,
+      "status_changed": 0,
+      "comparable": 48,
+      "depth_abs_change": {
+        "n": 48,
+        "min": 0.0,
+        "median": 5.960464477539062e-07,
+        "max": 6.103515625e-05
+      },
+      "TV_abs_change": {
+        "n": 48,
+        "min": 5.245208740234375e-06,
+        "median": 0.0001595020294189453,
+        "max": 0.0006089210510253906
+      },
+      "depth_within_tolerance": 46,
+      "TV_within_tolerance": 1,
+      "gradients": {
+        "xyz": {
+          "passed": 2,
+          "relative_l2": {
+            "n": 48,
+            "min": 0.005733606525090422,
+            "median": 0.22893932304785086,
+            "max": 0.8639403488749545
+          },
+          "absolute_l2": {
+            "n": 48,
+            "min": 0.0101739757001692,
+            "median": 0.7203412822089824,
+            "max": 19.11640227678521
+          }
+        },
+        "log_scale": {
+          "passed": 1,
+          "relative_l2": {
+            "n": 48,
+            "min": 0.001833541136148731,
+            "median": 0.21939211494468602,
+            "max": 0.9890677803285921
+          },
+          "absolute_l2": {
+            "n": 48,
+            "min": 8.675481890863168e-05,
+            "median": 0.00606377467572107,
+            "max": 1.0024345948549258
+          }
+        },
+        "rotation": {
+          "passed": 1,
+          "relative_l2": {
+            "n": 48,
+            "min": 0.009443955524028184,
+            "median": 0.40534350959268173,
+            "max": 0.9953899375633691
+          },
+          "absolute_l2": {
+            "n": 48,
+            "min": 0.0016636439219112657,
+            "median": 0.11825928648023737,
+            "max": 3.0562003596433724
+          }
+        },
+        "opacity_logit": {
+          "passed": 23,
+          "relative_l2": {
+            "n": 48,
+            "min": 0.00029267468430360145,
+            "median": 0.01077832377517729,
+            "max": 0.5806602766998619
+          },
+          "absolute_l2": {
+            "n": 48,
+            "min": 6.340896338516934e-07,
+            "median": 4.853629872819113e-05,
+            "max": 0.04078323417110502
+          }
+        }
+      }
+    }
+  },
+  "sha256": {
+    "probe.json": "d32d65257e2c5d6624d5c4c35c4870235336a6110231b808ee1f204ce18c5f57",
+    "probe.log": "d3aac0d0147c16152145e906e684e2f0640dafe47a7405db552795d48c3e159c",
+    "cuda_tests.log": "4a480d501e4cf206647fc1823201facf04cafb28921c30f62d47995e2b766f6e",
+    "probe.rows.jsonl": "d184c60db0160b9866331cefdaaff93caa5bf7ab14d44d445c944ddd2d483f8f"
+  },
+  "all_pair_passed": 0,
+  "journal_rows": 64,
+  "exitcode": 0,
+  "wall_start": "2026-11-04T12:29:47Z",
+  "wall_end": "2026-11-04T12:30:05Z",
+  "training_decision": "NO_GO: sampled depth/gradient refinement not converged; objective and extraction integration unimplemented"
+}
