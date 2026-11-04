@@ -13,6 +13,7 @@ import torch
 
 @dataclass
 class DepthResult:
+    # valid is only a root/conditioning guard; it does NOT certify convergence.
     depth: torch.Tensor
     valid: torch.Tensor
     has_sampled_root: torch.Tensor
@@ -35,7 +36,7 @@ def validate_profiles(mean, sigma, amplitude):
 
 
 def potential(t, mean, sigma, amplitude, sample_chunk=256):
-    """H on [ray, sample] positions. Chunking bounds intermediate tensor size."""
+    """H on [ray, sample] positions. Autograd still saves all chunks in total."""
     values = []
     for p in t.split(sample_chunk, dim=-1):
         u = (p[..., None] - mean[:, None, :]) / sigma[:, None, :]

@@ -1,5 +1,11 @@
 # Independent static review and execution status, 2026-11-04
 
+STATUS UPDATE: the preliminary static GO below was superseded by independent
+numerical NO GO for commit 03b7916 (review thread
+01a1a5ad-3853-7149-b6ef-a82e7a362010). The current repair must receive a fresh
+independent review. Remote push approval remains pending; no retry has occurred.
+See JOINT_TV_PLAN.md's protocol-v2 section for fixes and numerical differences.
+
 Reviewer: independent sub-agent /root/joint_core_review, two passes. The first
 pass found a continuous turning-root degeneracy concealed by a secant slope,
 misleading has_root naming, possible vacuous gradcheck, and O(K^2) graph memory.

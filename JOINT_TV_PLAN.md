@@ -22,6 +22,8 @@ interpolation participate in autograd. No detached implicit-gradient shortcut.
 Nested midpoint refinements expose unresolved roots/variation; they do not prove
 all extrema have been found. Dense agreement and depth-gradient convergence are
 necessary before this can be used for a training experiment.
+`valid=True` only means the root/conditioning guards passed; it never means the
+depth or gradient has converged. This distinction is recorded in every probe row.
 
 No root stays no root; depth=0 is a sentinel with a separate valid mask. There is
 no Expected fallback. Roots with near H>1e-4 or secant slope<1e-4 are invalid.
@@ -70,11 +72,16 @@ are quality outcomes; RGB, ray tests, and root coverage are supporting diagnosti
 
 1. Independent source review before push; Git-only synchronization to a new G6
    checkout. Recheck hostname, GPU load, commit, native extension identity.
-2. Ten CUDA tests: exact/analytic controls, adaptive-grid gradcheck, full
-   covariance chain gradcheck, no-root, near-occupied and gradient guard.
+2. Fourteen synthetic tests: exact/analytic controls, adaptive-grid gradcheck,
+   full covariance chain gradcheck, no-root, near-occupied and gradient guard,
+   continuous gradient convergence and honest refinement-report semantics.
+   The suite defaults to CUDA. JOINT_TEST_DEVICE=cpu explicitly allows only this
+   tiny synthetic suite during source review; the scene probe never falls back.
 3. Read-only original scan40 PLY and COLMAP cameras, 64 spatially spread rays.
-   Compare nested 1/2/4 refinement, retained support count, conservative omitted
-   TV bound, forward/backward time, and gradient finiteness. This probe is solely
+   Compare nested 2/4/8 refinement with forward AND backward at every level,
+   retained support count, conservative omitted TV bound, forward/backward time,
+   and gradient vectors on identical xyz/scale/quaternion/opacity parameters.
+   This probe is solely
    to decide if a full-scene implementation is computationally feasible.
 4. If the O(K^2) adaptive evaluation or all-Gaussian ray selection is too slow,
    stop this prototype before 1000-step training. A tiled support list and a
@@ -82,3 +89,38 @@ are quality outcomes; RGB, ray tests, and root coverage are supporting diagnosti
 
 No training, full mesh, DTU improvement, server shutdown, or new method validation
 has been completed by the files in this feasibility stage.
+
+## Numerical protocol v2 is distinct from the frozen CPU reference
+
+The serialized protocol lives in joint_tv_convergence.py and is written before
+the first scene computation. No frozen GPU reference has been identified and no
+parity with one has been established. The differences are deliberate experiment
+definitions to expose, not small changes assumed to be harmless:
+
+| Item | Frozen CPU diagnostic | This differentiable probe v2 |
+|---|---|---|
+| Domain | axial camera z in [0,8], metric ray parameter internally | axial z in [.2001,8] |
+| Opacity | native activated/filter-adjusted value | multiplied by 1-1e-6 |
+| Member selection | full-line amplitude >1e-14/N | amplitude >=1e-6 by default |
+| Precision | float64 | float32 |
+| Integral | numerically isolated Hprime turning points | TV of piecewise-linear H |
+| Grid derivative | inference-only | moving knots differentiated |
+| Refinement checks | total 1e-8; ray-distance root change 1e-6 | axial depth 1e-5; TV 1e-5; vector-gradient L2 <=1e-6+1% scale |
+| Status | finite search not exhaustive | observed pair agreement is not continuous-error certification |
+
+The v2 thresholds are screening flags, not relaxed reproductions of the old
+reference tolerances, and are not permission to train. Full-line omitted-TV
+bounds are not depth or gradient error bounds. All-invalid levels cannot pass
+convergence by returning the same zero sentinel. Both 2-to-4 and 4-to-8 flags
+are retained; a failure is reported, never repaired by dropping the ray.
+
+The independent review reproduced one failing depth test in v1: the separated
+front/back case at 8 levels erred by 4.007635e-4 versus a 3e-4 limit. v2 evaluates
+that assertion at 16 levels, preserving the 3e-4 limit and requiring improvement
+over 8. It additionally checks continuous analytic opacity-gradient convergence
+at levels 2/4/8/16, preserving the known ~27% low-resolution discrepancy instead
+of treating discrete gradcheck as continuous accuracy evidence.
+
+Scene output is restricted to /root/autodl-tmp/joint_tv_runs, with an initial
+status=started_not_complete manifest and append-only per-ray journal. Only normal
+completion writes status=complete. External timeout remains mandatory.

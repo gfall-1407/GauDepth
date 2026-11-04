@@ -1,0 +1,63 @@
+{
+  "scope": "tiny_synthetic_not_scene_or_GPU",
+  "device": "cpu",
+  "dtype": "float64",
+  "torch": "2.0.0+cu118",
+  "threads": 1,
+  "analytic_depth": 2.706025422867907,
+  "analytic_opacity_gradient": [
+    -1.0308044525025062,
+    -0.15118465303370085
+  ],
+  "rows": [
+    {
+      "subdivisions": 2,
+      "valid": true,
+      "depth": 2.7042962833745707,
+      "depth_abs_error": 0.0017291394933360849,
+      "opacity_gradient": [
+        -0.7510673428799036,
+        -0.1118367413447656
+      ],
+      "opacity_gradient_abs_max_error": 0.27973710962260256,
+      "continuous_error_certified": false
+    },
+    {
+      "subdivisions": 4,
+      "valid": true,
+      "depth": 2.7051384305344603,
+      "depth_abs_error": 0.000886992333446468,
+      "opacity_gradient": [
+        -0.8982897615490337,
+        -0.13246857389594607
+      ],
+      "opacity_gradient_abs_max_error": 0.13251469095347246,
+      "continuous_error_certified": false
+    },
+    {
+      "subdivisions": 8,
+      "valid": true,
+      "depth": 2.705624659360517,
+      "depth_abs_error": 0.000400763507389712,
+      "opacity_gradient": [
+        -0.9832912757832811,
+        -0.14451628233084973
+      ],
+      "opacity_gradient_abs_max_error": 0.04751317671922506,
+      "continuous_error_certified": false
+    },
+    {
+      "subdivisions": 16,
+      "valid": true,
+      "depth": 2.705885482572011,
+      "depth_abs_error": 0.0001399402958957019,
+      "opacity_gradient": [
+        -1.028887848294726,
+        -0.15100453162882255
+      ],
+      "opacity_gradient_abs_max_error": 0.0019166042077802814,
+      "continuous_error_certified": false
+    }
+  ],
+  "source_sha256": "a50856f9e39d5d2d630a96432c05246131c9bcee0f328af80431d21d53200463"
+}

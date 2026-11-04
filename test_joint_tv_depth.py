@@ -1,17 +1,26 @@
 """Run with CUDA on the experiment host: python -m unittest test_joint_tv_depth -v."""
 import math
+import os
 import unittest
 import torch
 from joint_tv_depth import (joint_depth, continuous_sep_depth, ray_profiles,
                             sep_optical_depth, profile_knots, potential)
+from joint_tv_convergence import gradient_delta, refinement_comparison
 
 
 class JointTVTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        if not torch.cuda.is_available():
+        # CPU is explicit and only for this tiny synthetic suite during review.
+        # It is never a fallback for the full-scene GPU probe.
+        device = os.environ.get('JOINT_TEST_DEVICE', 'cuda')
+        if device not in ('cpu', 'cuda'):
+            raise ValueError('JOINT_TEST_DEVICE must be cpu or cuda')
+        if device == 'cuda' and not torch.cuda.is_available():
             raise RuntimeError("Run numerical tests on the authorized GPU server")
-        cls.device = torch.device("cuda")
+        cls.device = torch.device(device)
+        if device == 'cpu':
+            torch.set_num_threads(1)
 
     def p(self, m, s, a, grad=False):
         return tuple(torch.tensor([x], device=self.device, dtype=torch.float64,
@@ -47,13 +56,40 @@ class JointTVTests(unittest.TestCase):
 
     def test_front_layer_history_retained(self):
         p = self.p([-3.,3.], [.2,.2], [.4,.9])
-        r = self.solve(p)
-        isolated = self.solve(self.p([3.],[.2],[.9]))
+        r8,r = self.solve(p,8),self.solve(p,16)
+        isolated = self.solve(self.p([3.],[.2],[.9]),16)
         self.assertTrue(bool(r.valid.all()))
         self.assertLess(float(r.depth), float(isolated.depth))
         # With separated layers cancellation is negligible, joint equals sep.
         sd,_ = continuous_sep_depth(*p,near=-10,far=10)
+        self.assertLess(float((r.depth-sd).abs()), float((r8.depth-sd).abs()))
         self.assertLess(float((r.depth-sd).abs()), 3e-4)
+
+    def test_front_layer_continuous_gradient_convergence(self):
+        # Well-separated layers have an analytic root. Their overlap is <1e-48.
+        # This checks accuracy against a continuous reference, not just gradcheck
+        # of the same interpolated algorithm. Preserve the failing low-res case.
+        p = self.p([-3.,3.],[.2,.2],[.4,.9],grad=True)
+        m,s,a = p
+        back_g = 1 - (0.5/(1-a[:,0])).square()
+        exact = m[:,1]-s[:,1]*torch.sqrt(2*torch.log(a[:,1]/back_g))
+        exact_grad = torch.autograd.grad(exact.sum(),p)
+        opacity_errors=[]
+        depth_errors=[]
+        for n in (2,4,8,16):
+            x=tuple(v.detach().clone().requires_grad_() for v in p)
+            r=self.solve(x,n)
+            self.assertTrue(bool(r.valid.all()))
+            grad=torch.autograd.grad(r.depth.sum(),x)
+            opacity_errors.append(float((grad[2]-exact_grad[2]).abs().max()))
+            depth_errors.append(float((r.depth-exact).abs()))
+            self.assertTrue(all(bool(torch.isfinite(g).all()) for g in grad))
+        self.assertGreater(opacity_errors[0], .25*float(exact_grad[2].abs().max()))
+        self.assertTrue(all(b<a for a,b in zip(opacity_errors,opacity_errors[1:])))
+        self.assertTrue(all(b<a for a,b in zip(depth_errors,depth_errors[1:])))
+        # Strengthened 16-level accuracy; the previous 3e-4 depth limit is kept.
+        self.assertLess(depth_errors[-1],3e-4)
+        self.assertLess(opacity_errors[-1],.003)
 
     def test_refinement_and_total_inequality(self):
         p = self.p([-.5,.1,1.2],[.7,.4,.6],[.5,.7,.6])
@@ -108,6 +144,29 @@ class JointTVTests(unittest.TestCase):
         self.assertFalse(bool(r.valid.any()))
         with self.assertRaises(ValueError):
             self.solve(self.p([0.],[1.],[1.]))
+
+    def test_gradient_comparison_uses_vectors_not_norms(self):
+        a=torch.tensor([1.,0.],device=self.device)
+        b=torch.tensor([0.,1.],device=self.device)
+        self.assertEqual(float(a.norm()),float(b.norm()))
+        self.assertFalse(gradient_delta(a,b)['passed'])
+
+    def test_invalid_roots_do_not_pass_convergence(self):
+        z=torch.zeros(2,device=self.device)
+        a=dict(valid=False,has_sampled_root=False,depth=0.,total=.1,subdivisions=2)
+        b=dict(a,subdivisions=4)
+        comparison=refinement_comparison(a,b,{'xyz':z},{'xyz':z})
+        self.assertFalse(comparison['observed_pair_passed'])
+        self.assertIsNone(comparison['depth_abs_change'])
+
+    def test_nonfinite_gradient_report_is_serializable(self):
+        import json
+        a=torch.zeros(2,device=self.device)
+        b=torch.tensor([float('nan'),float('inf')],device=self.device)
+        result=gradient_delta(a,b)
+        self.assertFalse(result['passed'])
+        self.assertFalse(result['finite'])
+        json.dumps(result,allow_nan=False)
 
 
 if __name__ == '__main__':

@@ -1,0 +1,19 @@
+test_continuous_turning_root_rejected (test_joint_tv_depth.JointTVTests) ... ok
+test_empty_profile_and_amplitude_boundary (test_joint_tv_depth.JointTVTests) ... ok
+test_front_layer_continuous_gradient_convergence (test_joint_tv_depth.JointTVTests) ... ok
+test_front_layer_history_retained (test_joint_tv_depth.JointTVTests) ... ok
+test_full_covariance_chain_gradient (test_joint_tv_depth.JointTVTests) ... ok
+test_gradcheck_actual_adaptive_grid (test_joint_tv_depth.JointTVTests) ... ok
+test_gradient_comparison_uses_vectors_not_norms (test_joint_tv_depth.JointTVTests) ... ok
+test_invalid_near_and_gradient_guard (test_joint_tv_depth.JointTVTests) ... ok
+test_invalid_roots_do_not_pass_convergence (test_joint_tv_depth.JointTVTests) ... ok
+test_nonfinite_gradient_report_is_serializable (test_joint_tv_depth.JointTVTests) ... ok
+test_recovery_after_first_peak (test_joint_tv_depth.JointTVTests) ... ok
+test_refinement_and_total_inequality (test_joint_tv_depth.JointTVTests) ... ok
+test_single_and_aligned_equal_sep (test_joint_tv_depth.JointTVTests) ... ok
+test_true_no_root_not_solver_failure (test_joint_tv_depth.JointTVTests) ... ok
+
+----------------------------------------------------------------------
+Ran 14 tests in 0.214s
+
+OK
