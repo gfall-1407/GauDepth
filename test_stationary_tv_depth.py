@@ -1,7 +1,7 @@
 """CUDA-only numerical acceptance for stationary-TV; no scene or model writes."""
 import unittest
 import torch
-from stationary_tv_depth import stationary_depth
+from stationary_tv_depth import stationary_depth, slope_at, slope_direction_signal
 
 
 class StationaryTVTests(unittest.TestCase):
@@ -57,6 +57,26 @@ class StationaryTVTests(unittest.TestCase):
             self.assertFalse(bool(r.valid))
             g=torch.autograd.grad(r.depth.sum(),p)
             self.assertTrue(all(bool((x==0).all()) for x in g))
+
+    def test_far_tail_direction_underflow(self):
+        p=self.p([1.],[.005],[.9]);m,s,a=p
+        t=m.new_tensor([[.2,4.]])
+        self.assertTrue(bool((slope_at(t,*p)==0).all()))
+        self.assertEqual(slope_direction_signal(t,*p).sign().tolist(),[[1.,-1.]])
+        r=stationary_depth(*p,near=.2001,far=8.)
+        self.assertTrue(bool(r.valid))
+        exact=m-s*torch.sqrt(2*torch.log(a/.75))
+        expected=torch.autograd.grad(exact.sum(),p)
+        actual=torch.autograd.grad(r.depth.sum(),p)
+        self.assertLess(float((r.depth-exact).detach().abs()),1e-10)
+        for u,v in zip(actual,expected): self.assertLess(float((u-v).abs().max()),1e-8)
+
+    def test_zero_amplitude_direction(self):
+        p=self.p([1.],[.005],[0.])
+        signal=slope_direction_signal(p[0].new_tensor([[.2,1.,4.]]),*p)
+        self.assertTrue(bool(torch.isfinite(signal).all()))
+        self.assertTrue(bool((signal==0).all()))
+        self.assertFalse(bool(stationary_depth(*p,near=.2001,far=8.).valid))
 
 
 if __name__=='__main__': unittest.main(verbosity=2)

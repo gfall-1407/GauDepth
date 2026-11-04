@@ -19,6 +19,25 @@ def slope_at(t, mean, sigma, amplitude, chunk=256):
     return torch.cat(values,-1)
 
 
+def slope_direction_signal(t, mean, sigma, amplitude, chunk=256):
+    """Positive rescaling of Hprime; use its sign, never its magnitude.
+
+    Sum signed derivative terms after subtracting their largest log magnitude.
+    Gaussian far tails may underflow even in float64; their monotonic direction
+    remains meaningful. This does not certify finding every stationary point.
+    """
+    values=[]
+    for x in t.split(chunk,dim=-1):
+        u=(x[...,None]-mean[:,None,:])/sigma[:,None,:]
+        log_g=amplitude[:,None,:].log()-.5*u.square()
+        g=log_g.exp()
+        log_term=log_g+u.abs().log()-sigma[:,None,:].log()-torch.log1p(-g)
+        largest=log_term.max(-1,keepdim=True).values
+        largest=torch.where(torch.isfinite(largest),largest,torch.zeros_like(largest))
+        values.append(((-u.sign())*torch.exp(log_term-largest)).sum(-1))
+    return torch.cat(values,-1)
+
+
 class _BranchDepth(torch.autograd.Function):
     @staticmethod
     def forward(ctx, mean, sigma, amplitude, points, weights, root, slope):
@@ -56,6 +75,7 @@ class StationaryResult:
     root_bracket_width: float
     root_branch_margin: float
     monotonic_directions: torch.Tensor
+    guard_failures: list
     continuous_error_certified: bool = False
 
 
@@ -75,7 +95,7 @@ def stationary_depth(mean, sigma, amplitude, *, near, far, subdivisions=2,
     p=tuple(x.double() for x in (mean,sigma,amplitude))
     with torch.no_grad():
         t=torch.unique(profile_knots(*p,near,far,subdivisions).flatten(),sorted=True)
-        hp=slope_at(t[None],*p)[0]
+        hp=slope_direction_signal(t[None],*p)[0]
         if not bool(torch.isfinite(hp).all()): raise ValueError('nonfinite Hprime')
         # Skip zero samples, including underflow-flat tails. A zero with a sign
         # change on its two sides remains bracketed; a stationary touch is not a
@@ -87,7 +107,7 @@ def stationary_depth(mean, sigma, amplitude, *, near, far, subdivisions=2,
         dl=hp[nz[:-1]][change].clone()
         for _ in range(bisections):
             if lo.numel()==0: break
-            mid=(lo+hi)*.5;dm=slope_at(mid[None],*p)[0]
+            mid=(lo+hi)*.5;dm=slope_direction_signal(mid[None],*p)[0]
             same=dm.signbit()==dl.signbit();zero=dm==0
             lo=torch.where(same|zero,mid,lo)
             hi=torch.where((~same)|zero,mid,hi)
@@ -95,7 +115,7 @@ def stationary_depth(mean, sigma, amplitude, *, near, far, subdivisions=2,
         critical=(lo+hi)*.5
         points=torch.cat((t.new_tensor([near]),critical,t.new_tensor([far])))
         h=potential(points[None],*p)[0]
-        directions=slope_at(((points[:-1]+points[1:])*.5)[None],*p)[0].sign()
+        directions=slope_direction_signal(((points[:-1]+points[1:])*.5)[None],*p)[0].sign()
         signed=(h[1:]-h[:-1])*directions
         monotone_consistent=bool(((signed>=-1e-10) &
                                  ((directions!=0)|((h[1:]-h[:-1]).abs()<=1e-12))).all())
@@ -125,6 +145,10 @@ def stationary_depth(mean, sigma, amplitude, *, near, far, subdivisions=2,
         valid=has & (h[0]<=max_near_potential) & (slope[0]>=min_slope)
         valid=valid & torch.isfinite(root[0]) & torch.isfinite(variation[-1])
         valid=valid & monotone_consistent & (residual<=1e-8)
+        checks={'no_detected_root':bool(has),'near_potential':bool(h[0]<=max_near_potential),
+                'root_slope':bool(slope[0]>=min_slope),'nonfinite_root_or_TV':bool(torch.isfinite(root[0])&torch.isfinite(variation[-1])),
+                'monotonic_direction':monotone_consistent,'root_residual':residual<=1e-8}
+        guard_failures=[name for name,passed in checks.items() if not passed]
         if bool(valid):
             heights=potential(prefix_points[None],*p)[0]
             signs=directions[:j]
@@ -138,4 +162,4 @@ def stationary_depth(mean, sigma, amplitude, *, near, far, subdivisions=2,
     return StationaryResult(depth,valid.reshape(1),has.reshape(1),variation[-1:].detach(),
         h[:1].detach(),slope.detach(),critical.detach(),h[1:-1].detach(),prefix_count,
         len(t),critical_residual,residual,float((hi-lo).max()) if len(lo) else 0.,
-        root_width,branch_margin,directions.detach())
+        root_width,branch_margin,directions.detach(),guard_failures)

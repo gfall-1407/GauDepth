@@ -69,7 +69,7 @@ def main(args):
     out.parent.mkdir(parents=True,exist_ok=True);journal.touch(exist_ok=False)
     protocol=dict(near=NEAR,far=FAR,opacity_factor=1-1e-6,member_epsilon=1e-6,
         selection='same fixed float32 full-line support as previous probe',max_members=512,
-        methods=['pl32_4','pl32_8','pl64_4','pl64_8','stationary64_1','stationary64_2','stationary64_4'],
+        methods=['pl32_4','pl32_8','pl64_4','pl64_8','stationary64_1','stationary64_2','stationary64_4','stationary64_8'],
         root_bisections=40,fd_rays='first four valid stationary rays in unchanged 8x8 grid',
         fd_directions='one deterministic random unit direction for each parameter group',
         continuous_error_certified=False)
@@ -99,7 +99,7 @@ def main(args):
             row['status']='evaluated';records={};gradients={};quantization={}
             raw_base=tuple(x[ids].detach() for x in (g._xyz,g._scaling,g._rotation,g._opacity))
             for dtype,label in ((torch.float32,'pl32'),(torch.float64,'pl64'),(torch.float64,'stationary64')):
-                for n in ((1,2,4) if label=='stationary64' else (4,8)):
+                for n in ((1,2,4,8) if label=='stationary64' else (4,8)):
                     deadline();raw=tuple(x.to(dtype).clone().requires_grad_() for x in raw_base)
                     f=g.filter_3D[ids].to(dtype);o=origins[i:i+1].to(dtype);d=directions[i:i+1].to(dtype)
                     torch.cuda.synchronize();begin=time.perf_counter()
@@ -113,6 +113,7 @@ def main(args):
                         seconds=seconds,gradient_norms={k:float(x.double().norm()) for k,x in zip(NAMES,grads)})
                     if label=='stationary64':
                         rec.update(branch=branch(r),critical_points=r.critical_points.tolist(),
+                            guard_failures=r.guard_failures,near_potential=float(r.near_potential),root_slope=float(r.slope),
                             max_critical_residual=r.max_critical_residual,
                             max_critical_bracket_width=r.max_critical_bracket_width,
                             root_bracket_width=r.root_bracket_width if math.isfinite(r.root_bracket_width) else None,
@@ -134,7 +135,8 @@ def main(args):
                     key=f'{label}_{n}';records[key]=rec;gradients[key]=grads
             pairs=(('pl32_4','pl32_8'),('pl64_4','pl64_8'),
                    ('pl32_8','pl64_8'),('pl64_8','stationary64_4'),
-                   ('stationary64_1','stationary64_2'),('stationary64_2','stationary64_4'))
+                   ('stationary64_1','stationary64_2'),('stationary64_2','stationary64_4'),
+                   ('stationary64_4','stationary64_8'))
             comparisons={a+'__'+b:compare(records[a],records[b],gradients[a],gradients[b]) for a,b in pairs}
             fd=[]
             if fd_count<4 and records['stationary64_4']['valid']:
