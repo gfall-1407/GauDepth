@@ -1,4 +1,4 @@
-"""Fixed-pool Expected/joint continuation with fresh Adam and counted updates.
+"""Fixed-pool RGB/Expected/joint continuation with fresh Adam and counted updates.
 
 Two commands: prepare freezes track anchors plus the shared update schedule;
 train executes one arm in a fresh output directory. No original PLY is modified.
@@ -36,6 +36,12 @@ GEOMETRY_PROTOCOL=dict(near=.2001,far=8.,opacity_factor=1-1e-6,
     refinement='4/8; unresolved rays checked8/16; no fallback depth',
     no_root_policy='abort fixed-pool training, never drop/resample supervision',
     completeness_certified=False)
+PARAMETER_POLICY=dict(id='preserve_original_signed_inf_opacity_v1',
+    permitted_nonfinite='original signed Inf opacity logits only; original index and sign immutable',
+    saturated_opacity_gradient='exact zero',saturated_opacity_adam_moments='exact zero',
+    other_parameters_gradients_and_optimizer_states='finite',weight_decay=0.,
+    gaussian_geometry_and_SH='remain trainable, including Gaussians with saturated opacity',
+    clamp_or_replace_original_opacity=False)
 
 
 class GuardFailure(RuntimeError):
@@ -128,11 +134,86 @@ def load_model(identity,settings,scene_radius,camera_count,training=False,optimi
     if training:
         opt=SimpleNamespace(**optimizer_settings);g.training_setup(opt)
         if len(g.optimizer.state)!=0:raise AssertionError('Adam must start empty')
+    initialize_parameter_policy(g)
     return g
 
 
 def model_parameter_names(g):
     return PARAMETER_NAMES+(('_appearance_embeddings',) if g._appearance_embeddings is not None else ())
+
+
+@torch.no_grad()
+def tensor_health(value):
+    value=value.detach();bad=~torch.isfinite(value)
+    return dict(shape=list(value.shape),dtype=str(value.dtype),finite=int((~bad).sum()),
+        positive_inf=int(torch.isposinf(value).sum()),negative_inf=int(torch.isneginf(value).sum()),
+        nan=int(torch.isnan(value).sum()),first_nonfinite_flat_indices=bad.flatten().nonzero().flatten()[:12].cpu().tolist())
+
+
+@torch.no_grad()
+def initialize_parameter_policy(g):
+    """Allow only original signed Inf logits; do not modify a parameter value."""
+    problems={}
+    for name in model_parameter_names(g)+('filter_3D',):
+        value=getattr(g,name)
+        invalid=torch.isnan(value) if name=='_opacity' else ~torch.isfinite(value)
+        if bool(invalid.any()):problems[name]=tensor_health(value)
+    if problems:raise GuardFailure('nonfinite original parameter outside permitted opacity Inf policy',
+                                  dict(phase='initial_input',problems=problems,parameter_policy=PARAMETER_POLICY))
+    signs=torch.isposinf(g._opacity).to(torch.int8)-torch.isneginf(g._opacity).to(torch.int8)
+    g._initial_opacity_signs=signs.detach().clone()
+    g._initial_parameter_state=dict(opacity=tensor_health(g._opacity),
+        opacity_mask_sign_sha256=hashlib.sha256(signs.contiguous().cpu().numpy().tobytes()).hexdigest(),
+        parameter_policy=copy.deepcopy(PARAMETER_POLICY))
+    validate_parameter_policy(g,'initial_input')
+
+
+@torch.no_grad()
+def validate_parameter_policy(g,phase,*,require_zero_gradient=False):
+    """Detect new nonfinites separately from preserved saturated input logits."""
+    initial=g._initial_opacity_signs;current=torch.isposinf(g._opacity).to(torch.int8)-torch.isneginf(g._opacity).to(torch.int8)
+    problems={};saturated=initial!=0
+    if bool(torch.isnan(g._opacity).any()) or not bool((current==initial).all()):
+        problems['_opacity']=dict(current=tensor_health(g._opacity),
+            new_inf=int(((current!=0)&(initial==0)).sum()),
+            original_inf_changed=int(((initial!=0)&(current!=initial)).sum()),
+            sign_or_mask_changed_indices=(current!=initial).flatten().nonzero().flatten()[:12].cpu().tolist())
+    for name in model_parameter_names(g)+('filter_3D',):
+        value=getattr(g,name)
+        if name!='_opacity' and not bool(torch.isfinite(value).all()):problems[name]=tensor_health(value)
+        grad=getattr(value,'grad',None)
+        if require_zero_gradient and grad is not None and not bool(torch.isfinite(grad).all()):
+            problems[name+'.grad']=tensor_health(grad)
+    opacity_grad=g._opacity.grad
+    if require_zero_gradient and bool(saturated.any()):
+        if opacity_grad is None:
+            problems['_opacity.grad']='required opacity gradient is absent; exact-zero check not established'
+        elif not bool((opacity_grad[saturated]==0).all()):
+            problems['_opacity.grad.saturated']=dict(nonzero_count=int((opacity_grad[saturated]!=0).sum()))
+    optimizer=getattr(g,'optimizer',None)
+    if optimizer is not None:
+        for group in optimizer.param_groups:
+            if float(group.get('weight_decay',0))!=0:
+                problems['optimizer.'+group['name']+'.weight_decay']=group.get('weight_decay')
+            for p in group['params']:
+                for key,value in optimizer.state.get(p,{}).items():
+                    if isinstance(value,torch.Tensor):
+                        if not bool(torch.isfinite(value).all()):
+                            problems['optimizer.'+group['name']+'.'+key]=tensor_health(value)
+                        elif p is g._opacity and key in ('exp_avg','exp_avg_sq','max_exp_avg_sq'):
+                            if not bool((value[saturated]==0).all()):
+                                problems['optimizer.opacity.'+key+'.saturated']='nonzero moment at original signed Inf logit'
+                    elif isinstance(value,(float,int)) and not math.isfinite(value):
+                        problems['optimizer.'+group['name']+'.'+key]=str(value)
+    if problems:
+        raise GuardFailure('parameter/optimizer invariant failed at '+phase,
+            dict(phase=phase,initial_parameter_state=g._initial_parameter_state,problems=problems))
+    return dict(original_opacity_positive_inf=g._initial_parameter_state['opacity']['positive_inf'],
+        original_opacity_negative_inf=g._initial_parameter_state['opacity']['negative_inf'],
+        opacity_mask_sign_sha256=g._initial_parameter_state['opacity_mask_sign_sha256'],
+        original_signed_inf_unchanged=True,new_nonfinite_count=0,
+        saturated_opacity_gradient_zero=True if require_zero_gradient else None,
+        optimizer_states_finite=True,saturated_opacity_moments_zero=True)
 
 
 def model_fingerprint(g):
@@ -220,7 +301,7 @@ def prepare(args):
         geometry_protocol=protocol,field_protocol=field_protocol,resolution=args.resolution,
         seed=args.seed,pairs_per_step=args.pairs_per_step,
         updates=args.updates,full_pool_every=args.full_pool_every,actual_optimizer_steps=0,
-        runtime_identity=runtime_identity(),schema='fixed_colmap_joint_expected_v1',
+        runtime_identity=runtime_identity(),schema='fixed_colmap_joint_expected_v1',parameter_policy=copy.deepcopy(PARAMETER_POLICY),
         appearance_initialization=('fresh zero PGSR coefficients in both arms; original appearance state not restored'
             if config['settings']['use_decoupled_appearance']==3 else 'native appearance NO'))
     write_json(out/'prepare_status.json',manifest)
@@ -228,6 +309,8 @@ def prepare(args):
         cameras,metadata=load_cameras(args.source_path,args.resolution,'cpu',train_only=True,
                                      eval_split=config['settings']['eval'])
         g=load_model(identity,config['settings'],metadata['scene_radius'],len(cameras))
+        manifest['initial_parameter_state']=g._initial_parameter_state
+        write_json(out/'prepare_status.json',manifest)
         candidates=candidate_track_groups(args.source_path,metadata,neighbors=args.neighbors,
             max_groups=args.max_groups,candidate_limit=args.candidate_limit,seed=args.seed)
         groups=[];selection=[]
@@ -273,13 +356,15 @@ def prepare(args):
         write_json(out/'experiment.json',manifest);write_json(out/'prepare_status.json',dict(status='complete',
             experiment_sha256=sha256(out/'experiment.json'),prepare_seconds=manifest['prepare_seconds'],
             head=head,field_protocol=field_protocol,geometry_protocol=protocol,native_config=config,
-            resolution=metadata['resolution'],runtime_identity=manifest['runtime_identity']))
+            resolution=metadata['resolution'],runtime_identity=manifest['runtime_identity'],
+            parameter_policy=PARAMETER_POLICY,initial_parameter_state=manifest['initial_parameter_state']))
         print(json.dumps(dict(experiment=str(out/'experiment.json'),sha256=sha256(out/'experiment.json'))),flush=True)
     except Exception as exc:
         write_json(out/'prepare_status.json',dict(status='failed',error=repr(exc),seconds=time.monotonic()-started,
             diagnostic=getattr(exc,'diagnostic',None),actual_optimizer_steps=0,head=head,
             field_protocol=field_protocol,geometry_protocol=protocol,native_config=config,
-            resolution=args.resolution,runtime_identity=manifest['runtime_identity']));raise
+            resolution=args.resolution,runtime_identity=manifest['runtime_identity'],
+            parameter_policy=PARAMETER_POLICY,initial_parameter_state=manifest.get('initial_parameter_state')));raise
 
 
 def optimizer_steps(g):
@@ -299,7 +384,10 @@ def save_snapshot(g,out,completed,experiment,manifest_hash,arm):
         field_protocol=experiment['field_protocol'],native_config=experiment['native_config'],
         training_head=experiment['head'],resolution=experiment['camera_metadata']['resolution'],
         runtime_identity=experiment['runtime_identity'],
+        parameter_policy=PARAMETER_POLICY,initial_parameter_state=g._initial_parameter_state,
+        parameter_invariants=validate_parameter_policy(g,'snapshot'),
         optimizer_steps=optimizer_steps(g),fresh_adam=True,post_update_validated=True,
+        lambda_geometry_effective=0. if arm=='rgb' else experiment['lambda_geometry'],
         appearance_initialization=experiment['appearance_initialization'],
         appearance_model=g.app_model.value,current_model_fingerprint=model_fingerprint(g)))
     # Model.capture omits filter_3D; include it explicitly for any future resume.
@@ -307,7 +395,8 @@ def save_snapshot(g,out,completed,experiment,manifest_hash,arm):
                     completed_updates=completed,arm=arm,experiment_sha256=manifest_hash,
                     training_head=experiment['head'],field_protocol=experiment['field_protocol'],
                     geometry_protocol=experiment['geometry_protocol'],native_config=experiment['native_config'],
-                    resolution=experiment['camera_metadata']['resolution'],runtime_identity=experiment['runtime_identity']),
+                    resolution=experiment['camera_metadata']['resolution'],runtime_identity=experiment['runtime_identity'],
+                    parameter_policy=PARAMETER_POLICY,initial_parameter_state=g._initial_parameter_state),
                path/'checkpoint.pth')
 
 
@@ -319,6 +408,7 @@ def train(args):
     if experiment.get('schema')!='fixed_colmap_joint_expected_v1' or experiment['head']!=head:
         raise ValueError('preparation/source version mismatch')
     if experiment.get('field_protocol')!=FIELD_PROTOCOL:raise ValueError('shared field protocol changed since preparation')
+    if experiment.get('parameter_policy')!=PARAMETER_POLICY:raise ValueError('parameter policy differs from prepared experiment')
     if experiment.get('resolution')!=experiment['camera_metadata']['resolution']:
         raise ValueError('declared/camera resolution mismatch')
     if experiment['runtime_identity']!=runtime_identity():raise ValueError('native CUDA runtime identity changed')
@@ -341,7 +431,11 @@ def train(args):
         fresh_adam=True,full_training_state_restored=False,base_iteration=7000,
         pilot=steps<experiment['updates'],geometry_protocol=experiment['geometry_protocol'],
         field_protocol=experiment['field_protocol'],training_head=head,native_config=config,
-        resolution=experiment['camera_metadata']['resolution'],runtime_identity=experiment['runtime_identity'])
+        resolution=experiment['camera_metadata']['resolution'],runtime_identity=experiment['runtime_identity'],
+        parameter_policy=PARAMETER_POLICY,initial_parameter_state=experiment['initial_parameter_state'],
+        lambda_geometry_effective=0. if args.arm=='rgb' else experiment['lambda_geometry'],
+        arm_role={'rgb':'native RGB continuation with common anchor availability; not full original training recipe',
+                  'joint':'new joint geometry constraint','expected':'auxiliary Expected geometry constraint'}[args.arm])
     report['appearance_initialization']=experiment['appearance_initialization']
     write_json(out/'run_manifest.json',report);journal=out/'updates.jsonl';journal.touch(exist_ok=False)
     g=None;completed=0;attempted=0;previous=None;previous_optimizer=None;timings=[]
@@ -350,6 +444,8 @@ def train(args):
                                      train_only=True,eval_split=config['settings']['eval'])
         if canonical_hash(metadata)!=canonical_hash(experiment['camera_metadata']):raise ValueError('camera/image metadata changed')
         g=load_model(identity,config['settings'],metadata['scene_radius'],len(cameras),True,experiment['optimizer_settings'])
+        if g._initial_parameter_state!=experiment['initial_parameter_state']:
+            raise ValueError('original opacity saturation state differs from prepared experiment')
         if model_fingerprint(g)!=experiment['initial_model_fingerprint']:raise ValueError('initial arrays differ from frozen experiment')
         filter_hash=hashlib.sha256(g.filter_3D.cpu().numpy().tobytes()).hexdigest();count=len(g.get_xyz)
         full_pool_check(g,cameras,experiment,deadline)
@@ -361,27 +457,26 @@ def train(args):
             entry=experiment['schedule'][update-1];group=experiment['groups'][entry['group_index']]
             ii=entry['anchor_indices'];g.update_learning_rate(7000+update)
             g.optimizer.zero_grad(set_to_none=True)
+            validate_parameter_policy(g,'pre_forward')
             ev=evaluate_pairs(g,cameras,group,ii,config['settings'],experiment['geometry_protocol'],
                 joint_grad=args.arm=='joint',native_grad=True)
             require_available(ev,group,'pre_update')
             side=entry['rgb_side'];cam=cameras[group['camera_indices'][side]];pkg=ev['packages'][side]
             gt=cam.original_image.cuda();image=pkg['render'];weight=experiment['optimizer_settings']['lambda_dssim']
             rgb=(1-weight)*L1_loss_appearance(image,gt,g,cam.uid)+weight*(1-ssim(image[None],gt[None]))
-            depth=ev[args.arm];x=ev['origins']+ev['directions']*depth[:,None];k=len(ii)
+            depth=ev['expected' if args.arm=='rgb' else args.arm];x=ev['origins']+ev['directions']*depth[:,None];k=len(ii)
             geo=torch.linalg.vector_norm(x[:k]-x[k:],dim=-1).mean()/metadata['scene_radius']
-            loss=rgb+experiment['lambda_geometry']*geo
+            loss=rgb if args.arm=='rgb' else rgb+experiment['lambda_geometry']*geo
             if not bool(torch.isfinite(loss)):raise GuardFailure('nonfinite loss',dict(update=update,rgb=rgb,geometry=geo))
             loss.backward()
-            if any(p.grad is not None and not bool(torch.isfinite(p.grad).all()) for q in g.optimizer.param_groups for p in q['params']):
-                raise GuardFailure('nonfinite gradient',dict(update=update))
+            validate_parameter_policy(g,'pre_optimizer_step',require_zero_gradient=True)
             # Preserve exact last valid parameters + Adam state before a possible
             # failed update. No continuing/backtracking after failure is allowed.
             previous={name:getattr(g,name).detach().clone() for name in model_parameter_names(g)}
             previous_optimizer=copy.deepcopy(g.optimizer.state_dict())
             g.optimizer.step();attempted+=1
             with torch.no_grad():
-                if any(not bool(torch.isfinite(getattr(g,name)).all()) for name in model_parameter_names(g)):
-                    raise GuardFailure('nonfinite updated parameter',dict(update=update))
+                health=validate_parameter_policy(g,'post_optimizer_step',require_zero_gradient=True)
                 post=evaluate_pairs(g,cameras,group,ii,config['settings'],experiment['geometry_protocol'])
                 require_available(post,group,'post_update')
                 if update%experiment['full_pool_every']==0 or update==steps:
@@ -393,7 +488,8 @@ def train(args):
             row=dict(update=completed,global_iteration=7000+completed,optimizer_updates_executed=attempted,
                 rgb=float(rgb.detach()),geometry=float(geo.detach()),loss=float(loss.detach()),seconds=elapsed,
                 group_index=entry['group_index'],joint_valid=int(post['joint_valid'].sum()),
-                native_valid=int(post['native_valid'].sum()),rays=2*k,optimizer_steps=optimizer_steps(g))
+                native_valid=int(post['native_valid'].sum()),rays=2*k,optimizer_steps=optimizer_steps(g),
+                parameter_invariants=health,lambda_geometry_effective=report['lambda_geometry_effective'])
             with journal.open('a') as stream:stream.write(json.dumps(row,allow_nan=False)+'\n')
             print(json.dumps(row),flush=True)
             if completed in checkpoints:save_snapshot(g,out,completed,experiment,args.experiment_sha256,args.arm)
@@ -417,12 +513,14 @@ def train(args):
             torch.save(dict(model_capture=g.capture(),filter_3D=g.filter_3D.detach(),
                 completed_updates=completed,experiment_sha256=args.experiment_sha256,training_head=head,
                 field_protocol=experiment['field_protocol'],geometry_protocol=experiment['geometry_protocol'],
-                native_config=config,resolution=metadata['resolution'],runtime_identity=experiment['runtime_identity']),
+                native_config=config,resolution=metadata['resolution'],runtime_identity=experiment['runtime_identity'],
+                parameter_policy=PARAMETER_POLICY,initial_parameter_state=g._initial_parameter_state),
                 last/'checkpoint.pth')
             write_json(last/'state.json',dict(completed_updates=completed,optimizer_updates_attempted=attempted,
                 is_successful_final_result=False,last_accepted_state_only=True,
                 training_head=head,field_protocol=experiment['field_protocol'],geometry_protocol=experiment['geometry_protocol'],
                 native_config=config,resolution=metadata['resolution'],runtime_identity=experiment['runtime_identity'],
+                parameter_policy=PARAMETER_POLICY,initial_parameter_state=g._initial_parameter_state,
                 caveat='not all fixed-pool rays were necessarily available at failure'))
         report.update(status='failed',completed_updates=completed,optimizer_updates_executed=attempted,
             error=repr(exc),diagnostic=getattr(exc,'diagnostic',None),seconds=time.monotonic()-start)
@@ -446,7 +544,7 @@ def parser():
     prep.add_argument('--min-native-alpha',type=float,default=.8);prep.add_argument('--max-initial-pair-gap',type=float,default=.05)
     prep.add_argument('--full-pool-every',type=int,default=100)
     tr=sub.add_parser('train',parents=[common]);tr.add_argument('--experiment',required=True)
-    tr.add_argument('--experiment-sha256',required=True);tr.add_argument('--arm',choices=('expected','joint'),required=True)
+    tr.add_argument('--experiment-sha256',required=True);tr.add_argument('--arm',choices=('rgb','expected','joint'),required=True)
     tr.add_argument('--steps',type=int)
     return p
 

@@ -3,7 +3,7 @@ from types import SimpleNamespace
 import math
 import unittest
 import torch
-from joint_tv_model import select_members,build_support_index,rays_for_pixels
+from joint_tv_model import select_members,build_support_index,rays_for_pixels,candidate_depths
 
 
 class SupportTests(unittest.TestCase):
@@ -49,6 +49,19 @@ class SupportTests(unittest.TestCase):
         g=self.model();g._rotation[0]=0;cam=self.camera();o,d=rays_for_pixels(cam,[[319.5,239.5]])
         with self.assertRaises(ValueError):select_members(g,o,d)
         with self.assertRaises(ValueError):build_support_index(g,cam)
+
+    def test_empty_support_saturated_opacity_has_finite_zero_gradients(self):
+        for sign in (1.,-1.):
+            g=self.model();g._opacity[0]=sign*float('inf')
+            raw=tuple(getattr(g,n).requires_grad_() for n in ('_xyz','_scaling','_rotation','_opacity'))
+            cam=self.camera();o,d=rays_for_pixels(cam,[[319.5,239.5]])
+            empty=torch.empty(0,device='cuda',dtype=torch.long)
+            depth,valid,diag=candidate_depths(g,o,d,candidate_ids=empty)
+            self.assertEqual(float(depth),0.);self.assertFalse(bool(valid))
+            self.assertTrue(diag['convergence'][0])
+            for grad in torch.autograd.grad(depth.sum(),raw):
+                self.assertTrue(bool(torch.isfinite(grad).all()))
+                self.assertEqual(int(torch.count_nonzero(grad)),0)
 
 
 if __name__=='__main__':unittest.main(verbosity=2)

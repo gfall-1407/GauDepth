@@ -83,7 +83,10 @@ def _pad_rows(g,origin,direction,ids):
         else:
             # The zero ray still has a gradient path to model parameters.
             zero=sum(getattr(g,name)[0].double().sum()*0
-                     for name in ('_xyz','_scaling','_rotation','_opacity'))
+                     for name in ('_xyz','_scaling','_rotation'))
+            # A PLY may contain a saturated +/-Inf opacity logit. Its
+            # activated opacity is finite, while raw Inf * 0 would be NaN.
+            zero=zero+g._opacity[0].double().sigmoid().sum()*0
             p=(zero.reshape(1,1),zero.reshape(1,1)+1,zero.reshape(1,1))
         for k in range(3): all_p[k].append(F.pad(p[k],(0,width-p[k].shape[1]),value=1 if k==1 else 0))
         masks.append(torch.arange(width,device=origin.device)<len(idx))
