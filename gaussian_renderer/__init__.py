@@ -16,7 +16,7 @@ from scene.gaussian_model import GaussianModel
 from utils.sh_utils import eval_sh
 
 
-def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, kernel_size, scaling_modifier = 1.0, require_depth : bool = True, *, unimodal_enabled=False, unimodal_min_mass=0.5, unimodal_epsilon=1e-6):
+def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, kernel_size, scaling_modifier = 1.0, require_depth : bool = True, *, unimodal_enabled=False, unimodal_min_mass=0.5, unimodal_epsilon=1e-6, unimodal_bins=8, unimodal_near=0.0, unimodal_far=10.0):
     """
     Render the scene. 
     
@@ -45,11 +45,14 @@ def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, 
         sh_degree=pc.active_sh_degree,
         campos=viewpoint_camera.camera_center,
         prefiltered=False,
-        require_depth = require_depth,
+        require_depth = require_depth or unimodal_enabled,
         debug=pipe.debug,
         unimodal_enabled=unimodal_enabled,
         unimodal_min_mass=unimodal_min_mass,
         unimodal_epsilon=unimodal_epsilon,
+        unimodal_bins=unimodal_bins,
+        unimodal_near=unimodal_near,
+        unimodal_far=unimodal_far,
     )
 
     rasterizer = GaussianRasterizer(raster_settings=raster_settings)

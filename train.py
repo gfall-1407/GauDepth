@@ -61,6 +61,11 @@ def training(
         raise ValueError("unimodal_min_mass must be between zero and one")
     if not math.isfinite(opt.unimodal_epsilon) or opt.unimodal_epsilon <= 0:
         raise ValueError("unimodal_epsilon must be finite and positive")
+    if not 1 <= opt.unimodal_bins <= 32:
+        raise ValueError("unimodal_bins must be in [1, 32]")
+    if not (math.isfinite(opt.unimodal_near) and math.isfinite(opt.unimodal_far)
+            and 0 <= opt.unimodal_near < opt.unimodal_far):
+        raise ValueError("unimodal range must be finite with 0 <= near < far")
     unimodal_enabled = opt.lambda_unimodal > 0
     first_iter = 0
     tb_writer = prepare_output_and_logger(dataset)
@@ -158,6 +163,9 @@ def training(
             unimodal_enabled=unimodal_enabled,
             unimodal_min_mass=opt.unimodal_min_mass,
             unimodal_epsilon=opt.unimodal_epsilon,
+            unimodal_bins=opt.unimodal_bins,
+            unimodal_near=opt.unimodal_near,
+            unimodal_far=opt.unimodal_far,
         )
         rendered_image: torch.Tensor
         rendered_image, viewspace_point_tensor, visibility_filter, radii = (

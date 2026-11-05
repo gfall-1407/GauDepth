@@ -40,7 +40,7 @@ RasterizeGaussiansCUDA(
     const bool debug,
     const bool unimodal_enabled,
     const float unimodal_min_mass,
-    const float unimodal_epsilon);
+    const float unimodal_epsilon, const int unimodal_bins, const float unimodal_near, const float unimodal_far);
 
 std::tuple<torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor>
 RasterizeGaussiansBackwardCUDA(
@@ -75,7 +75,7 @@ RasterizeGaussiansBackwardCUDA(
     const bool require_depth,
     const bool debug,
     const bool unimodal_enabled,
-    const float unimodal_epsilon,
+    const float unimodal_epsilon, int unimodal_bins, float unimodal_near, float unimodal_far,
     const torch::Tensor& dL_dunimodal);
 
 torch::Tensor markVisible(

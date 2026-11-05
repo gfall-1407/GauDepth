@@ -1,3 +1,4 @@
+#include "segmented_unimodal.cuh"
 /*
  * Copyright (C) 2023, Inria
  * GRAPHDECO research group, https://team.inria.fr/graphdeco
@@ -410,7 +411,7 @@ __global__ void __launch_bounds__(BLOCK_X* BLOCK_Y)
         float* __restrict__ out_mdepth,
         float* __restrict__ accum_depth,
         float* __restrict__ normal_length,
-        bool unimodal_enabled, float unimodal_min_mass, float unimodal_epsilon,
+        bool unimodal_enabled, float unimodal_min_mass, float unimodal_epsilon, int unimodal_bins, float unimodal_near, float unimodal_far,
         float* unimodal_stats, float* out_unimodal_loss, float* out_unimodal_valid) {
     // Identify current tile and associated min/max pixel range.
     auto block                 = cg::this_thread_block();
@@ -452,9 +453,9 @@ __global__ void __launch_bounds__(BLOCK_X* BLOCK_Y)
     [[maybe_unused]] float last_depth  = 0;
     [[maybe_unused]] float last_weight = 0;
 
-    // TV of accepted contributions only, with virtual zero endpoints.
-    float unimodal_previous = 0.f, unimodal_tv = 0.f, unimodal_max = 0.f;
-    uint32_t unimodal_argmax = 0;
+    float segment_t[UNIMODAL_MAX_BINS + 1];
+    if (unimodal_enabled)
+        for (int k = 0; k <= unimodal_bins; ++k) segment_t[k] = 1.f;
 
     // Iterate over batches until all done or range is complete
     for (int i = 0; i < rounds; i++, toDo -= BLOCK_SIZE) {
@@ -510,13 +511,10 @@ __global__ void __launch_bounds__(BLOCK_X* BLOCK_Y)
 
             const float aT = alpha * T;
             if (unimodal_enabled) {
-                unimodal_tv += fabsf(aT - unimodal_previous);
-                unimodal_previous = aT;
-                // Strict > chooses the first maximum on ties.
-                if (aT > unimodal_max) {
-                    unimodal_max = aT;
-                    unimodal_argmax = contributor;
-                }
+                const float3 rp = collected_ray_planes[j];
+                const float depth = (rp.x * d.x + rp.y * d.y + rp.z) * rln;
+                segmentAttenuate(segment_t, unimodal_bins, unimodal_near,
+                                 unimodal_far, depth, alpha);
             }
             // Eq. (3) from 3D Gaussian splatting paper.
             for (int ch = 0; ch < CHANNELS; ch++)
@@ -553,16 +551,18 @@ __global__ void __launch_bounds__(BLOCK_X* BLOCK_Y)
             out_color[ch * H * W + pix_id] = C[ch] + T * bg_color[ch];
         out_alpha[pix_id] = 1.f - T; // 1 - T;
         if (unimodal_enabled) {
-            unimodal_tv += unimodal_previous; // final zero endpoint
-            const bool valid = last_contributor > 0 && unimodal_max > 0.f
-                && (1.f - T) >= unimodal_min_mass;
-            const float excess = fmaxf(0.f, unimodal_tv - 2.f * unimodal_max);
-            unimodal_stats[pix_id] = unimodal_tv;
-            unimodal_stats[H * W + pix_id] = unimodal_max;
-            // Bit encoding preserves all 32 index bits, unlike a numeric float cast.
-            unimodal_stats[2 * H * W + pix_id] = __uint_as_float(unimodal_argmax);
+            float variation, peak; int argmax;
+            segmentStats(segment_t, unimodal_bins, variation, peak, argmax);
+            const float mass = segment_t[0] - segment_t[unimodal_bins];
+            const bool valid = last_contributor > 0 && peak > 0.f
+                && mass > 0.f && mass >= unimodal_min_mass;
+            const float excess = fmaxf(0.f, variation - 2.f * peak);
+            unimodal_stats[pix_id] = variation;
+            unimodal_stats[H * W + pix_id] = peak;
+            unimodal_stats[2 * H * W + pix_id] = __uint_as_float(argmax);
             unimodal_stats[3 * H * W + pix_id] = valid ? 1.f : 0.f;
-            out_unimodal_loss[pix_id] = valid ? excess / (2.f * unimodal_max + unimodal_epsilon) : 0.f;
+            out_unimodal_loss[pix_id] = valid
+                ? excess / (2.f * peak + unimodal_epsilon * mass) : 0.f;
             out_unimodal_valid[pix_id] = valid ? 1.f : 0.f;
         }
 
@@ -604,7 +604,7 @@ void FORWARD::render(
     float* accum_depth,
     float* normal_length,
     bool require_depth,
-    bool unimodal_enabled, float unimodal_min_mass, float unimodal_epsilon,
+    bool unimodal_enabled, float unimodal_min_mass, float unimodal_epsilon, int unimodal_bins, float unimodal_near, float unimodal_far,
     float* unimodal_stats, float* out_unimodal_loss, float* out_unimodal_valid) {
 #define RENDER_CUDA_CALL(template_depth)                             \
     renderCUDA<NUM_CHANNELS, template_depth><<<grid, block>>>(       \
@@ -612,7 +612,7 @@ void FORWARD::render(
         means2D, conic_opacity, colors, ray_planes, normals,         \
         focal_x, focal_y, n_contrib, bg_color, out_color, out_alpha, \
         out_normal, out_depth, out_mdepth, accum_depth, normal_length, \
-        unimodal_enabled, unimodal_min_mass, unimodal_epsilon, \
+        unimodal_enabled, unimodal_min_mass, unimodal_epsilon, unimodal_bins, unimodal_near, unimodal_far, \
         unimodal_stats, out_unimodal_loss, out_unimodal_valid)
 
     if (require_depth)

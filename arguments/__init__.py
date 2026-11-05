@@ -101,10 +101,13 @@ class OptimizationParams(ParamGroup):
         self.percent_dense = 0.01
         self.lambda_dssim = 0.2
         self.lambda_depth_normal = 0.05
-        # Disabled by default: regularize visible contributions in the renderer's existing order.
+        # Disabled by default: regularize equal-depth segment transmittance drops.
         self.lambda_unimodal = 0.0
         self.unimodal_min_mass = 0.5
         self.unimodal_epsilon = 1e-6
+        self.unimodal_bins = 8
+        self.unimodal_near = 0.0
+        self.unimodal_far = 10.0
         self.densification_interval = 100
         self.opacity_reset_interval = 3000
         self.densify_from_iter = 500

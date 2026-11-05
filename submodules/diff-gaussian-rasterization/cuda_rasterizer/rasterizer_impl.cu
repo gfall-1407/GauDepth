@@ -282,7 +282,7 @@ int CudaRasterizer::Rasterizer::forward(
     bool debug,
     bool unimodal_enabled,
     float unimodal_min_mass,
-    float unimodal_epsilon,
+    float unimodal_epsilon, int unimodal_bins, float unimodal_near, float unimodal_far,
     float* out_unimodal_loss,
     float* out_unimodal_valid) {
     const float focal_y = height / (2.0f * tan_fovy);
@@ -407,7 +407,7 @@ int CudaRasterizer::Rasterizer::forward(
                    imgState.accum_depth,
                    imgState.normal_length,
                    require_depth,
-                   unimodal_enabled, unimodal_min_mass, unimodal_epsilon,
+                   unimodal_enabled, unimodal_min_mass, unimodal_epsilon, unimodal_bins, unimodal_near, unimodal_far,
                    imgState.unimodal_stats, out_unimodal_loss, out_unimodal_valid),
                debug);
     return num_rendered;
@@ -456,7 +456,7 @@ void CudaRasterizer::Rasterizer::backward(
     bool require_depth,
     bool debug,
     bool unimodal_enabled,
-    float unimodal_epsilon,
+    float unimodal_epsilon, int unimodal_bins, float unimodal_near, float unimodal_far,
     const float* dL_dunimodal) {
     GeometryState geomState   = GeometryState::fromChunk(geom_buffer, P);
     BinningState binningState = BinningState::fromChunk(binning_buffer, R);
@@ -509,7 +509,7 @@ void CudaRasterizer::Rasterizer::backward(
                    geomBwdState.ray_planes,
                    geomBwdState.normals,
                    require_depth,
-                   unimodal_enabled, unimodal_epsilon,
+                   unimodal_enabled, unimodal_epsilon, unimodal_bins, unimodal_near, unimodal_far,
                    imgState.unimodal_stats, dL_dunimodal),
                debug)
 

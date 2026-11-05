@@ -74,7 +74,7 @@ struct ImageState {
     float* accum_depth;
     uint32_t* n_contrib;
     float* normal_length;
-    float* unimodal_stats; // Four planes: variation, maximum, bitcast first argmax, validity.
+    float* unimodal_stats; // Four planes: segment variation, maximum mass, bitcast first peak bin, validity.
 
     static ImageState fromChunk(char*& chunk, size_t N, bool unimodal_enabled = false);
 };

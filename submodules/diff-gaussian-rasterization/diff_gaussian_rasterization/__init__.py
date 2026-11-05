@@ -86,6 +86,9 @@ class _RasterizeGaussians(torch.autograd.Function):
             raster_settings.unimodal_enabled,
             raster_settings.unimodal_min_mass,
             raster_settings.unimodal_epsilon,
+            raster_settings.unimodal_bins,
+            raster_settings.unimodal_near,
+            raster_settings.unimodal_far,
         )
 
         # Invoke C++/CUDA rasterizer
@@ -158,6 +161,9 @@ class _RasterizeGaussians(torch.autograd.Function):
             raster_settings.debug,
             raster_settings.unimodal_enabled,
             raster_settings.unimodal_epsilon,
+            raster_settings.unimodal_bins,
+            raster_settings.unimodal_near,
+            raster_settings.unimodal_far,
             grad_unimodal_loss,
         )
 
@@ -210,12 +216,21 @@ class GaussianRasterizationSettings(NamedTuple):
     unimodal_enabled: bool = False
     unimodal_min_mass: float = 0.5
     unimodal_epsilon: float = 1.e-6
+    unimodal_bins: int = 8
+    unimodal_near: float = 0.0
+    unimodal_far: float = 10.0
 
 
 class GaussianRasterizer(nn.Module):
     def __init__(self, raster_settings):
         super().__init__()
         if raster_settings.unimodal_enabled:
+            if not isinstance(raster_settings.unimodal_bins, int) or isinstance(raster_settings.unimodal_bins, bool) or not 1 <= raster_settings.unimodal_bins <= 32:
+                raise ValueError("unimodal_bins must be an integer in [1, 32]")
+            if not (math.isfinite(raster_settings.unimodal_near) and math.isfinite(raster_settings.unimodal_far) and 0 <= raster_settings.unimodal_near < raster_settings.unimodal_far):
+                raise ValueError("unimodal range must be finite with 0 <= near < far")
+            if not raster_settings.require_depth:
+                raise ValueError("segmented unimodal loss requires require_depth=True")
             if not math.isfinite(raster_settings.unimodal_min_mass) or not 0 <= raster_settings.unimodal_min_mass <= 1:
                 raise ValueError("unimodal_min_mass must be finite and in [0, 1]")
             if not math.isfinite(raster_settings.unimodal_epsilon) or raster_settings.unimodal_epsilon <= 0:

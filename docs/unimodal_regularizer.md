@@ -1,143 +1,125 @@
-# Unimodal visibility-contribution regularizer
+# Equal depth segment unimodal regularizer
 
-This experimental regularizer penalizes multiple peaks in the **accepted Gaussian
-visibility-contribution sequence** at a pixel. It is not a depth variance loss,
-not a point-cloud surface extraction method, and does not guarantee a single
-geometric surface.
+This revision replaces per-Gaussian weight unimodality from commit 344a16a.
+It constrains opacity drops across equal-width depth segments. It does not
+introduce continuous Gaussian attenuation or GGGS surface extraction.
 
-## Definition and ordering
+## Definition
 
-Use the renderer's existing sorted tile list and its existing per-pixel acceptance
-rules. For accepted Gaussians in that order,
+For K segments over [near, far], t_j = near + j(far-near)/K.
+For the contributors actually accepted by the original rasterizer, define
 
-- `T_i = product_{j<i} (1-alpha_j)`;
-- `w_i = T_i * alpha_i`;
-- prepend and append zero: `w_0 = w_{n+1} = 0`;
-- `V = sum_{i=0}^n abs(w_{i+1}-w_i)`;
-- `M = max_i w_i`;
-- `E = max(0, V-2*M)`;
-- `L_ray = E / (2*M + epsilon)`.
+    T_j = product_{i: d_i < t_j} (1 - alpha_i)
+    m_k = T_k - T_{k+1},     k = 0, ..., K-1
+    A   = T_0 - T_K
+    p_k = m_k / A
 
-The nonnegative clamp only guards floating-point cancellation: in exact
-arithmetic, `V >= 2*M`. A nonnegative single-peaked sequence, including a flat
-peak, has `V=2*M` and zero loss. A rise after a decline creates positive excess
-variation. Peak normalization is differentiable; its derivative is not detached.
-The loss is not bounded by one and does not directly constrain peak width or
-separation in metric depth.
+Each d_i uses this repository's existing per-pixel ray-plane representative
+rendered depth, including its ray normalization factor. It is not the Gaussian
+list index, the tile sort key, or a continuous attenuation profile through a
+Gaussian. All boundaries use the SAME original accepted contributor set,
+including original alpha cutoff, alpha cap and early termination. Multiplying
+the factors for each boundary is independent of the order of that set, even
+when per-pixel representative depths differ from center-based tile ordering.
+Consequently, these boundary values are a discrete, representative-depth
+transmittance model. They are not claimed to equal GGGS continuous T(t).
 
-**Ordering caveat:** the current rasterizer sorts by Gaussian-center camera
-Euclidean distance (`norm3df(p_view.x, p_view.y, p_view.z)`), not by the exact
-per-pixel ray-plane depth. This change preserves that existing order. Calling the
-sequence “depth ordered” must be understood in that renderer-specific sense.
-Sorting and visibility decisions are discrete and are held fixed in backward.
+Use half-open segments [t_k,t_{k+1}); a contributor exactly at far is excluded.
+A contributor before near attenuates all boundary T values; one after far
+attenuates none. Invalid nonfinite depths are ignored by this auxiliary term.
+This is probability mass conditional on the selected interval, not a claim of
+complete whole-ray mass. For equal widths its mode matches the average density.
 
-## Visibility, clipping, and validity
+With p padded by zero at both ends,
 
-The loss uses exactly the contributors accepted for image compositing:
+    V_p = sum |p_(k+1) - p_k|
+    M_p = max p_k
+    L   = max(0, V_p - 2 M_p) / (2 M_p + epsilon).
 
-1. Reject positive Gaussian exponent (`power > 0`).
-2. Set `alpha = min(0.99, conic_opacity.w * exp(power))`.
-3. Skip `alpha < 1/255` without changing transmittance or inserting a zero sample.
-4. If `T * (1-alpha) < 1e-4`, terminate **before accepting that Gaussian**.
-5. Otherwise append `w = T*alpha` and update transmittance.
+The CUDA arithmetic uses the EXACT raw-mass equivalent,
 
-A ray is valid only if it has an accepted contributor and its accumulated mass
-`1-T_final` meets `unimodal_min_mass` (default `0.5`). Empty or insufficient-mass
-rays emit zero loss and zero gradient. The hard validity gate is not differentiated.
-The training loss is the mean over valid rays, with denominator clamped to at
-least one, rather than a mean over all image pixels. There is no ground-truth
-foreground mask in this definition. Because the gate is based on predicted mass,
-a ray can fall below the threshold and stop receiving this regularizer. This
-term alone does not prevent opacity collapse; the image and other training
-objectives must provide that constraint.
+    L = max(0, V_m - 2 M_m) / (2 M_m + epsilon * A).
 
-## Full backward
+The factor A in the denominator must not be omitted. The mask requires at
+least one accepted contributor, positive peak and interval mass A > 0 and
+A >= unimodal_min_mass. The training script averages over valid pixels, using
+zero if none are valid. A flat top and asymmetric unimodal shapes are allowed;
+a zero auxiliary loss does not require a narrow or interior peak.
 
-Let `g_i = dL_ray/dw_i`, let `s(x)` be `-1`, `0`, or `1` according to its sign,
-and let `m_i` be one only at the earliest accepted maximum. For positive `E`,
+## Parameters
 
-```
-dV/dw_i = s(w_i-w_{i-1}) + s(w_i-w_{i+1})
-D = 2*M + epsilon
-g_i = (dV/dw_i - 2*m_i)/D - 2*E*m_i/D^2
+The auxiliary weight remains zero by default, preserving the original training
+objective. When enabled, it requires depth preprocessing; the public renderer
+requests this automatically even before other geometric losses start.
 
-dL_ray/dalpha_i = T_i*g_i - sum_{j>i}(g_j*w_j)/(1-alpha_i)
-```
+    --lambda_unimodal      0.0
+    --unimodal_bins        8      # integer, 1 through 32
+    --unimodal_near        0.0
+    --unimodal_far         10.0
+    --unimodal_min_mass    0.5
+    --unimodal_epsilon     1e-6
 
-The suffix term is essential: changing one alpha changes the transmittance of
-**every later accepted contribution**. The implementation propagates this
-additional alpha derivative through the existing Gaussian opacity, projected
-mean/conic, and preprocessing backward paths. Contributions skipped or excluded
-by termination receive no gradient from this loss.
+The default range is a placeholder in the repository's rendered depth units,
+NOT a validated range for DTU or every camera. Set it to cover the intended
+foreground depth distribution before an experiment. A narrow range can hide
+other peaks. Excessively coarse bins hide structure; overly fine bins return
+toward the over-strict per-Gaussian constraint. Fixed bounds are treated as
+constants, not trained variables. There is no separate unimodal warmup switch.
 
-Explicit nonsmooth conventions:
+## CUDA forward and backward
 
-- `abs(0)` uses derivative zero.
-- Equal maxima use the first maximum in forward order, not equal splitting.
-- `E <= 0` uses zero derivative, including the clamp boundary.
-- The new regularizer's alpha derivative is zero when the pre-clipped alpha is
-  `>=0.99`, including the clipping boundary.
-- No derivative crosses sorting, culling, acceptance, termination, or mass-gate
-  boundaries. Central finite differences must avoid these boundaries.
+Forward maintains K+1 boundary transmittances. Every accepted contribution
+updates the boundaries behind its representative depth. After rasterization,
+the segment masses produce TV, peak and the valid mask; colors and existing
+depth outputs keep their original accumulation. Only four per-pixel statistics
+are cached, not every Gaussian/pixel weight.
 
-## Enablement and compatibility
+Backward replays the exact accepted list twice. The first replay reconstructs
+boundary T values using the same factors. The loss derivative with respect to
+all m_k includes normalization by A, the first-maximum subgradient and sign(0)=0.
+Since m_k = T_k - T_(k+1), the boundary derivatives follow by adjacent differences.
+For each accepted Gaussian,
 
-`lambda_unimodal` defaults to zero. With zero weight, training does not request
-this map and does not add a zero-weight expression to the objective. Existing
-render outputs and the disabled six-output Python rasterizer interface remain
-available. Enabling the option adds two outputs: the differentiable loss map and
-a nondifferentiable validity map, both `[1,H,W]`.
+    dL/dalpha_i = - sum_{j: d_i < t_j} (dL/dT_j) T_j / (1-alpha_i).
 
-Training options:
+The derivative of the new auxiliary loss is zero at/above the alpha cap .99.
+The existing conic/projection chain propagates it to opacity, screen position
+and covariance, then to existing 3D parameters. Colors and SH have no direct
+auxiliary-loss gradient. Original losses still update them.
 
-```
---lambda_unimodal <nonnegative weight>
---unimodal_min_mass 0.5
---unimodal_epsilon 1e-6
-```
+IMPORTANT: hard segment membership, sorting, alpha cutoff, early termination
+and the validity gate are held fixed in backward. There is NO derivative
+through a depth crossing a bin boundary and no direct ray-depth-spacing
+penalty. Geometry gradients arise via projected alpha, not by pretending hard
+membership is differentiable. This is a limitation, not proof that geometric
+concentration will improve. The fixed-membership GPU geometry test avoids bin
+boundaries; boundary discontinuities must not be mistaken for a smooth loss.
 
-Choose a weight experimentally; no recommended weight has been validated by a
-training experiment. The regularizer is active from the first iteration when
-its weight is positive. Default-disabled behavior is intended to preserve the
-baseline; the compiled extension must be rebuilt after installing this change.
-The Python extension API and its C++ implementation must come from the same patch.
+## Verification
 
-## Memory and runtime costs
+    python -m unittest discover -s tests -p test_unimodal_regularizer.py -v
 
-When enabled, the image-state buffer reserves four float planes (16 bytes per
-pixel) for statistics. Disabled rendering allocates no extra image-state planes.
-When enabled, forward
-collects statistics in the existing render pass; backward performs two additional
-forward traversals with one pending neighbor per thread. Recomputing the weights
-in forward order preserves exact weight ties for the abs subgradient; reconstructing
-transmittance by division in reverse can perturb those ties. The first replay sums
-`g_i*w_i`; the second subtracts the current prefix to obtain the future suffix. This avoids per-contributor sequence storage, but uses
-direct atomic gradient accumulation and has not been performance-profiled.
-It can be materially slower for dense tile lists. Disabled behavior preserves the original image-state allocation layout and
-numerical output path.
+CPU checks cover unimodal/plateau/empty distributions, random smooth-branch
+alpha finite differences, normalized/raw equivalence, ties, clipping, range
+conventions and split-inside-bin mass preservation. A host C++ test compiles
+the actual shared CUDA arithmetic header with __device__ removed; this does
+NOT compile the renderer's CUDA kernels or check GPU resources.
 
-## Focused tests
+On a CUDA host, first rebuild this checkout's rasterizer, then require its GPU
+suite explicitly (the loader never silently uses site-packages):
 
-From the repository root:
+    cd submodules/diff-gaussian-rasterization
+    python setup.py build_ext --inplace
+    cd ../..
+    GAUDEPTH_REQUIRE_CUDA_TESTS=1 python -m unittest discover -s tests -p test_unimodal_regularizer.py -v
 
-```
-python -m unittest discover -s tests -p 'test_unimodal_regularizer.py' -v
-```
+Two GPU tests compare auxiliary gradients to finite differences and check
+unchanged legacy outputs and fixed-bin geometry. They must run after an actual
+CUDA rebuild; the old binary is not API-compatible with the new settings.
 
-The standard-library suite checks single/flat peaks, two peaks, low-mass gating,
-explicit subgradient choices, clipping/skips/termination, and analytic backward
-against central finite differences, including 100 seeded random rays. Another 100 seeded randomized rays compare
-the two forward pending-neighbor replays against the full analytic derivative, with
-skips, alpha caps, and early termination. The
-PyTorch CPU test compares a separate autodiff expression against the full alpha
-derivative. The optional compiled-CUDA test constructs a tiny four-Gaussian
-scene, checks enabled/disabled output equality, the six/eight-output contract,
-opacity finite differences, off-axis mean/scale finite differences with depth
-outputs disabled, empty/low-mass zero maps and gradients, and depth-output mode
-consistency.
-
-Dependency skips are explicit. Passing the mathematical tests does **not** prove
-CUDA compilation, numerical agreement of the compiled kernel, optimizer behavior,
-or reconstruction quality. Run the optional tests after rebuilding in the actual
-CUDA/PyTorch environment, before launching any larger experiment. Sorting and
-hard-threshold behavior remain limitations even after those tests pass.
+This revision has not been trained or evaluated on DTU. The previous version's
+15 passing checks do not certify this revision. A single depth-segmented peak
+is an optimization prior, not a guarantee of correct surface position, smooth
+physical density, split invariance across bins, or improvement in mesh metrics.
+Mask escape by reducing opacity remains possible and must be monitored together
+with image reconstruction, interval mass and valid-pixel fraction.

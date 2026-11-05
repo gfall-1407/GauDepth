@@ -48,7 +48,7 @@ void render(
     float4* dL_dray_planes,
     float4* dL_dnormals,
     bool require_depth,
-    bool unimodal_enabled, float unimodal_epsilon,
+    bool unimodal_enabled, float unimodal_epsilon, int unimodal_bins, float unimodal_near, float unimodal_far,
     const float* unimodal_stats, const float* dL_dunimodal);
 
 void preprocess(

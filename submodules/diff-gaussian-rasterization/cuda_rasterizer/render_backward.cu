@@ -1,3 +1,4 @@
+#include "segmented_unimodal.cuh"
 /*
  * Copyright (C) 2023, Inria
  * GRAPHDECO research group, https://team.inria.fr/graphdeco
@@ -1042,113 +1043,63 @@ void BACKWARD::preprocess(
 }
 
 
-// A pending accepted contribution is completed when its right neighbor becomes
-// known during forward replay. No per-Gaussian/pixel sequence buffer is needed.
-struct UnimodalContribution {
-    uint32_t index;
-    int gaussian;
-    float weight, left, transmittance, alpha, raw_alpha, gaussian_value;
-    float2 delta;
-    float4 conic;
-};
-
-__device__ inline float unimodal_sign(float x) {
-    return (x > 0.f) - (x < 0.f); // explicit abs subgradient: sign(0)=0
-}
-
-__device__ inline float unimodalWeightGradient(
-    const UnimodalContribution& p, float right, float inv_denom,
-    float max_coefficient, uint32_t argmax, float upstream) {
-    return upstream * (
-        (unimodal_sign(p.weight - p.left) + unimodal_sign(p.weight - right)) * inv_denom
-        - (p.index == argmax ? max_coefficient : 0.f));
-}
-
-__device__ inline void accumulateUnimodalGradient(
-    const UnimodalContribution& p, float g, float& suffix,
-    int W, int H, float3* dmean, float4* dconic) {
-    suffix -= g * p.weight;
-    // suffix includes every later accepted contribution, including saturated
-    // ones: a clipped alpha still attenuates the derivatives of earlier alphas.
-    float da = p.transmittance * g - suffix / (1.f - p.alpha);
-    // min(.99, raw_alpha): choose derivative zero at and above the cap.
-    if (p.raw_alpha >= .99f)
-        da = 0.f;
-    const float dG = p.conic.w * da;
-    const float gx = p.gaussian_value * p.delta.x;
-    const float gy = p.gaussian_value * p.delta.y;
-    const float dx = dG * (-gx * p.conic.x - gy * p.conic.y) * .5f * W;
-    const float dy = dG * (-gy * p.conic.z - gx * p.conic.y) * .5f * H;
-    atomicAdd(&dmean[p.gaussian].x, dx);
-    atomicAdd(&dmean[p.gaussian].y, dy);
-    // z is the existing densification statistic, not a geometric derivative.
-    atomicAdd(&dmean[p.gaussian].z, fabsf(dx) + fabsf(dy));
-    atomicAdd(&dconic[p.gaussian].x, -.5f * gx * p.delta.x * dG);
-    atomicAdd(&dconic[p.gaussian].y, -.5f * gx * p.delta.y * dG);
-    atomicAdd(&dconic[p.gaussian].z, -.5f * gy * p.delta.y * dG);
-    atomicAdd(&dconic[p.gaussian].w, p.gaussian_value * da);
-}
-
+// Complete segmented-loss gradient for fixed accepted set and depth bins.
 __global__ void unimodalBackwardCUDA(
     const uint2* ranges, const uint32_t* point_list, int W, int H,
-    const float2* means, const float4* conics, const uint32_t* n_contrib,
-    float epsilon, const float* stats, const float* upstream,
-    float3* dmean, float4* dconic) {
+    const float2* means, const float4* conics, const float4* ray_planes,
+    float focal_x, float focal_y, const uint32_t* n_contrib,
+    float epsilon, int bins, float near, float far,
+    const float* stats, const float* upstream, float3* dmean, float4* dconic) {
     const uint32_t x = blockIdx.x * BLOCK_X + threadIdx.x;
     const uint32_t y = blockIdx.y * BLOCK_Y + threadIdx.y;
     if (x >= W || y >= H) return;
     const uint32_t pixel = y * W + x;
     const int N = W * H;
     if (stats[3 * N + pixel] == 0.f || upstream[pixel] == 0.f) return;
-    const float V = stats[pixel], M = stats[N + pixel];
-    const float excess = V - 2.f * M;
-    // Clamped roundoff-negative TV excess uses zero derivative at zero.
-    if (excess <= 0.f) return;
-    const float inv = 1.f / (2.f * M + epsilon);
-    const float max_coefficient = 2.f * inv + 2.f * excess * inv * inv;
-    const uint32_t argmax = __float_as_uint(stats[2 * N + pixel]);
+    if (stats[pixel] <= 2.f * stats[N + pixel]) return;
+    const float rx = (float(x) - float(W - 1) / 2.f) / focal_x;
+    const float ry = (float(y) - float(H - 1) / 2.f) / focal_y;
+    const float rln = rnorm3df(rx, ry, 1.f);
     const uint2 range = ranges[blockIdx.y * ((W + BLOCK_X - 1) / BLOCK_X) + blockIdx.x];
     const uint32_t last = n_contrib[pixel];
-    float total = 0.f;
-    // Two forward replays use exactly the same floating-point T recurrence as
-    // forward. Reverse division would perturb equal weights and their sign(0)
-    // subgradient. Pass 0 accumulates sum(g*w); pass 1 subtracts each prefix to
-    // obtain the complete suffix. The hard gate/order are held fixed.
+    float t[UNIMODAL_MAX_BINS + 1], dt[UNIMODAL_MAX_BINS + 1];
+    for (int j = 0; j <= bins; ++j) t[j] = 1.f;
     for (int pass = 0; pass < 2; ++pass) {
-        float T = 1.f, left = 0.f, suffix = total;
-        bool have_pending = false;
-        UnimodalContribution pending;
+        if (pass == 1) segmentBoundaryGradients(t, bins, epsilon, upstream[pixel], dt);
         for (uint32_t k = 0; k < last; ++k) {
             const int id = point_list[range.x + k];
             const float2 xy = means[id];
             const float2 d = {xy.x - float(x), xy.y - float(y)};
-            const float4 conic = conics[id];
-            const float power = -.5f * (conic.x * d.x * d.x + conic.z * d.y * d.y) - conic.y * d.x * d.y;
+            const float4 co = conics[id];
+            const float power = -.5f * (co.x * d.x * d.x + co.z * d.y * d.y) - co.y * d.x * d.y;
             if (power > 0.f) continue;
-            const float G = expf(power), raw = conic.w * G;
+            const float G = expf(power), raw = co.w * G;
             const float alpha = fminf(.99f, raw);
             if (alpha < 1.f / 255.f) continue;
-            const float weight = T * alpha;
-            if (have_pending) {
-                const float g = unimodalWeightGradient(pending, weight, inv,
-                    max_coefficient, argmax, upstream[pixel]);
-                if (pass == 0) total += g * pending.weight;
-                else accumulateUnimodalGradient(pending, g, suffix, W, H, dmean, dconic);
+            const float4 rp = ray_planes[id];
+            const float depth = (rp.x * d.x + rp.y * d.y + rp.z) * rln;
+            if (!isfinite(depth)) continue;
+            if (pass == 0) {
+                segmentAttenuate(t, bins, near, far, depth, alpha);
+                continue;
             }
-            pending = {k + 1, id, weight, left, T, alpha, raw, G, d, conic};
-            have_pending = true;
-            left = weight;
-            T = T * (1.f - alpha);
-        }
-        if (have_pending) {
-            const float g = unimodalWeightGradient(pending, 0.f, inv,
-                max_coefficient, argmax, upstream[pixel]);
-            if (pass == 0) total += g * pending.weight;
-            else {
-                // The final suffix is exactly empty, avoiding residual roundoff.
-                suffix = g * pending.weight;
-                accumulateUnimodalGradient(pending, g, suffix, W, H, dmean, dconic);
-            }
+            // Every boundary behind this depth contains factor (1-alpha).
+            float da = 0.f;
+            for (int j = 0; j <= bins; ++j)
+                if (depth < segmentBoundary(j, bins, near, far))
+                    da -= dt[j] * t[j] / (1.f - alpha);
+            if (raw >= .99f) da = 0.f;
+            const float dG = co.w * da;
+            const float gx = G * d.x, gy = G * d.y;
+            const float dx = dG * (-gx * co.x - gy * co.y) * .5f * W;
+            const float dy = dG * (-gy * co.z - gx * co.y) * .5f * H;
+            atomicAdd(&dmean[id].x, dx);
+            atomicAdd(&dmean[id].y, dy);
+            atomicAdd(&dmean[id].z, fabsf(dx) + fabsf(dy));
+            atomicAdd(&dconic[id].x, -.5f * gx * d.x * dG);
+            atomicAdd(&dconic[id].y, -.5f * gx * d.y * dG);
+            atomicAdd(&dconic[id].z, -.5f * gy * d.y * dG);
+            atomicAdd(&dconic[id].w, G * da);
         }
     }
 }
@@ -1183,7 +1134,7 @@ void BACKWARD::render(
     float4* dL_dray_planes,
     float4* dL_dnormals,
     bool require_depth,
-    bool unimodal_enabled, float unimodal_epsilon,
+    bool unimodal_enabled, float unimodal_epsilon, int unimodal_bins, float unimodal_near, float unimodal_far,
     const float* unimodal_stats, const float* dL_dunimodal) {
 #define RENDER_CUDA_CALL(template_depth)                                    \
     renderCUDA<NUM_CHANNELS, template_depth><<<grid, block>>>(              \
@@ -1203,6 +1154,6 @@ void BACKWARD::render(
     // Separate replays leave the legacy photometric/depth gradient path intact.
     if (unimodal_enabled)
         unimodalBackwardCUDA<<<grid, block>>>(ranges, point_list, W, H,
-            means2D, conic_opacity, n_contrib, unimodal_epsilon,
+            means2D, conic_opacity, ray_planes, focal_x, focal_y, n_contrib, unimodal_epsilon, unimodal_bins, unimodal_near, unimodal_far,
             unimodal_stats, dL_dunimodal, dL_dmean2D, dL_dconic2D);
 }

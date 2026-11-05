@@ -59,6 +59,9 @@ public:
         bool unimodal_enabled = false,
         float unimodal_min_mass = 0.5f,
         float unimodal_epsilon = 1.e-6f,
+        int unimodal_bins = 8,
+        float unimodal_near = 0.f,
+        float unimodal_far = 10.f,
         float* out_unimodal_loss = nullptr,
         float* out_unimodal_valid = nullptr);
 
@@ -104,6 +107,9 @@ public:
         bool debug         = false,
         bool unimodal_enabled = false,
         float unimodal_epsilon = 1.e-6f,
+        int unimodal_bins = 8,
+        float unimodal_near = 0.f,
+        float unimodal_far = 10.f,
         const float* dL_dunimodal = nullptr);
 
     static int integrate(
