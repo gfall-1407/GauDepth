@@ -11,6 +11,7 @@
 
 from argparse import ArgumentParser, Namespace
 import os
+import math
 from random import randint, sample
 import sys
 from typing import Sequence, TypedDict
@@ -54,6 +55,13 @@ def training(
     checkpoint,
     debug_from,
 ):
+    if not math.isfinite(opt.lambda_unimodal) or opt.lambda_unimodal < 0:
+        raise ValueError("lambda_unimodal must be finite and nonnegative")
+    if not math.isfinite(opt.unimodal_min_mass) or not 0 <= opt.unimodal_min_mass <= 1:
+        raise ValueError("unimodal_min_mass must be between zero and one")
+    if not math.isfinite(opt.unimodal_epsilon) or opt.unimodal_epsilon <= 0:
+        raise ValueError("unimodal_epsilon must be finite and positive")
+    unimodal_enabled = opt.lambda_unimodal > 0
     first_iter = 0
     tb_writer = prepare_output_and_logger(dataset)
     gaussians = GaussianModel(dataset.sh_degree)
@@ -147,6 +155,9 @@ def training(
             background,
             kernel_size,
             require_depth=reg_kick_on,
+            unimodal_enabled=unimodal_enabled,
+            unimodal_min_mass=opt.unimodal_min_mass,
+            unimodal_epsilon=opt.unimodal_epsilon,
         )
         rendered_image: torch.Tensor
         rendered_image, viewspace_point_tensor, visibility_filter, radii = (
@@ -187,6 +198,13 @@ def training(
         rgb_loss = (1.0 - opt.lambda_dssim) * Ll1_render + opt.lambda_dssim * (1.0 - ssim(rendered_image.unsqueeze(0), gt_image.unsqueeze(0)))
 
         loss = rgb_loss + opt.lambda_depth_normal * depth_normal_loss + opt.lambda_multi_view_ncc * ncc_loss + opt.lambda_multi_view_geo * geo_loss
+        if unimodal_enabled:
+            # Hard quality gating is nondifferentiable. Normalize by valid rays,
+            # not image area, and keep an all-invalid image finite with zero loss.
+            valid = render_pkg["unimodal_valid"].detach().to(rendered_image.dtype)
+            unimodal_loss = (render_pkg["unimodal_loss"] * valid).sum() / valid.sum().clamp_min(1.0)
+            unimodal_valid_fraction = valid.mean()
+            loss = loss + opt.lambda_unimodal * unimodal_loss
         loss.backward()
 
         iter_end.record()
@@ -210,6 +228,9 @@ def training(
                 progress_bar.close()
 
             # Log and save
+            if tb_writer and unimodal_enabled:
+                tb_writer.add_scalar("train_loss_patches/unimodal_loss", unimodal_loss.item(), iteration)
+                tb_writer.add_scalar("train_loss_patches/unimodal_valid_fraction", unimodal_valid_fraction.item(), iteration)
             training_report(
                 tb_writer,
                 iteration,

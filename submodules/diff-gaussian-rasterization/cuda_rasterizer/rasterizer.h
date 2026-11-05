@@ -55,7 +55,12 @@ public:
         float* out_normal,
         int* radii         = nullptr,
         bool require_depth = true,
-        bool debug         = false);
+        bool debug         = false,
+        bool unimodal_enabled = false,
+        float unimodal_min_mass = 0.5f,
+        float unimodal_epsilon = 1.e-6f,
+        float* out_unimodal_loss = nullptr,
+        float* out_unimodal_valid = nullptr);
 
     static void backward(
         std::function<char*(size_t)> geometryBuffer,
@@ -96,7 +101,10 @@ public:
         float* dL_dscale,
         float* dL_drot,
         bool require_depth = true,
-        bool debug         = false);
+        bool debug         = false,
+        bool unimodal_enabled = false,
+        float unimodal_epsilon = 1.e-6f,
+        const float* dL_dunimodal = nullptr);
 
     static int integrate(
         std::function<char*(size_t)> geometryBuffer,

@@ -10,6 +10,7 @@
 #
 
 from typing import NamedTuple
+import math
 import torch.nn as nn
 import torch
 from . import _C
@@ -82,29 +83,35 @@ class _RasterizeGaussians(torch.autograd.Function):
             raster_settings.prefiltered,
             raster_settings.require_depth,
             raster_settings.debug,
+            raster_settings.unimodal_enabled,
+            raster_settings.unimodal_min_mass,
+            raster_settings.unimodal_epsilon,
         )
 
         # Invoke C++/CUDA rasterizer
         if raster_settings.debug:
             cpu_args = cpu_deep_copy_tuple(args)  # Copy them before they can be corrupted
             try:
-                num_rendered, color, alpha, normal, depth, mdepth, radii, geomBuffer, binningBuffer, imgBuffer = _C.rasterize_gaussians(*args)
+                num_rendered, color, alpha, normal, depth, mdepth, radii, geomBuffer, binningBuffer, imgBuffer, unimodal_loss, unimodal_valid = _C.rasterize_gaussians(*args)
             except Exception as ex:
                 torch.save(cpu_args, "snapshot_fw.dump")
                 print("\nAn error occured in forward. Please forward snapshot_fw.dump for debugging.")
                 raise ex
         else:
-            num_rendered, color, alpha, normal, depth, mdepth, radii, geomBuffer, binningBuffer, imgBuffer = _C.rasterize_gaussians(*args)
+            num_rendered, color, alpha, normal, depth, mdepth, radii, geomBuffer, binningBuffer, imgBuffer, unimodal_loss, unimodal_valid = _C.rasterize_gaussians(*args)
         # Keep relevant tensors for backward
         ctx.raster_settings = raster_settings
         ctx.num_rendered = num_rendered
         ctx.save_for_backward(
             colors_precomp, opacities, means3D, scales, rotations, cov3Ds_precomp, normal, radii, sh, geomBuffer, binningBuffer, imgBuffer, alpha
         )
+        if raster_settings.unimodal_enabled:
+            ctx.mark_non_differentiable(unimodal_valid)
+            return color, radii, depth, mdepth, alpha, normal, unimodal_loss, unimodal_valid
         return color, radii, depth, mdepth, alpha, normal
 
     @staticmethod
-    def backward(ctx, grad_color, grad_radii, grad_depth, grad_mdepth, grad_alpha, grad_normal):
+    def backward(ctx, grad_color, grad_radii, grad_depth, grad_mdepth, grad_alpha, grad_normal, *grad_unimodal):
 
         # Restore necessary values from context
         num_rendered = ctx.num_rendered
@@ -112,6 +119,10 @@ class _RasterizeGaussians(torch.autograd.Function):
         colors_precomp, opacities, means3D, scales, rotations, cov3Ds_precomp, normal, radii, sh, geomBuffer, binningBuffer, imgBuffer, alpha = (
             ctx.saved_tensors
         )
+
+        grad_unimodal_loss = grad_unimodal[0] if raster_settings.unimodal_enabled else alpha.new_empty(0)
+        if grad_unimodal_loss is None:
+            grad_unimodal_loss = torch.zeros_like(alpha)
 
         # Restructure args as C++ method expects them
         args = (
@@ -145,6 +156,9 @@ class _RasterizeGaussians(torch.autograd.Function):
             alpha,
             raster_settings.require_depth,
             raster_settings.debug,
+            raster_settings.unimodal_enabled,
+            raster_settings.unimodal_epsilon,
+            grad_unimodal_loss,
         )
 
         # Compute gradients for relevant tensors by invoking backward method
@@ -193,11 +207,19 @@ class GaussianRasterizationSettings(NamedTuple):
     prefiltered: bool
     require_depth: bool
     debug: bool
+    unimodal_enabled: bool = False
+    unimodal_min_mass: float = 0.5
+    unimodal_epsilon: float = 1.e-6
 
 
 class GaussianRasterizer(nn.Module):
     def __init__(self, raster_settings):
         super().__init__()
+        if raster_settings.unimodal_enabled:
+            if not math.isfinite(raster_settings.unimodal_min_mass) or not 0 <= raster_settings.unimodal_min_mass <= 1:
+                raise ValueError("unimodal_min_mass must be finite and in [0, 1]")
+            if not math.isfinite(raster_settings.unimodal_epsilon) or raster_settings.unimodal_epsilon <= 0:
+                raise ValueError("unimodal_epsilon must be positive and finite")
         self.raster_settings = raster_settings
 
     def markVisible(self, positions):

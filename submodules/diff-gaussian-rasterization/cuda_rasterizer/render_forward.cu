@@ -409,7 +409,9 @@ __global__ void __launch_bounds__(BLOCK_X* BLOCK_Y)
         float* __restrict__ out_depth,
         float* __restrict__ out_mdepth,
         float* __restrict__ accum_depth,
-        float* __restrict__ normal_length) {
+        float* __restrict__ normal_length,
+        bool unimodal_enabled, float unimodal_min_mass, float unimodal_epsilon,
+        float* unimodal_stats, float* out_unimodal_loss, float* out_unimodal_valid) {
     // Identify current tile and associated min/max pixel range.
     auto block                 = cg::this_thread_block();
     uint32_t horizontal_blocks = (W + BLOCK_X - 1) / BLOCK_X;
@@ -449,6 +451,10 @@ __global__ void __launch_bounds__(BLOCK_X* BLOCK_Y)
     [[maybe_unused]] float Normal[3]   = {0};
     [[maybe_unused]] float last_depth  = 0;
     [[maybe_unused]] float last_weight = 0;
+
+    // TV of accepted contributions only, with virtual zero endpoints.
+    float unimodal_previous = 0.f, unimodal_tv = 0.f, unimodal_max = 0.f;
+    uint32_t unimodal_argmax = 0;
 
     // Iterate over batches until all done or range is complete
     for (int i = 0; i < rounds; i++, toDo -= BLOCK_SIZE) {
@@ -503,6 +509,15 @@ __global__ void __launch_bounds__(BLOCK_X* BLOCK_Y)
             }
 
             const float aT = alpha * T;
+            if (unimodal_enabled) {
+                unimodal_tv += fabsf(aT - unimodal_previous);
+                unimodal_previous = aT;
+                // Strict > chooses the first maximum on ties.
+                if (aT > unimodal_max) {
+                    unimodal_max = aT;
+                    unimodal_argmax = contributor;
+                }
+            }
             // Eq. (3) from 3D Gaussian splatting paper.
             for (int ch = 0; ch < CHANNELS; ch++)
                 C[ch] += collected_feature[j + BLOCK_SIZE * ch] * aT;
@@ -537,6 +552,19 @@ __global__ void __launch_bounds__(BLOCK_X* BLOCK_Y)
         for (int ch = 0; ch < CHANNELS; ch++)
             out_color[ch * H * W + pix_id] = C[ch] + T * bg_color[ch];
         out_alpha[pix_id] = 1.f - T; // 1 - T;
+        if (unimodal_enabled) {
+            unimodal_tv += unimodal_previous; // final zero endpoint
+            const bool valid = last_contributor > 0 && unimodal_max > 0.f
+                && (1.f - T) >= unimodal_min_mass;
+            const float excess = fmaxf(0.f, unimodal_tv - 2.f * unimodal_max);
+            unimodal_stats[pix_id] = unimodal_tv;
+            unimodal_stats[H * W + pix_id] = unimodal_max;
+            // Bit encoding preserves all 32 index bits, unlike a numeric float cast.
+            unimodal_stats[2 * H * W + pix_id] = __uint_as_float(unimodal_argmax);
+            unimodal_stats[3 * H * W + pix_id] = valid ? 1.f : 0.f;
+            out_unimodal_loss[pix_id] = valid ? excess / (2.f * unimodal_max + unimodal_epsilon) : 0.f;
+            out_unimodal_valid[pix_id] = valid ? 1.f : 0.f;
+        }
 
         if constexpr (GEOMETRY) {
             float depth_ln        = Depth * rln;
@@ -575,13 +603,17 @@ void FORWARD::render(
     float* out_mdepth,
     float* accum_depth,
     float* normal_length,
-    bool require_depth) {
+    bool require_depth,
+    bool unimodal_enabled, float unimodal_min_mass, float unimodal_epsilon,
+    float* unimodal_stats, float* out_unimodal_loss, float* out_unimodal_valid) {
 #define RENDER_CUDA_CALL(template_depth)                             \
     renderCUDA<NUM_CHANNELS, template_depth><<<grid, block>>>(       \
         ranges, point_list, W, H,                                    \
         means2D, conic_opacity, colors, ray_planes, normals,         \
         focal_x, focal_y, n_contrib, bg_color, out_color, out_alpha, \
-        out_normal, out_depth, out_mdepth, accum_depth, normal_length)
+        out_normal, out_depth, out_mdepth, accum_depth, normal_length, \
+        unimodal_enabled, unimodal_min_mass, unimodal_epsilon, \
+        unimodal_stats, out_unimodal_loss, out_unimodal_valid)
 
     if (require_depth)
         RENDER_CUDA_CALL(true);

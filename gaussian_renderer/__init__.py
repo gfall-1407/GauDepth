@@ -16,7 +16,7 @@ from scene.gaussian_model import GaussianModel
 from utils.sh_utils import eval_sh
 
 
-def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, kernel_size, scaling_modifier = 1.0, require_depth : bool = True):
+def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, kernel_size, scaling_modifier = 1.0, require_depth : bool = True, *, unimodal_enabled=False, unimodal_min_mass=0.5, unimodal_epsilon=1e-6):
     """
     Render the scene. 
     
@@ -46,7 +46,10 @@ def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, 
         campos=viewpoint_camera.camera_center,
         prefiltered=False,
         require_depth = require_depth,
-        debug=pipe.debug
+        debug=pipe.debug,
+        unimodal_enabled=unimodal_enabled,
+        unimodal_min_mass=unimodal_min_mass,
+        unimodal_epsilon=unimodal_epsilon,
     )
 
     rasterizer = GaussianRasterizer(raster_settings=raster_settings)
@@ -67,7 +70,7 @@ def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, 
     shs = pc.get_features
     colors_precomp = None
 
-    rendered_image, radii, rendered_expected_depth, rendered_median_depth, rendered_alpha, rendered_normal = rasterizer(
+    raster_outputs = rasterizer(
         means3D = means3D,
         means2D = means2D,
         shs = shs,
@@ -79,9 +82,11 @@ def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, 
 
 
 
+    rendered_image, radii, rendered_expected_depth, rendered_median_depth, rendered_alpha, rendered_normal = raster_outputs[:6]
+
     # Those Gaussians that were frustum culled or had a radius of 0 were not visible.
     # They will be excluded from value updates used in the splitting criteria.
-    return {"render": rendered_image,
+    result = {"render": rendered_image,
             "mask": rendered_alpha,
             "expected_depth": rendered_expected_depth,
             "median_depth": rendered_median_depth,
@@ -90,6 +95,11 @@ def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, 
             "radii": radii,
             "normal":rendered_normal,
             }
+
+    if unimodal_enabled:
+        result["unimodal_loss"] = raster_outputs[6]
+        result["unimodal_valid"] = raster_outputs[7]
+    return result
 
 # adopted from GOF for marching tetrahedra https://github.com/autonomousvision/gaussian-opacity-fields/blob/main/gaussian_renderer/__init__.py
 def integrate(points3D, viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, kernel_size : float, scaling_modifier = 1.0, override_color = None):

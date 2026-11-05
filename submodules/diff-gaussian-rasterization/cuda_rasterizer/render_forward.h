@@ -72,7 +72,9 @@ void render(
     float* out_mdepth,
     float* accum_depth,
     float* normal_length,
-    bool require_depth);
+    bool require_depth,
+    bool unimodal_enabled, float unimodal_min_mass, float unimodal_epsilon,
+    float* unimodal_stats, float* out_unimodal_loss, float* out_unimodal_valid);
 } // namespace FORWARD
 
 #endif

@@ -222,12 +222,15 @@ CudaRasterizer::TileState CudaRasterizer::TileState::fromChunk(char*& chunk, siz
     return tiles;
 }
 
-CudaRasterizer::ImageState CudaRasterizer::ImageState::fromChunk(char*& chunk, size_t N) {
+CudaRasterizer::ImageState CudaRasterizer::ImageState::fromChunk(char*& chunk, size_t N, bool unimodal_enabled) {
     ImageState img;
     obtain(chunk, img.n_contrib, N * 2, 128);
     obtain(chunk, img.ranges, N, 128);
     obtain(chunk, img.accum_depth, N, 128);
     obtain(chunk, img.normal_length, N, 128);
+    img.unimodal_stats = nullptr;
+    if (unimodal_enabled)
+        obtain(chunk, img.unimodal_stats, N * 4, 128);
     return img;
 }
 
@@ -276,7 +279,12 @@ int CudaRasterizer::Rasterizer::forward(
     float* out_normal,
     int* radii,
     bool require_depth,
-    bool debug) {
+    bool debug,
+    bool unimodal_enabled,
+    float unimodal_min_mass,
+    float unimodal_epsilon,
+    float* out_unimodal_loss,
+    float* out_unimodal_valid) {
     const float focal_y = height / (2.0f * tan_fovy);
     const float focal_x = width / (2.0f * tan_fovx);
 
@@ -292,9 +300,9 @@ int CudaRasterizer::Rasterizer::forward(
     dim3 block(BLOCK_X, BLOCK_Y, 1);
 
     // Dynamically resize image-based auxiliary buffers during training
-    size_t img_chunk_size = required<ImageState>(width * height);
+    size_t img_chunk_size = required<ImageState>(width * height, unimodal_enabled);
     char* img_chunkptr    = imageBuffer(img_chunk_size);
-    ImageState imgState   = ImageState::fromChunk(img_chunkptr, width * height);
+    ImageState imgState   = ImageState::fromChunk(img_chunkptr, width * height, unimodal_enabled);
 
     if (NUM_CHANNELS != 3 && colors_precomp == nullptr) {
         throw std::runtime_error("For non-RGB, provide precomputed Gaussian colors!");
@@ -398,7 +406,9 @@ int CudaRasterizer::Rasterizer::forward(
                    out_mdepth,
                    imgState.accum_depth,
                    imgState.normal_length,
-                   require_depth),
+                   require_depth,
+                   unimodal_enabled, unimodal_min_mass, unimodal_epsilon,
+                   imgState.unimodal_stats, out_unimodal_loss, out_unimodal_valid),
                debug);
     return num_rendered;
 }
@@ -444,10 +454,13 @@ void CudaRasterizer::Rasterizer::backward(
     float* dL_dscale,
     float* dL_drot,
     bool require_depth,
-    bool debug) {
+    bool debug,
+    bool unimodal_enabled,
+    float unimodal_epsilon,
+    const float* dL_dunimodal) {
     GeometryState geomState   = GeometryState::fromChunk(geom_buffer, P);
     BinningState binningState = BinningState::fromChunk(binning_buffer, R);
-    ImageState imgState       = ImageState::fromChunk(img_buffer, width * height);
+    ImageState imgState       = ImageState::fromChunk(img_buffer, width * height, unimodal_enabled);
 
     size_t chunk_size             = required<GeometryBwdState>(P);
     char* chunkptr                = geometryBuffer(chunk_size);
@@ -495,7 +508,9 @@ void CudaRasterizer::Rasterizer::backward(
                    dL_dcolor,
                    geomBwdState.ray_planes,
                    geomBwdState.normals,
-                   require_depth),
+                   require_depth,
+                   unimodal_enabled, unimodal_epsilon,
+                   imgState.unimodal_stats, dL_dunimodal),
                debug)
 
     // Take care of the rest of preprocessing. Was the precomputed covariance

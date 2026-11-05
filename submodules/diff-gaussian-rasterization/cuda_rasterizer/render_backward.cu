@@ -777,10 +777,10 @@ __global__ void __launch_bounds__(BLOCK_X* BLOCK_Y)
                                                     normalmap[H * W + pix_id],
                                                     normalmap[2 * H * W + pix_id]);
             float normal_len            = normal_length[pix_id];
-            const float small           = static_cast<float>(normal_len < NORMALIZE_EPS);
-            const float large           = 1.0f - small;
-            const float denom           = small * NORMALIZE_EPS + large * normal_len;
-            const glm::vec3 proj        = glm::dot(dL_dpixel_normaln, normaln) * normaln * large;
+            const float normal_is_small = static_cast<float>(normal_len < NORMALIZE_EPS);
+            const float normal_is_large = 1.0f - normal_is_small;
+            const float denom           = normal_is_small * NORMALIZE_EPS + normal_is_large * normal_len;
+            const glm::vec3 proj        = glm::dot(dL_dpixel_normaln, normaln) * normaln * normal_is_large;
             const glm::vec3 numerator   = dL_dpixel_normaln - proj;
 #pragma unroll
             for (int ch = 0; ch < 3; ch++)
@@ -1041,6 +1041,118 @@ void BACKWARD::preprocess(
         dL_dsh);
 }
 
+
+// A pending accepted contribution is completed when its right neighbor becomes
+// known during forward replay. No per-Gaussian/pixel sequence buffer is needed.
+struct UnimodalContribution {
+    uint32_t index;
+    int gaussian;
+    float weight, left, transmittance, alpha, raw_alpha, gaussian_value;
+    float2 delta;
+    float4 conic;
+};
+
+__device__ inline float unimodal_sign(float x) {
+    return (x > 0.f) - (x < 0.f); // explicit abs subgradient: sign(0)=0
+}
+
+__device__ inline float unimodalWeightGradient(
+    const UnimodalContribution& p, float right, float inv_denom,
+    float max_coefficient, uint32_t argmax, float upstream) {
+    return upstream * (
+        (unimodal_sign(p.weight - p.left) + unimodal_sign(p.weight - right)) * inv_denom
+        - (p.index == argmax ? max_coefficient : 0.f));
+}
+
+__device__ inline void accumulateUnimodalGradient(
+    const UnimodalContribution& p, float g, float& suffix,
+    int W, int H, float3* dmean, float4* dconic) {
+    suffix -= g * p.weight;
+    // suffix includes every later accepted contribution, including saturated
+    // ones: a clipped alpha still attenuates the derivatives of earlier alphas.
+    float da = p.transmittance * g - suffix / (1.f - p.alpha);
+    // min(.99, raw_alpha): choose derivative zero at and above the cap.
+    if (p.raw_alpha >= .99f)
+        da = 0.f;
+    const float dG = p.conic.w * da;
+    const float gx = p.gaussian_value * p.delta.x;
+    const float gy = p.gaussian_value * p.delta.y;
+    const float dx = dG * (-gx * p.conic.x - gy * p.conic.y) * .5f * W;
+    const float dy = dG * (-gy * p.conic.z - gx * p.conic.y) * .5f * H;
+    atomicAdd(&dmean[p.gaussian].x, dx);
+    atomicAdd(&dmean[p.gaussian].y, dy);
+    // z is the existing densification statistic, not a geometric derivative.
+    atomicAdd(&dmean[p.gaussian].z, fabsf(dx) + fabsf(dy));
+    atomicAdd(&dconic[p.gaussian].x, -.5f * gx * p.delta.x * dG);
+    atomicAdd(&dconic[p.gaussian].y, -.5f * gx * p.delta.y * dG);
+    atomicAdd(&dconic[p.gaussian].z, -.5f * gy * p.delta.y * dG);
+    atomicAdd(&dconic[p.gaussian].w, p.gaussian_value * da);
+}
+
+__global__ void unimodalBackwardCUDA(
+    const uint2* ranges, const uint32_t* point_list, int W, int H,
+    const float2* means, const float4* conics, const uint32_t* n_contrib,
+    float epsilon, const float* stats, const float* upstream,
+    float3* dmean, float4* dconic) {
+    const uint32_t x = blockIdx.x * BLOCK_X + threadIdx.x;
+    const uint32_t y = blockIdx.y * BLOCK_Y + threadIdx.y;
+    if (x >= W || y >= H) return;
+    const uint32_t pixel = y * W + x;
+    const int N = W * H;
+    if (stats[3 * N + pixel] == 0.f || upstream[pixel] == 0.f) return;
+    const float V = stats[pixel], M = stats[N + pixel];
+    const float excess = V - 2.f * M;
+    // Clamped roundoff-negative TV excess uses zero derivative at zero.
+    if (excess <= 0.f) return;
+    const float inv = 1.f / (2.f * M + epsilon);
+    const float max_coefficient = 2.f * inv + 2.f * excess * inv * inv;
+    const uint32_t argmax = __float_as_uint(stats[2 * N + pixel]);
+    const uint2 range = ranges[blockIdx.y * ((W + BLOCK_X - 1) / BLOCK_X) + blockIdx.x];
+    const uint32_t last = n_contrib[pixel];
+    float total = 0.f;
+    // Two forward replays use exactly the same floating-point T recurrence as
+    // forward. Reverse division would perturb equal weights and their sign(0)
+    // subgradient. Pass 0 accumulates sum(g*w); pass 1 subtracts each prefix to
+    // obtain the complete suffix. The hard gate/order are held fixed.
+    for (int pass = 0; pass < 2; ++pass) {
+        float T = 1.f, left = 0.f, suffix = total;
+        bool have_pending = false;
+        UnimodalContribution pending;
+        for (uint32_t k = 0; k < last; ++k) {
+            const int id = point_list[range.x + k];
+            const float2 xy = means[id];
+            const float2 d = {xy.x - float(x), xy.y - float(y)};
+            const float4 conic = conics[id];
+            const float power = -.5f * (conic.x * d.x * d.x + conic.z * d.y * d.y) - conic.y * d.x * d.y;
+            if (power > 0.f) continue;
+            const float G = expf(power), raw = conic.w * G;
+            const float alpha = fminf(.99f, raw);
+            if (alpha < 1.f / 255.f) continue;
+            const float weight = T * alpha;
+            if (have_pending) {
+                const float g = unimodalWeightGradient(pending, weight, inv,
+                    max_coefficient, argmax, upstream[pixel]);
+                if (pass == 0) total += g * pending.weight;
+                else accumulateUnimodalGradient(pending, g, suffix, W, H, dmean, dconic);
+            }
+            pending = {k + 1, id, weight, left, T, alpha, raw, G, d, conic};
+            have_pending = true;
+            left = weight;
+            T = T * (1.f - alpha);
+        }
+        if (have_pending) {
+            const float g = unimodalWeightGradient(pending, 0.f, inv,
+                max_coefficient, argmax, upstream[pixel]);
+            if (pass == 0) total += g * pending.weight;
+            else {
+                // The final suffix is exactly empty, avoiding residual roundoff.
+                suffix = g * pending.weight;
+                accumulateUnimodalGradient(pending, g, suffix, W, H, dmean, dconic);
+            }
+        }
+    }
+}
+
 // the Bool inputs can be replaced by an enumeration variable for different functions.
 void BACKWARD::render(
     const dim3 grid, const dim3 block,
@@ -1070,7 +1182,9 @@ void BACKWARD::render(
     float* dL_dcolors,
     float4* dL_dray_planes,
     float4* dL_dnormals,
-    bool require_depth) {
+    bool require_depth,
+    bool unimodal_enabled, float unimodal_epsilon,
+    const float* unimodal_stats, const float* dL_dunimodal) {
 #define RENDER_CUDA_CALL(template_depth)                                    \
     renderCUDA<NUM_CHANNELS, template_depth><<<grid, block>>>(              \
         ranges, point_list, W, H, bg_color, means2D, conic_opacity, colors, \
@@ -1086,4 +1200,9 @@ void BACKWARD::render(
         RENDER_CUDA_CALL(false);
 
 #undef RENDER_CUDA_CALL
+    // Separate replays leave the legacy photometric/depth gradient path intact.
+    if (unimodal_enabled)
+        unimodalBackwardCUDA<<<grid, block>>>(ranges, point_list, W, H,
+            means2D, conic_opacity, n_contrib, unimodal_epsilon,
+            unimodal_stats, dL_dunimodal, dL_dmean2D, dL_dconic2D);
 }

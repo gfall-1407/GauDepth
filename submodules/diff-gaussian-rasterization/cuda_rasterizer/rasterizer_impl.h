@@ -74,8 +74,9 @@ struct ImageState {
     float* accum_depth;
     uint32_t* n_contrib;
     float* normal_length;
+    float* unimodal_stats; // Four planes: variation, maximum, bitcast first argmax, validity.
 
-    static ImageState fromChunk(char*& chunk, size_t N);
+    static ImageState fromChunk(char*& chunk, size_t N, bool unimodal_enabled = false);
 };
 
 struct BinningState {
@@ -89,10 +90,10 @@ struct BinningState {
     static BinningState fromChunk(char*& chunk, size_t P);
 };
 
-template <typename T>
-size_t required(size_t P) {
+template <typename T, typename... Args>
+size_t required(size_t P, Args... args) {
     char* size = nullptr;
-    T::fromChunk(size, P);
+    T::fromChunk(size, P, args...);
     return ((size_t)size) + 128;
 }
 }; // namespace CudaRasterizer
