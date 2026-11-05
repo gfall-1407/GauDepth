@@ -3,8 +3,23 @@
 Run: python -m unittest discover -s tests -p 'test_unimodal_regularizer.py' -v
 CPU mathematical tests require only the standard library. Torch reference and
 compiled-renderer tests are skipped explicitly when their dependencies are absent.
+For a required GPU run, set GAUDEPTH_REQUIRE_CUDA_TESTS=1 (missing CUDA/build
+then fails). Build this repository extension with `python setup.py build_ext`
+from submodules/diff-gaussian-rasterization using the same Python as the tests.
+The loader uses repository Python sources and an in-place or build/lib* binary;
+it never falls back to site-packages. GAUDEPTH_RASTERIZER_BUILD may select a
+specific directory containing _C when multiple compatible builds exist.
+Geometry objectives use a fixed 4x4 interior of a 64x64 perspective image.
+The float64 ray reference checks smooth branches and matches GPU forward maps;
+finite differences assert the same branches at both perturbation endpoints.
+Exact peak ties are tested separately against the selected first-peak subgradient.
 """
+import importlib.machinery
+import importlib.util
 import math
+import os
+from pathlib import Path
+import sys
 import random
 import unittest
 
@@ -12,6 +27,10 @@ try:
     import torch
 except ImportError:
     torch = None
+
+
+if os.environ.get('GAUDEPTH_REQUIRE_CUDA_TESTS') == '1' and (torch is None or not torch.cuda.is_available()):
+    raise RuntimeError('CUDA tests required, but CUDA PyTorch is unavailable')
 
 
 def sign(x):
@@ -237,12 +256,40 @@ class TorchReferenceTests(unittest.TestCase):
 class CudaIntegrationTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
+        # Never silently import a different renderer from site-packages.
+        root = Path(__file__).resolve().parents[1] / 'submodules' / 'diff-gaussian-rasterization'
+        package = root / 'diff_gaussian_rasterization'
+        override = os.environ.get('GAUDEPTH_RASTERIZER_BUILD')
+        directories = [Path(override)] if override else [package] + list((root / 'build').glob('lib*/diff_gaussian_rasterization'))
+        candidates = [d for d in directories if any((d / ('_C' + suffix)).is_file()
+                      for suffix in importlib.machinery.EXTENSION_SUFFIXES)]
+        if not candidates:
+            message = 'Build this repository rasterizer first (python setup.py build_ext); no compatible local _C extension found'
+            if os.environ.get('GAUDEPTH_REQUIRE_CUDA_TESTS') == '1':
+                raise RuntimeError(message)
+            raise unittest.SkipTest(message)
+        if package in candidates:
+            artifact = package
+        elif len(candidates) == 1:
+            artifact = candidates[0]
+        else:
+            raise RuntimeError('Multiple local builds: set GAUDEPTH_RASTERIZER_BUILD to the chosen package directory')
+        name = 'diff_gaussian_rasterization'
+        if name in sys.modules:
+            raise RuntimeError('Renderer already imported; run this test in a fresh Python process')
+        spec = importlib.util.spec_from_file_location(name, package / '__init__.py',
+                    submodule_search_locations=[str(package), str(artifact)])
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[name] = module
         try:
-            from diff_gaussian_rasterization import GaussianRasterizationSettings, GaussianRasterizer
-        except ImportError as exc:
-            raise unittest.SkipTest('compiled rasterizer unavailable: ' + str(exc))
-        cls.Settings = GaussianRasterizationSettings
-        cls.Rasterizer = GaussianRasterizer
+            spec.loader.exec_module(module)
+        except Exception:
+            sys.modules.pop(name, None)
+            raise  # ABI/build errors must fail, rather than turn into skips.
+        print('Repository rasterizer: ' + str(module.__file__), file=sys.stderr)
+        print('CUDA extension: ' + str(module._C.__file__), file=sys.stderr)
+        cls.Settings = module.GaussianRasterizationSettings
+        cls.Rasterizer = module.GaussianRasterizer
 
     def render(self, enabled, opacities, require_depth=False, means=None, scales=None):
         device = 'cuda'
@@ -285,34 +332,130 @@ class CudaIntegrationTests(unittest.TestCase):
         torch.testing.assert_close(enabled[6], self.render(True, opacity, require_depth=True)[6])
 
 
-    def test_regularizer_only_geometry_gradients(self):
-        raw = alphas_from_weights([0.26, 0.08, 0.32, 0.04])
-        opacity = torch.tensor(raw, device='cuda').reshape(-1, 1)
-        # Distinct scales avoid eigenvector degeneracies; tiny off-axis centers
-        # make mean and covariance derivatives nontrivial without changing order.
-        means = torch.tensor([[.025, -.03, 1.], [-.035, .02, 2.],
-                              [.02, .035, 3.], [-.03, -.025, 4.]],
-                             device='cuda', requires_grad=True)
-        scales = torch.tensor([[.4, .35, .06]] * 4, device='cuda', requires_grad=True)
-        result = self.render(True, opacity, require_depth=False, means=means, scales=scales)
-        self.assertTrue(bool(result[7].item()))
-        self.assertGreater(result[6].item(), 0)
-        result[6].sum().backward()
+    def perspective_scene(self):
+        means = torch.tensor([[-.020, .015, 1.20], [.012, -.010, 1.90],
+                              [-.015, -.020, 2.60], [.020, .015, 3.40]], device='cuda')
+        scales = torch.tensor([[.12, .10, .05], [.14, .11, .06],
+                               [.16, .12, .07], [.18, .13, .08]], device='cuda')
+        opacity = torch.tensor(alphas_from_weights([.26, .08, .32, .04]), device='cuda').reshape(4, 1)
+        return means, scales, opacity
+
+    def perspective_render(self, enabled, means, scales, opacity):
+        # Same projection convention as Camera/getProjectionMatrix, including transpose.
+        tangent = math.tan(math.radians(60) / 2)
+        near, far = .01, 100.
+        projection = torch.zeros((4, 4), device='cuda')
+        projection[0, 0] = projection[1, 1] = 1 / tangent
+        projection[3, 2] = 1
+        projection[2, 2] = far / (far - near)
+        projection[2, 3] = -far * near / (far - near)
+        settings = self.Settings(
+            image_height=64, image_width=64, tanfovx=tangent, tanfovy=tangent, kernel_size=0.,
+            bg=torch.zeros(3, device='cuda'), scale_modifier=1.,
+            viewmatrix=torch.eye(4, device='cuda'), projmatrix=projection.T.contiguous(),
+            sh_degree=0, campos=torch.zeros(3, device='cuda'), prefiltered=False,
+            require_depth=False, debug=False, unimodal_enabled=enabled,
+            unimodal_min_mass=.5, unimodal_epsilon=1e-6)
+        return self.Rasterizer(settings)(
+            means3D=means, means2D=torch.zeros_like(means), opacities=opacity,
+            colors_precomp=torch.full((4, 3), .3, device='cuda'), scales=scales,
+            rotations=torch.tensor([[1., 0., 0., 0.]] * 4, device='cuda'))
+
+    def ray_reference(self, means, scales, opacity):
+        # Independent float64 pinhole covariance reference, specialized to this
+        # identity-view, identity-rotation, zero-filter fixture. Only the fixed
+        # interior pixels participate; all four alphas are safely above cutoff.
+        m, s = means.detach().cpu().double(), scales.detach().cpu().double()
+        focal = 32 / math.tan(math.radians(60) / 2)
+        pixels = torch.tensor([[x, y] for y in range(30, 34) for x in range(30, 34)], dtype=torch.float64)
+        alphas = []
+        for center, scale, op in zip(m, s, opacity.detach().cpu().double().flatten()):
+            x, y, z = center.tolist()
+            jacobian = torch.tensor([[focal/z, 0., -focal*x/z**2],
+                                     [0., focal/z, -focal*y/z**2]], dtype=torch.float64)
+            covariance = jacobian @ torch.diag(scale.square()) @ jacobian.T
+            delta = pixels - (31.5 + focal * center[:2] / z)
+            power = -.5 * torch.einsum('ni,ij,nj->n', delta, torch.linalg.inv(covariance), delta)
+            alphas.append(op * power.exp())
+        alpha = torch.stack(alphas, dim=1)
+        self.assertGreater(alpha.min().item(), 1/255 + .01)
+        self.assertLess(alpha.max().item(), .99 - .01)
+        transmittance = torch.cat([torch.ones((16, 1), dtype=torch.float64),
+                                  (1-alpha).cumprod(1)[:, :-1]], dim=1)
+        weights = transmittance * alpha
+        peaks, indices = weights.max(1)
+        sorted_weights = weights.sort(1, descending=True).values
+        self.assertGreater((sorted_weights[:, 0]-sorted_weights[:, 1]).min().item(), 1e-3)
+        # TV abs signs, max branch, cutoff, early-stop and mass gate must be smooth.
+        self.assertGreater((weights[:, 1:]-weights[:, :-1]).abs().min().item(), .01)
+        mass = 1-(1-alpha).prod(1)
+        self.assertGreater(mass.min().item(), .55)
+        self.assertGreater((1-alpha).prod(1).min().item(), .0001)
+        padded = torch.cat([torch.zeros((16, 1), dtype=torch.float64), weights,
+                            torch.zeros((16, 1), dtype=torch.float64)], dim=1)
+        excess = (padded[:, 1:]-padded[:, :-1]).abs().sum(1)-2*peaks
+        self.assertGreater(excess.min().item(), .01)
+        loss = excess / (2*peaks + 1e-6)
+        return m.norm(dim=1).argsort(), indices, mass, loss, (weights[:, 1:]-weights[:, :-1]).sign()
+
+    def check_perspective_geometry(self, enabled):
+        means, scales, opacity = self.perspective_scene()
+        means.requires_grad_(); scales.requires_grad_()
+        base = self.perspective_render(enabled, means, scales, opacity)
+        # Probe the same gate even when the differentiated objective is legacy RGB.
+        probe = base if enabled else self.perspective_render(True, means.detach(), scales.detach(), opacity)
+        reference = self.ray_reference(means, scales, opacity)
+        torch.testing.assert_close(probe[4][0, 30:34, 30:34].flatten().cpu().double(), reference[2], rtol=2e-5, atol=2e-6)
+        torch.testing.assert_close(probe[6][0, 30:34, 30:34].flatten().cpu().double(), reference[3], rtol=2e-5, atol=2e-6)
+        self.assertTrue(bool(probe[7][0, 30:34, 30:34].all()))
+        self.assertTrue(bool((base[1] > 0).all()))
+        def objective(output):
+            return (output[6] if enabled else output[0])[:, 30:34, 30:34].sum()
+        objective(base).backward()
+        step = 5e-4
         for parameter, name in ((means, 'means3D'), (scales, 'scales')):
             actual = parameter.grad.detach().flatten()
-            self.assertTrue(bool(torch.isfinite(actual).all()), name)
-            self.assertGreater(actual.abs().max().item(), 1e-5, name)
-            raw_values = parameter.detach().flatten().tolist()
-
+            self.assertTrue(bool(torch.isfinite(actual).all()))
+            self.assertGreater(actual.abs().max().item(), 1e-5)
             def evaluate(values):
                 changed = torch.tensor(values, device='cuda').reshape(4, 3)
                 m = changed if name == 'means3D' else means.detach()
-                scale = changed if name == 'scales' else scales.detach()
-                return self.render(True, opacity, require_depth=False, means=m, scales=scale)[6].sum().item()
+                s = changed if name == 'scales' else scales.detach()
+                state = self.ray_reference(m, s, opacity)
+                self.assertTrue(torch.equal(state[0], reference[0]), 'depth sorting changed')
+                self.assertTrue(torch.equal(state[1], reference[1]), 'max contribution branch changed')
+                self.assertTrue(torch.equal(state[4], reference[4]), 'TV absolute-value branch changed')
+                output = self.perspective_render(enabled, m, s, opacity)
+                self.assertTrue(torch.equal(output[1], base[1]), 'radii/visibility changed')
+                gate = output if enabled else self.perspective_render(True, m, s, opacity)
+                self.assertTrue(torch.equal(gate[7][:, 30:34, 30:34], probe[7][:, 30:34, 30:34]), 'gate changed on objective support')
+                torch.testing.assert_close(gate[4][0, 30:34, 30:34].flatten().cpu().double(), state[2], rtol=2e-5, atol=2e-6)
+                torch.testing.assert_close(gate[6][0, 30:34, 30:34].flatten().cpu().double(), state[3], rtol=2e-5, atol=2e-6)
+                return objective(output).item()
+            numerical = torch.tensor(finite_difference(evaluate, parameter.detach().flatten().tolist(), step), device='cuda')
+            # Preserve the original tolerance; branch stability is asserted above.
+            torch.testing.assert_close(actual, numerical, rtol=3e-2, atol=4e-3)
+            print('Perspective {} {} max absolute error: {:.6g}'.format('regularizer' if enabled else 'legacy RGB', name, (actual-numerical).abs().max().item()), file=sys.stderr)
 
-            numerical = torch.tensor(finite_difference(evaluate, raw_values, step=5e-4), device='cuda')
-            torch.testing.assert_close(actual, numerical, rtol=3e-2, atol=4e-3,
-                                       msg=name + ' regularizer-only central finite differences')
+    def test_perspective_legacy_geometry_gradients(self):
+        self.check_perspective_geometry(False)
+
+    def test_perspective_regularizer_geometry_gradients(self):
+        self.check_perspective_geometry(True)
+
+    def test_cuda_tied_peak_uses_first_subgradient(self):
+        # Exactly representable float32 weights after the transmittance recurrence.
+        raw = [.25, 1/6, .4]
+        opacity = torch.tensor(raw, device='cuda').reshape(3, 1).requires_grad_()
+        alpha = opacity.detach().flatten()
+        weights = alpha * torch.cat([alpha.new_ones(1), (1-alpha).cumprod(0)[:-1]])
+        self.assertEqual(weights[0].item(), weights[2].item())
+        output = self.render(True, opacity)
+        output[6].sum().backward()
+        expected = loss_raw_alphas(raw)[2]
+        torch.testing.assert_close(opacity.grad.flatten(), torch.tensor(expected, device='cuda'), rtol=0, atol=3e-3)
+        # Exact ties have a selected subgradient; central differences are not its oracle.
+        self.assertLess(loss_weights([.25, .125, .25])[2][0], loss_weights([.25, .125, .25])[2][2])
 
     def test_empty_and_insufficient_mass_maps(self):
         for count, alpha in ((0, .0), (4, .01)):
