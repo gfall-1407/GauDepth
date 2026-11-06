@@ -66,7 +66,8 @@ def training(
     if not (math.isfinite(opt.unimodal_near) and math.isfinite(opt.unimodal_far)
             and 0 <= opt.unimodal_near < opt.unimodal_far):
         raise ValueError("unimodal range must be finite with 0 <= near < far")
-    unimodal_enabled = opt.lambda_unimodal > 0
+    if opt.unimodal_from_iter < 0:
+        raise ValueError("unimodal_from_iter must be nonnegative")
     first_iter = 0
     tb_writer = prepare_output_and_logger(dataset)
     gaussians = GaussianModel(dataset.sh_degree)
@@ -153,6 +154,7 @@ def training(
             pipe.debug = True
 
         reg_kick_on = iteration >= opt.regularization_from_iter
+        unimodal_enabled = opt.lambda_unimodal > 0 and iteration >= opt.unimodal_from_iter
         render_pkg = render(
             viewpoint_cam,
             gaussians,

@@ -53,6 +53,7 @@ objective. When enabled, it requires depth preprocessing; the public renderer
 requests this automatically even before other geometric losses start.
 
     --lambda_unimodal      0.0
+    --unimodal_from_iter   0      # absolute iteration; enabled when iteration >= this value
     --unimodal_bins        8      # integer, 1 through 32
     --unimodal_near        0.0
     --unimodal_far         10.0
@@ -64,7 +65,14 @@ NOT a validated range for DTU or every camera. Set it to cover the intended
 foreground depth distribution before an experiment. A narrow range can hide
 other peaks. Excessively coarse bins hide structure; overly fine bins return
 toward the over-strict per-Gaussian constraint. Fixed bounds are treated as
-constants, not trained variables. There is no separate unimodal warmup switch.
+constants, not trained variables. The independent unimodal_from_iter gate defaults to 0, preserving first-step
+enablement when lambda_unimodal > 0. Before the gate the auxiliary renderer
+and loss are disabled; TensorBoard unimodal scalars are logged only when active.
+On checkpoint resume, the gate uses the absolute iteration number, not the
+number of steps since resuming. Set it to 7000 as an experimental starting
+point, not a validated optimum. Negative values are rejected.
+On resume, checkpoints do not save these experiment options. Re-pass lambda_unimodal,
+unimodal_from_iter, the bin count, and the intended depth range.
 
 ## CUDA forward and backward
 

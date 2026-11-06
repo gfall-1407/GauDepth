@@ -103,6 +103,7 @@ class OptimizationParams(ParamGroup):
         self.lambda_depth_normal = 0.05
         # Disabled by default: regularize equal-depth segment transmittance drops.
         self.lambda_unimodal = 0.0
+        self.unimodal_from_iter = 0
         self.unimodal_min_mass = 0.5
         self.unimodal_epsilon = 1e-6
         self.unimodal_bins = 8
