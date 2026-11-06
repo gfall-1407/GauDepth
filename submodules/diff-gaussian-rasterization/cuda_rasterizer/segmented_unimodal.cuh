@@ -26,25 +26,45 @@ __device__ inline void segmentStats(const float* t, int bins,
     }
     variation += fabsf(previous);
 }
-__device__ inline float segmentSign(float v) { return (v > 0.f) - (v < 0.f); }
-// Raw-mass form of normalized p loss:
-// relu(V_m - 2 M_m) / (2 M_m + epsilon * A).
+// Twice the total violation of increasing-then-decreasing order around the
+// first maximum. For nonnegative masses this equals TV(m) - 2*max(m), but
+// avoids cancellation between two nearly equal large quantities.
+__device__ inline float segmentExcess(const float* t, int bins, int peak_bin) {
+    float violation = 0.f;
+    for (int k = 0; k + 1 < bins; ++k) {
+        const float a = t[k] - t[k + 1];
+        const float b = t[k + 1] - t[k + 2];
+        violation += k < peak_bin ? fmaxf(a - b, 0.f) : fmaxf(b - a, 0.f);
+    }
+    return 2.f * violation;
+}
+// The branch at equality uses zero as the hinge subgradient. The first maximum
+// is selected deterministically. Empty and already-unimodal rays have zero gradient.
 __device__ inline void segmentBoundaryGradients(const float* t, int bins,
         float epsilon, float upstream, float* dt) {
-    float v, m; int argmax;
-    segmentStats(t, bins, v, m, argmax);
-    const float excess = v - 2.f * m, a = t[0] - t[bins];
+    float variation, peak; int argmax;
+    segmentStats(t, bins, variation, peak, argmax);
+    const float excess = segmentExcess(t, bins, argmax);
+    const float mass = t[0] - t[bins];
     for (int j = 0; j <= bins; ++j) dt[j] = 0.f;
-    if (excess <= 0.f || a <= 0.f || m <= 0.f) return;
-    const float denominator = 2.f * m + epsilon * a;
+    if (excess <= 0.f || mass <= 0.f || peak <= 0.f) return;
+    const float denominator = 2.f * peak + epsilon * mass;
     for (int k = 0; k < bins; ++k) {
         const float x = t[k] - t[k + 1];
-        const float left = k ? t[k - 1] - t[k] : 0.f;
-        const float right = k + 1 < bins ? t[k + 1] - t[k + 2] : 0.f;
+        float de = 0.f;
+        if (k > 0) {
+            const float left = t[k - 1] - t[k];
+            if (k - 1 < argmax && left > x) de -= 2.f;
+            if (k - 1 >= argmax && x > left) de += 2.f;
+        }
+        if (k + 1 < bins) {
+            const float right = t[k + 1] - t[k + 2];
+            if (k < argmax && x > right) de += 2.f;
+            if (k >= argmax && right > x) de -= 2.f;
+        }
         const float h = k == argmax ? 1.f : 0.f;
-        const float dv = segmentSign(x - left) + segmentSign(x - right);
-        const float g = upstream * ((dv - 2.f * h) / denominator
-            - excess * (2.f * h + epsilon) / (denominator * denominator));
+        const float g = (upstream / denominator) *
+            (de - (excess / denominator) * (2.f * h + epsilon));
         dt[k] += g; dt[k + 1] -= g;
     }
 }

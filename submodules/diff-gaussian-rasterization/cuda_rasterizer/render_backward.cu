@@ -1056,7 +1056,7 @@ __global__ void unimodalBackwardCUDA(
     const uint32_t pixel = y * W + x;
     const int N = W * H;
     if (stats[3 * N + pixel] == 0.f || upstream[pixel] == 0.f) return;
-    if (stats[pixel] <= 2.f * stats[N + pixel]) return;
+    if (stats[pixel] <= 0.f) return;
     const float rx = (float(x) - float(W - 1) / 2.f) / focal_x;
     const float ry = (float(y) - float(H - 1) / 2.f) / focal_y;
     const float rln = rnorm3df(rx, ry, 1.f);

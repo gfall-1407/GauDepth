@@ -556,8 +556,8 @@ __global__ void __launch_bounds__(BLOCK_X* BLOCK_Y)
             const float mass = segment_t[0] - segment_t[unimodal_bins];
             const bool valid = last_contributor > 0 && peak > 0.f
                 && mass > 0.f && mass >= unimodal_min_mass;
-            const float excess = fmaxf(0.f, variation - 2.f * peak);
-            unimodal_stats[pix_id] = variation;
+            const float excess = segmentExcess(segment_t, unimodal_bins, argmax);
+            unimodal_stats[pix_id] = excess;
             unimodal_stats[H * W + pix_id] = peak;
             unimodal_stats[2 * H * W + pix_id] = __uint_as_float(argmax);
             unimodal_stats[3 * H * W + pix_id] = valid ? 1.f : 0.f;

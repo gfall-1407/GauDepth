@@ -78,14 +78,26 @@ unimodal_from_iter, the bin count, and the intended depth range.
 
 Forward maintains K+1 boundary transmittances. Every accepted contribution
 updates the boundaries behind its representative depth. After rasterization,
-the segment masses produce TV, peak and the valid mask; colors and existing
-depth outputs keep their original accumulation. Only four per-pixel statistics
-are cached, not every Gaussian/pixel weight.
+the segment masses produce stable excess, peak and the valid mask; colors and
+existing depth outputs keep their original accumulation. Only four per-pixel statistics are cached,
+not every Gaussian/pixel weight.
+
+For nonnegative masses m_k = T_k - T_(k+1), the stable numerator E is twice
+the sum of monotonicity violations around the first maximum k*: max(m_k -
+m_(k+1), 0) for k < k*, and max(m_(k+1) - m_k, 0) for k >= k*. This equals
+TV(m) - 2*max(m), but avoids subtracting nearly equal aggregate values.
+segmentStats selects the first maximum using a strict greater-than comparison.
+The first cached plane now stores E (stable excess), not variation; the other
+planes remain peak mass, bitcast first-maximum bin, and validity. Hinge equality
+uses a zero subgradient; at nonsmooth ties this may differ from the old formula's
+gradient. Float32 rounding from transmittance products and adjacent T differences
+remains upstream.
 
 Backward replays the exact accepted list twice. The first replay reconstructs
 boundary T values using the same factors. The loss derivative with respect to
-all m_k includes normalization by A, the first-maximum subgradient and sign(0)=0.
-Since m_k = T_k - T_(k+1), the boundary derivatives follow by adjacent differences.
+all m_k includes normalization by A and the selected first-maximum derivative;
+the hinge subgradient is zero at equality. Since m_k = T_k - T_(k+1), the
+boundary derivatives follow by adjacent differences.
 For each accepted Gaussian,
 
     dL/dalpha_i = - sum_{j: d_i < t_j} (dL/dT_j) T_j / (1-alpha_i).
