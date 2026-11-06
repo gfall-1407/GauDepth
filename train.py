@@ -231,6 +231,8 @@ def training(
                         "Loss": f"{ema_loss_for_log:.{4}f}",
                         "loss_normal": f"{ema_normal_loss_for_log:.{4}f}",
                         "loss_ncc": f"{ema_ncc_loss_for_log:.{4}f}",
+                        "loss_uni": f"{unimodal_loss.item():.3e}" if unimodal_enabled else "off",
+                        "uni_valid": f"{unimodal_valid_fraction.item():.1%}" if unimodal_enabled else "off",
                     }
                 )
                 progress_bar.update(10)
